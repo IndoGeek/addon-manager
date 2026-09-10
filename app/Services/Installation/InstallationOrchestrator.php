@@ -85,7 +85,6 @@ final class InstallationOrchestrator
                 }
 
                 $backups[$operation->relativePath] = $this->backupManager->backup(
-                    $serverDirectory,
                     $operation->relativePath,
                     $backupDirectory,
                 );

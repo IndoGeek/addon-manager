@@ -12,6 +12,8 @@ require __DIR__ . '/../../app/Services/Deployment/DeploymentPlan.php';
 require __DIR__ . '/../../app/Services/Deployment/DeploymentPlanner.php';
 require __DIR__ . '/../../app/Services/Deployment/BackupManager.php';
 require __DIR__ . '/../../app/Services/Deployment/DeploymentExecutor.php';
+require __DIR__ . '/../../app/Services/Server/ServerFileTarget.php';
+require __DIR__ . '/../../app/Services/Server/LocalFilesystemServerFileTarget.php';
 require __DIR__ . '/../../app/Services/Installation/InstallationOrchestrator.php';
 
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\BackupManager;
@@ -21,6 +23,7 @@ use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployme
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\InstallationOrchestrator;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\InstallationWorkspace;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\PackageRootResolver;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Server\LocalFilesystemServerFileTarget;
 
 $root = sys_get_temp_dir()
     . '/modpack-overwrite-rollback-test-'
@@ -79,7 +82,9 @@ $zip->close();
 
 $workspaceManager = new InstallationWorkspace($temp);
 $planner = new DeploymentPlanner();
-$backupManager = new BackupManager();
+$backupManager = new BackupManager(
+    new LocalFilesystemServerFileTarget($server),
+);
 $executor = new DeploymentExecutor();
 $packageRootResolver = new PackageRootResolver();
 

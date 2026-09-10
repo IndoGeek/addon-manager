@@ -3,48 +3,26 @@
 namespace Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment;
 
 use InvalidArgumentException;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Server\ServerFileTarget;
 use RuntimeException;
 
 final class BackupManager
 {
+    public function __construct(
+        private readonly ServerFileTarget $serverFileTarget,
+    ) {
+    }
+
     public function backup(
-        string $serverDirectory,
         string $relativePath,
         string $backupDirectory,
     ): string {
-        $serverDirectory = $this->normalizeDirectory($serverDirectory);
+        $this->validateRelativePath($relativePath);
 
-        if ($relativePath === '') {
-            throw new InvalidArgumentException(
-                'A relative file path is required.'
-            );
-        }
-
-	if (
-	    str_starts_with($relativePath, '/')
-	    || str_contains($relativePath, "\0")
-	) {
-	    throw new InvalidArgumentException(
-		'The backup path must be relative and contain no null bytes.'
-	    );
-	}
-
-	$segments = preg_split(
-	    '#[\\\\/]+#',
-	    $relativePath,
-	    -1,
-	    PREG_SPLIT_NO_EMPTY,
-	);
-
-	if ($segments === false || in_array('..', $segments, true)) {
-	    throw new InvalidArgumentException(
-		'The backup path must not contain parent traversal.'
-	    );
-	}
-
-        $source = $serverDirectory . '/' . $relativePath;
-
-        if (!is_file($source)) {
+        if (
+            !$this->serverFileTarget->exists($relativePath)
+            || $this->serverFileTarget->isDirectory($relativePath)
+        ) {
             throw new InvalidArgumentException(
                 "The server file does not exist: {$relativePath}"
             );
@@ -77,7 +55,9 @@ final class BackupManager
             );
         }
 
-        if (!copy($source, $backupPath)) {
+        $contents = $this->serverFileTarget->read($relativePath);
+
+        if (file_put_contents($backupPath, $contents) === false) {
             throw new RuntimeException(
                 "Unable to back up: {$relativePath}"
             );
@@ -86,16 +66,46 @@ final class BackupManager
         return $backupPath;
     }
 
-    private function normalizeDirectory(string $directory): string
+    private function validateRelativePath(string $relativePath): void
     {
-        $realPath = realpath($directory);
-
-        if ($realPath === false) {
-            throw new RuntimeException(
-                "Unable to resolve directory: {$directory}"
+        if ($relativePath === '') {
+            throw new InvalidArgumentException(
+                'A relative file path is required.'
             );
         }
 
-        return rtrim($realPath, DIRECTORY_SEPARATOR);
+        if (str_contains($relativePath, "\0")) {
+            throw new InvalidArgumentException(
+                'The backup path cannot contain null bytes.'
+            );
+        }
+
+        if (
+            str_starts_with($relativePath, '/')
+            || str_starts_with($relativePath, '\\')
+        ) {
+            throw new InvalidArgumentException(
+                'The backup path must be relative.'
+            );
+        }
+
+        if (preg_match('/^[A-Za-z]:[\\\\\/]/', $relativePath) === 1) {
+            throw new InvalidArgumentException(
+                'Windows drive paths are not allowed.'
+            );
+        }
+
+        $segments = preg_split(
+            '#[\\\\\/]+#',
+            $relativePath,
+            -1,
+            PREG_SPLIT_NO_EMPTY,
+        );
+
+        if ($segments === false || in_array('..', $segments, true)) {
+            throw new InvalidArgumentException(
+                'The backup path must not contain parent traversal.'
+            );
+        }
     }
 }
