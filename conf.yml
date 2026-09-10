@@ -27,10 +27,10 @@ data:
 
 requests:
   views: ""
-  app: ""
+  app: "app"
   routers:
     application: ""
-    client: ""
+    client: "client.php"
     web: ""
 
 database:
