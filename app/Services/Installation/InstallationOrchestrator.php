@@ -3,6 +3,7 @@
 namespace Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation;
 
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\BackupManager;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentException;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentExecutor;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentPlanner;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentPolicy;
@@ -49,9 +50,7 @@ final class InstallationOrchestrator
                 );
             }
 
-            $created = $plan->create;
-
-            $this->executor->execute(
+            $created = $this->executor->execute(
                 $workspace,
                 $serverDirectory,
                 $plan,
@@ -63,6 +62,13 @@ final class InstallationOrchestrator
                 backedUp: array_keys($backups),
             );
         } catch (Throwable $exception) {
+            if ($exception instanceof DeploymentException) {
+                $created = array_merge(
+                    $created,
+                    $exception->deployed(),
+                );
+            }
+
             $rollbackErrors = $this->rollback(
                 $serverDirectory,
                 $backups,

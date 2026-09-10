@@ -3,6 +3,7 @@
 namespace Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment;
 
 use RuntimeException;
+use Throwable;
 
 final class DeploymentExecutor
 {
@@ -10,25 +11,41 @@ final class DeploymentExecutor
         string $workspace,
         string $serverDirectory,
         DeploymentPlan $plan,
-    ): void {
+    ): array {
         $workspace = $this->normalizeDirectory($workspace);
         $serverDirectory = $this->normalizeDirectory($serverDirectory);
 
-        foreach ($plan->create as $relativePath) {
-            $this->copyFile(
-                $workspace,
-                $serverDirectory,
-                $relativePath,
+        $deployed = [];
+
+        try {
+            foreach ($plan->create as $relativePath) {
+                $this->copyFile(
+                    $workspace,
+                    $serverDirectory,
+                    $relativePath,
+                );
+
+                $deployed[] = $relativePath;
+            }
+
+            foreach ($plan->overwrite as $relativePath) {
+                $this->copyFile(
+                    $workspace,
+                    $serverDirectory,
+                    $relativePath,
+                );
+
+                $deployed[] = $relativePath;
+            }
+        } catch (Throwable $exception) {
+            throw new DeploymentException(
+                $exception->getMessage(),
+                $deployed,
+                $exception,
             );
         }
 
-        foreach ($plan->overwrite as $relativePath) {
-            $this->copyFile(
-                $workspace,
-                $serverDirectory,
-                $relativePath,
-            );
-        }
+        return $deployed;
     }
 
     private function copyFile(
@@ -36,7 +53,8 @@ final class DeploymentExecutor
         string $serverDirectory,
         string $relativePath,
     ): void {
-	$relativePath = $this->validateRelativePath($relativePath);
+        $relativePath = $this->validateRelativePath($relativePath);
+
         $source = $workspace . '/' . $relativePath;
         $target = $serverDirectory . '/' . $relativePath;
 

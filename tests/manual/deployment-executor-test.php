@@ -2,6 +2,7 @@
 
 require __DIR__ . '/../../app/Services/Deployment/DeploymentPlan.php';
 require __DIR__ . '/../../app/Services/Deployment/DeploymentExecutor.php';
+require __DIR__ . '/../../app/Services/Deployment/DeploymentException.php';
 
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentExecutor;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentPlan;
@@ -51,11 +52,23 @@ try {
         'replacement mod contents',
     );
 
-    $executor->execute(
+    $deployed = $executor->execute(
         $workspace,
         $server,
         $plan,
     );
+
+    if ($deployed !== [
+        'config/example.json',
+        'mods/new-mod.jar',
+        'mods/existing-mod.jar',
+    ]) {
+        throw new RuntimeException(
+            'Executor did not report the successfully deployed files correctly.'
+        );
+    }
+
+    echo "PASS: executor reports deployed files\n";
 
     if (
         file_get_contents(
@@ -121,7 +134,7 @@ try {
 
     echo "PASS: new files deployed\n";
     echo "PASS: planned overwrite deployed\n";
-    echo "6/6 tests passed.\n";
+    echo "7/7 tests passed.\n";
 } finally {
     if (is_dir($root)) {
         $iterator = new RecursiveIteratorIterator(
