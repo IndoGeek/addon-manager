@@ -5,8 +5,8 @@ require_once __DIR__ . '/../../app/Providers/ModpackProvider.php';
 require_once __DIR__ . '/../../app/Providers/MockModpackProvider.php';
 require_once __DIR__ . '/../../app/Services/ModpackProviderRegistry.php';
 
-use ModpackInstaller\Providers\MockModpackProvider;
-use ModpackInstaller\Services\ModpackProviderRegistry;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Providers\MockModpackProvider;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\ModpackProviderRegistry;
 
 $registry = new ModpackProviderRegistry([
     new MockModpackProvider(),
