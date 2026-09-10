@@ -1,0 +1,37 @@
+info:
+  name: "Modpack Installer"
+  identifier: "modpackinstaller"
+  description: "A simple modpack installer extension for Pterodactyl."
+  flags: ""
+  version: "1.0.0"
+  target: "beta-2026-08"
+  author: "IndoGeek"
+  icon: ""
+  website: ""
+
+admin:
+  view: "view.blade.php"
+  controller: ""
+  css: ""
+  wrapper: ""
+
+dashboard:
+  css: "root.css"
+  wrapper: ""
+  components: ""
+
+data:
+  directory: ""
+  public: ""
+  console: ""
+
+requests:
+  views: ""
+  app: ""
+  routers:
+    application: ""
+    client: ""
+    web: ""
+
+database:
+  migrations: ""
