@@ -18,6 +18,7 @@ final class InstallationOrchestrator
         private readonly BackupManager $backupManager,
         private readonly DeploymentExecutor $executor,
         private readonly string $temporaryRoot,
+        private readonly PackageRootResolver $packageRootResolver,
     ) {
     }
 
@@ -25,14 +26,20 @@ final class InstallationOrchestrator
         string $archivePath,
         string $serverDirectory,
         DeploymentPolicy $policy = DeploymentPolicy::OVERWRITE,
+        PackageLayout $layout = PackageLayout::DIRECT,
     ): InstallationPreview {
         $workspace = null;
 
         try {
             $workspace = $this->workspaceManager->prepare($archivePath);
 
-            $plan = $this->planner->plan(
+            $packageRoot = $this->packageRootResolver->resolve(
                 $workspace,
+                $layout,
+            );
+
+            $plan = $this->planner->plan(
+                $packageRoot,
                 $serverDirectory,
                 $policy,
             );
@@ -49,6 +56,7 @@ final class InstallationOrchestrator
         string $archivePath,
         string $serverDirectory,
         DeploymentPolicy $policy = DeploymentPolicy::OVERWRITE,
+        PackageLayout $layout = PackageLayout::DIRECT,
     ): InstallationResult {
         $workspace = null;
         $backupDirectory = null;
@@ -58,8 +66,13 @@ final class InstallationOrchestrator
         try {
             $workspace = $this->workspaceManager->prepare($archivePath);
 
-            $plan = $this->planner->plan(
+            $packageRoot = $this->packageRootResolver->resolve(
                 $workspace,
+                $layout,
+            );
+
+            $plan = $this->planner->plan(
+                $packageRoot,
                 $serverDirectory,
                 $policy,
             );

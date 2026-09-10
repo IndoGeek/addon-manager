@@ -4,6 +4,8 @@ require __DIR__ . '/../../app/Services/Archive/ArchiveValidator.php';
 require __DIR__ . '/../../app/Services/Archive/ArchiveExtractor.php';
 require __DIR__ . '/../../app/Services/Installation/InstallationWorkspace.php';
 require __DIR__ . '/../../app/Services/Installation/InstallationResult.php';
+require __DIR__ . '/../../app/Services/Installation/PackageLayout.php';
+require __DIR__ . '/../../app/Services/Installation/PackageRootResolver.php';
 require __DIR__ . '/../../app/Services/Deployment/DeploymentPolicy.php';
 require __DIR__ . '/../../app/Services/Deployment/DeploymentPlan.php';
 require __DIR__ . '/../../app/Services/Deployment/DeploymentPlanner.php';
@@ -17,6 +19,7 @@ use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployme
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentPolicy;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\InstallationOrchestrator;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\InstallationWorkspace;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\PackageRootResolver;
 
 $root = sys_get_temp_dir()
     . '/modpack-overwrite-rollback-test-'
@@ -77,9 +80,11 @@ $workspaceManager = new InstallationWorkspace($temp);
 $planner = new DeploymentPlanner();
 $backupManager = new BackupManager();
 $executor = new DeploymentExecutor();
+$packageRootResolver = new PackageRootResolver();
 
 $orchestrator = new InstallationOrchestrator(
     workspaceManager: $workspaceManager,
+    packageRootResolver: $packageRootResolver,
     planner: $planner,
     backupManager: $backupManager,
     executor: $executor,
