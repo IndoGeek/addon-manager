@@ -15,4 +15,19 @@ final class InstallationResult
     {
         return count($this->created) + count($this->overwritten);
     }
+
+    public function createdCount(): int
+    {
+        return count($this->created);
+    }
+
+    public function overwrittenCount(): int
+    {
+        return count($this->overwritten);
+    }
+
+    public function backupCount(): int
+    {
+        return count($this->backedUp);
+    }
 }

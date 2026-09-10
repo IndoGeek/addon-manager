@@ -21,6 +21,30 @@ final class InstallationOrchestrator
     ) {
     }
 
+    public function preview(
+        string $archivePath,
+        string $serverDirectory,
+        DeploymentPolicy $policy = DeploymentPolicy::OVERWRITE,
+    ): InstallationPreview {
+        $workspace = null;
+
+        try {
+            $workspace = $this->workspaceManager->prepare($archivePath);
+
+            $plan = $this->planner->plan(
+                $workspace,
+                $serverDirectory,
+                $policy,
+            );
+
+            return new InstallationPreview($plan);
+        } finally {
+            if ($workspace !== null) {
+                $this->workspaceManager->cleanup($workspace);
+            }
+        }
+    }
+
     public function install(
         string $archivePath,
         string $serverDirectory,
