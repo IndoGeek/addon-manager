@@ -88,7 +88,7 @@ final class InstallationOrchestrator
             }
 
             $created = $this->executor->execute(
-                $workspace,
+                $packageRoot,
                 $serverDirectory,
                 $plan,
             );
