@@ -58,6 +58,12 @@ final class DeploymentExecutor
             );
         }
 
+        if (is_dir($target)) {
+            throw new RuntimeException(
+                "Target path is a directory: {$relativePath}"
+            );
+        }
+
         if (!copy($source, $target)) {
             throw new RuntimeException(
                 "Unable to deploy file: {$relativePath}"

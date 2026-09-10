@@ -36,4 +36,29 @@ final class InstallationWorkspace
 
         return $extractor->extract($archivePath);
     }
+
+    public function cleanup(string $workspace): void
+    {
+        if (!is_dir($workspace)) {
+            return;
+        }
+
+        $iterator = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator(
+                $workspace,
+                \FilesystemIterator::SKIP_DOTS,
+            ),
+            \RecursiveIteratorIterator::CHILD_FIRST,
+        );
+
+        foreach ($iterator as $item) {
+            if ($item->isDir()) {
+                rmdir($item->getPathname());
+            } else {
+                unlink($item->getPathname());
+            }
+        }
+
+        rmdir($workspace);
+    }
 }

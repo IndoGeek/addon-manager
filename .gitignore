@@ -15,3 +15,6 @@
 .php-cs-fixer.cache
 
 .dist/
+
+# PHP CS Fixer configuration
+/.php-cs-fixer.php
