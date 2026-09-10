@@ -8,34 +8,15 @@ use Throwable;
 final class DeploymentExecutor
 {
     public function execute(
-        string $workspace,
-        string $serverDirectory,
         DeploymentPlan $plan,
     ): array {
-        $workspace = $this->normalizeDirectory($workspace);
-        $serverDirectory = $this->normalizeDirectory($serverDirectory);
-
         $deployed = [];
 
         try {
-            foreach ($plan->create as $relativePath) {
-                $this->copyFile(
-                    $workspace,
-                    $serverDirectory,
-                    $relativePath,
-                );
+            foreach ($plan->operations as $operation) {
+                $this->copyFile($operation);
 
-                $deployed[] = $relativePath;
-            }
-
-            foreach ($plan->overwrite as $relativePath) {
-                $this->copyFile(
-                    $workspace,
-                    $serverDirectory,
-                    $relativePath,
-                );
-
-                $deployed[] = $relativePath;
+                $deployed[] = $operation->relativePath;
             }
         } catch (Throwable $exception) {
             throw new DeploymentException(
@@ -49,22 +30,19 @@ final class DeploymentExecutor
     }
 
     private function copyFile(
-        string $workspace,
-        string $serverDirectory,
-        string $relativePath,
+        DeploymentOperation $operation,
     ): void {
-        $relativePath = $this->validateRelativePath($relativePath);
+        $relativePath = $this->validateRelativePath(
+            $operation->relativePath,
+        );
 
-        $source = $workspace . '/' . $relativePath;
-        $target = $serverDirectory . '/' . $relativePath;
-
-        if (!is_file($source)) {
+        if (!is_file($operation->source)) {
             throw new RuntimeException(
                 "Workspace file does not exist: {$relativePath}"
             );
         }
 
-        $parent = dirname($target);
+        $parent = dirname($operation->destination);
 
         if (
             !is_dir($parent)
@@ -76,13 +54,13 @@ final class DeploymentExecutor
             );
         }
 
-        if (is_dir($target)) {
+        if (is_dir($operation->destination)) {
             throw new RuntimeException(
                 "Target path is a directory: {$relativePath}"
             );
         }
 
-        if (!copy($source, $target)) {
+        if (!copy($operation->source, $operation->destination)) {
             throw new RuntimeException(
                 "Unable to deploy file: {$relativePath}"
             );
@@ -100,8 +78,8 @@ final class DeploymentExecutor
         $normalized = str_replace('\\', '/', $relativePath);
 
         if (
-            str_starts_with($normalized, '/') ||
-            preg_match('/^[A-Za-z]:\//', $normalized) === 1
+            str_starts_with($normalized, '/')
+            || preg_match('/^[A-Za-z]:\//', $normalized) === 1
         ) {
             throw new RuntimeException(
                 "Deployment path must be relative: {$relativePath}"
@@ -119,18 +97,5 @@ final class DeploymentExecutor
         }
 
         return $normalized;
-    }
-
-    private function normalizeDirectory(string $directory): string
-    {
-        $realPath = realpath($directory);
-
-        if ($realPath === false) {
-            throw new RuntimeException(
-                "Unable to resolve directory: {$directory}"
-            );
-        }
-
-        return rtrim($realPath, DIRECTORY_SEPARATOR);
     }
 }

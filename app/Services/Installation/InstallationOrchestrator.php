@@ -79,23 +79,37 @@ final class InstallationOrchestrator
 
             $backupDirectory = $this->createBackupDirectory();
 
-            foreach ($plan->overwrite as $relativePath) {
-                $backups[$relativePath] = $this->backupManager->backup(
+            foreach ($plan->operations as $operation) {
+                if ($operation->policy !== DeploymentPolicy::OVERWRITE) {
+                    continue;
+                }
+
+                $backups[$operation->relativePath] = $this->backupManager->backup(
                     $serverDirectory,
-                    $relativePath,
+                    $operation->relativePath,
                     $backupDirectory,
                 );
             }
 
-            $created = $this->executor->execute(
-                $packageRoot,
-                $serverDirectory,
-                $plan,
-            );
+            $created = $this->executor->execute($plan);
+
+            $createdPaths = [];
+            $overwrittenPaths = [];
+
+            foreach ($plan->operations as $operation) {
+                if ($operation->policy === DeploymentPolicy::CREATE_ONLY) {
+                    $createdPaths[] = $operation->relativePath;
+                    continue;
+                }
+
+                if ($operation->policy === DeploymentPolicy::OVERWRITE) {
+                    $overwrittenPaths[] = $operation->relativePath;
+                }
+            }
 
             return new InstallationResult(
-                created: $plan->create,
-                overwritten: $plan->overwrite,
+                created: $createdPaths,
+                overwritten: $overwrittenPaths,
                 backedUp: array_keys($backups),
             );
         } catch (Throwable $exception) {

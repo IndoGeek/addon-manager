@@ -1,11 +1,16 @@
 <?php
 
+require __DIR__ . '/../../app/Services/Deployment/DeploymentPolicy.php';
+require __DIR__ . '/../../app/Services/Deployment/DeploymentOperation.php';
 require __DIR__ . '/../../app/Services/Deployment/DeploymentPlan.php';
-require __DIR__ . '/../../app/Services/Deployment/DeploymentExecutor.php';
 require __DIR__ . '/../../app/Services/Deployment/DeploymentException.php';
+require __DIR__ . '/../../app/Services/Deployment/DeploymentExecutor.php';
 
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentException;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentExecutor;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentOperation;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentPlan;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentPolicy;
 
 $root = sys_get_temp_dir() . '/modpack-executor-test-' . bin2hex(random_bytes(8));
 $workspace = $root . '/workspace';
@@ -26,37 +31,42 @@ file_put_contents(
 );
 
 file_put_contents(
+    $workspace . '/mods/existing-mod.jar',
+    'replacement mod contents',
+);
+
+file_put_contents(
     $server . '/mods/existing-mod.jar',
     'old mod contents',
 );
 
-$plan = new DeploymentPlan(
-    create: [
-        'config/example.json',
-        'mods/new-mod.jar',
-    ],
-    overwrite: [
-        'mods/existing-mod.jar',
-    ],
-);
+$plan = new DeploymentPlan([
+    new DeploymentOperation(
+        relativePath: 'config/example.json',
+        source: $workspace . '/config/example.json',
+        destination: $server . '/config/example.json',
+        policy: DeploymentPolicy::CREATE_ONLY,
+    ),
+
+    new DeploymentOperation(
+        relativePath: 'mods/new-mod.jar',
+        source: $workspace . '/mods/new-mod.jar',
+        destination: $server . '/mods/new-mod.jar',
+        policy: DeploymentPolicy::CREATE_ONLY,
+    ),
+
+    new DeploymentOperation(
+        relativePath: 'mods/existing-mod.jar',
+        source: $workspace . '/mods/existing-mod.jar',
+        destination: $server . '/mods/existing-mod.jar',
+        policy: DeploymentPolicy::OVERWRITE,
+    ),
+]);
 
 $executor = new DeploymentExecutor();
 
 try {
-    /*
-     * Create a workspace version of the existing file so the
-     * overwrite operation has a source.
-     */
-    file_put_contents(
-        $workspace . '/mods/existing-mod.jar',
-        'replacement mod contents',
-    );
-
-    $deployed = $executor->execute(
-        $workspace,
-        $server,
-        $plan,
-    );
+    $deployed = $executor->execute($plan);
 
     if ($deployed !== [
         'config/example.json',
@@ -100,6 +110,9 @@ try {
         );
     }
 
+    echo "PASS: new files deployed\n";
+    echo "PASS: planned overwrite deployed\n";
+
     $unsafePaths = [
         '../escape.txt',
         'nested/../../escape.txt',
@@ -111,14 +124,23 @@ try {
         $rejected = false;
 
         try {
+            $unsafeSource = $workspace . '/safe.txt';
+            $unsafeDestination = $server . '/' . $unsafePath;
+
+            file_put_contents($unsafeSource, 'unsafe test');
+
             $executor->execute(
-                $workspace,
-                $server,
-                new DeploymentPlan(
-                    [$unsafePath],
-                    [],
-                ),
+                new DeploymentPlan([
+                    new DeploymentOperation(
+                        relativePath: $unsafePath,
+                        source: $unsafeSource,
+                        destination: $unsafeDestination,
+                        policy: DeploymentPolicy::CREATE_ONLY,
+                    ),
+                ]),
             );
+        } catch (DeploymentException) {
+            $rejected = true;
         } catch (RuntimeException) {
             $rejected = true;
         }
@@ -132,8 +154,6 @@ try {
         echo "PASS: unsafe path rejected: {$unsafePath}\n";
     }
 
-    echo "PASS: new files deployed\n";
-    echo "PASS: planned overwrite deployed\n";
     echo "7/7 tests passed.\n";
 } finally {
     if (is_dir($root)) {

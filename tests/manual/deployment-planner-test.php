@@ -1,6 +1,7 @@
 <?php
 
 require __DIR__ . '/../../app/Services/Deployment/DeploymentPolicy.php';
+require __DIR__ . '/../../app/Services/Deployment/DeploymentOperation.php';
 require __DIR__ . '/../../app/Services/Deployment/DeploymentPlan.php';
 require __DIR__ . '/../../app/Services/Deployment/DeploymentPlanner.php';
 
@@ -43,78 +44,106 @@ file_put_contents(
 $planner = new DeploymentPlanner();
 
 try {
-    
-	$expectedCreate = [
-	    'config/example.json',
-	    'mods/new-mod.jar',
-	];
+    $expectedCreate = [
+        'config/example.json',
+        'mods/new-mod.jar',
+    ];
 
-	$expectedOverwrite = [
-	    'server.properties',
-	];
+    $expectedOverwrite = [
+        'server.properties',
+    ];
 
-	$createOnlyPlan = $planner->plan(
-	    $workspace,
-	    $server,
-	    DeploymentPolicy::CREATE_ONLY,
-	);
+    $createOnlyPlan = $planner->plan(
+        $workspace,
+        $server,
+        DeploymentPolicy::CREATE_ONLY,
+    );
 
-	if ($createOnlyPlan->create !== $expectedCreate) {
-	    throw new RuntimeException(
-		'CREATE_ONLY create plan does not match expected files.'
-	    );
-	}
+    if ($createOnlyPlan->createCount() !== 2) {
+        throw new RuntimeException(
+            'CREATE_ONLY create count is incorrect.'
+        );
+    }
 
-	if ($createOnlyPlan->overwrite !== []) {
-	    throw new RuntimeException(
-		'CREATE_ONLY must never schedule overwrites.'
-	    );
-	}
+    if ($createOnlyPlan->overwriteCount() !== 0) {
+        throw new RuntimeException(
+            'CREATE_ONLY must never schedule overwrites.'
+        );
+    }
 
-	echo "PASS: CREATE_ONLY prevents overwrites\n";
+    $createOnlyPaths = array_map(
+        static fn ($operation): string => $operation->relativePath,
+        $createOnlyPlan->operations,
+    );
 
-	$skipExistingPlan = $planner->plan(
-	    $workspace,
-	    $server,
-	    DeploymentPolicy::SKIP_EXISTING,
-	);
+    if ($createOnlyPaths !== $expectedCreate) {
+        throw new RuntimeException(
+            'CREATE_ONLY operation paths do not match expected files.'
+        );
+    }
 
-	if ($skipExistingPlan->create !== $expectedCreate) {
-	    throw new RuntimeException(
-		'SKIP_EXISTING create plan does not match expected files.'
-	    );
-	}
+    echo "PASS: CREATE_ONLY prevents overwrites\n";
 
-	if ($skipExistingPlan->overwrite !== []) {
-	    throw new RuntimeException(
-		'SKIP_EXISTING must never schedule overwrites.'
-	    );
-	}
+    $skipExistingPlan = $planner->plan(
+        $workspace,
+        $server,
+        DeploymentPolicy::SKIP_EXISTING,
+    );
 
-	echo "PASS: SKIP_EXISTING prevents overwrites\n";
+    if ($skipExistingPlan->createCount() !== 2) {
+        throw new RuntimeException(
+            'SKIP_EXISTING create count is incorrect.'
+        );
+    }
 
-	$overwritePlan = $planner->plan(
-	    $workspace,
-	    $server,
-	    DeploymentPolicy::OVERWRITE,
-	);
+    if ($skipExistingPlan->overwriteCount() !== 0) {
+        throw new RuntimeException(
+            'SKIP_EXISTING must never schedule overwrites.'
+        );
+    }
 
-	if ($overwritePlan->create !== $expectedCreate) {
-	    throw new RuntimeException(
-		'OVERWRITE create plan does not match expected files.'
-	    );
-	}
+    echo "PASS: SKIP_EXISTING prevents overwrites\n";
 
-	if ($overwritePlan->overwrite !== $expectedOverwrite) {
-	    throw new RuntimeException(
-		'OVERWRITE plan does not match expected files.'
-	    );
-	}
+    $overwritePlan = $planner->plan(
+        $workspace,
+        $server,
+        DeploymentPolicy::OVERWRITE,
+    );
 
-	echo "PASS: OVERWRITE identifies files for replacement\n";
+    if ($overwritePlan->createCount() !== 2) {
+        throw new RuntimeException(
+            'OVERWRITE create count is incorrect.'
+        );
+    }
 
-	echo "3/3 policy tests passed.\n";
-	
+    if ($overwritePlan->overwriteCount() !== 1) {
+        throw new RuntimeException(
+            'OVERWRITE overwrite count is incorrect.'
+        );
+    }
+
+    $overwriteOperations = array_filter(
+        $overwritePlan->operations,
+        static fn ($operation): bool =>
+            $operation->policy === DeploymentPolicy::OVERWRITE,
+    );
+
+    $overwritePaths = array_map(
+        static fn ($operation): string => $operation->relativePath,
+        $overwriteOperations,
+    );
+
+    $overwritePaths = array_values($overwritePaths);
+
+    if ($overwritePaths !== $expectedOverwrite) {
+        throw new RuntimeException(
+            'OVERWRITE operation paths do not match expected files.'
+        );
+    }
+
+    echo "PASS: OVERWRITE identifies files for replacement\n";
+
+    echo "3/3 policy tests passed.\n";
 } finally {
     if (is_dir($root)) {
         $iterator = new RecursiveIteratorIterator(

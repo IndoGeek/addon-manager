@@ -18,11 +18,11 @@ final class InstallationPreview
 
     public function createdCount(): int
     {
-        return count($this->plan->create);
+        return $this->plan->createCount();
     }
 
     public function overwrittenCount(): int
     {
-        return count($this->plan->overwrite);
+        return $this->plan->overwriteCount();
     }
 }

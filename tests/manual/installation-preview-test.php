@@ -8,6 +8,7 @@ require __DIR__ . '/../../app/Services/Installation/InstallationPreview.php';
 require __DIR__ . '/../../app/Services/Installation/PackageLayout.php';
 require __DIR__ . '/../../app/Services/Installation/PackageRootResolver.php';
 require __DIR__ . '/../../app/Services/Deployment/DeploymentPolicy.php';
+require __DIR__ . '/../../app/Services/Deployment/DeploymentOperation.php';
 require __DIR__ . '/../../app/Services/Deployment/DeploymentPlan.php';
 require __DIR__ . '/../../app/Services/Deployment/DeploymentPlanner.php';
 require __DIR__ . '/../../app/Services/Deployment/BackupManager.php';

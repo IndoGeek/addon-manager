@@ -27,8 +27,7 @@ final class DeploymentPlanner
             );
         }
 
-        $create = [];
-        $overwrite = [];
+        $operations = [];
 
         $iterator = new \RecursiveIteratorIterator(
             new \RecursiveDirectoryIterator(
@@ -53,23 +52,37 @@ final class DeploymentPlanner
             $targetPath = $serverDirectory . '/' . $relativePath;
 
             if (is_file($targetPath)) {
-                if ($policy === DeploymentPolicy::OVERWRITE) {
-                    $overwrite[] = $relativePath;
+                if ($policy !== DeploymentPolicy::OVERWRITE) {
+                    continue;
                 }
+
+                $operations[] = new DeploymentOperation(
+                    relativePath: $relativePath,
+                    source: $sourcePath,
+                    destination: $targetPath,
+                    policy: DeploymentPolicy::OVERWRITE,
+                );
 
                 continue;
             }
 
-            $create[] = $relativePath;
+            $operations[] = new DeploymentOperation(
+                relativePath: $relativePath,
+                source: $sourcePath,
+                destination: $targetPath,
+                policy: DeploymentPolicy::CREATE_ONLY,
+            );
         }
 
-        sort($create);
-        sort($overwrite);
-
-        return new DeploymentPlan(
-            create: $create,
-            overwrite: $overwrite,
+        usort(
+            $operations,
+            static fn (
+                DeploymentOperation $a,
+                DeploymentOperation $b,
+            ): int => strcmp($a->relativePath, $b->relativePath),
         );
+
+        return new DeploymentPlan($operations);
     }
 
     private function normalizeDirectory(string $directory): string
