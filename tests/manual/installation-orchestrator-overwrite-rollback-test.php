@@ -14,6 +14,7 @@ require __DIR__ . '/../../app/Services/Installation/InstallationOrchestrator.php
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\BackupManager;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentExecutor;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentPlanner;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentPolicy;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\InstallationOrchestrator;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\InstallationWorkspace;
 
@@ -29,30 +30,35 @@ mkdir($server, 0750, true);
 mkdir($temp, 0750, true);
 
 /*
- * Existing files that will be overwritten.
+ * This file already exists and will be overwritten.
  */
 file_put_contents(
     $server . '/aaa-existing.txt',
     'ORIGINAL AAA',
 );
 
-file_put_contents(
-    $server . '/blocked',
-    'ORIGINAL BLOCKED',
-);
+/*
+ * This directory will intentionally conflict with a file
+ * in the archive.
+ *
+ * The planner sees it as a "create" target because it is
+ * not a file. The executor will encounter it after the
+ * successful overwrite of aaa-existing.txt and fail.
+ */
+mkdir($server . '/blocked', 0750, true);
 
 /*
- * Archive contains replacements.
+ * Build the test archive.
  *
- * aaa-existing.txt sorts first and will be overwritten successfully.
- *
- * blocked is turned into a directory on the server after planning,
- * forcing the executor to fail when it reaches that path.
+ * aaa-existing.txt sorts before blocked, so the overwrite
+ * happens first. blocked then causes deployment to fail.
  */
 $zip = new ZipArchive();
 
 if ($zip->open($archive, ZipArchive::CREATE) !== true) {
-    throw new RuntimeException('Unable to create test archive.');
+    throw new RuntimeException(
+        'Unable to create test archive.'
+    );
 }
 
 $zip->addFromString(
@@ -62,46 +68,15 @@ $zip->addFromString(
 
 $zip->addFromString(
     'blocked',
-    'REPLACED BLOCKED',
+    'THIS MUST NOT BE DEPLOYED',
 );
 
 $zip->close();
 
-/*
- * We need the planner to see both paths as existing files,
- * but we need "blocked" to become a directory before execution.
- *
- * To do that we first create a normal installation workspace
- * and construct the deployment plan manually.
- */
-
 $workspaceManager = new InstallationWorkspace($temp);
-
-$workspace = $workspaceManager->prepare($archive);
-
 $planner = new DeploymentPlanner();
 $backupManager = new BackupManager();
 $executor = new DeploymentExecutor();
-
-$plan = $planner->plan(
-    $workspace,
-    $server,
-);
-
-if ($plan->overwrite !== [
-    'aaa-existing.txt',
-    'blocked',
-]) {
-    throw new RuntimeException(
-        'Unexpected overwrite plan.'
-    );
-}
-
-/*
- * Replace the "blocked" server file with a directory AFTER planning.
- */
-unlink($server . '/blocked');
-mkdir($server . '/blocked', 0750, true);
 
 $orchestrator = new InstallationOrchestrator(
     workspaceManager: $workspaceManager,
@@ -111,42 +86,18 @@ $orchestrator = new InstallationOrchestrator(
     temporaryRoot: $temp,
 );
 
-/*
- * The orchestrator will create its own workspace, so recreate
- * the original server state needed by the orchestrator.
- */
-rmdir($server . '/blocked');
-
-file_put_contents(
-    $server . '/blocked',
-    'ORIGINAL BLOCKED',
-);
-
 $failed = false;
 
 try {
-    /*
-     * Force the failure using a custom executor subclass is not
-     * possible because the orchestrator requires the concrete
-     * DeploymentExecutor class.
-     *
-     * Instead, the test uses a server filesystem conflict that
-     * occurs after planning inside the orchestrator by creating
-     * a directory through the target path.
-     */
-    unlink($server . '/blocked');
-    mkdir($server . '/blocked', 0750, true);
-
     $orchestrator->install(
         archivePath: $archive,
         serverDirectory: $server,
+        policy: DeploymentPolicy::OVERWRITE,
     );
 } catch (Throwable $exception) {
     $failed = true;
 
     echo "PASS: overwrite deployment failure detected\n";
-} finally {
-    $workspaceManager->cleanup($workspace);
 }
 
 try {
@@ -157,7 +108,9 @@ try {
     }
 
     /*
-     * The first overwrite must have been rolled back.
+     * The overwrite happened before the failure.
+     *
+     * Rollback must restore the original contents.
      */
     if (
         file_get_contents(
@@ -169,18 +122,18 @@ try {
         );
     }
 
-    echo "PASS: first overwritten file restored\n";
+    echo "PASS: overwritten file restored\n";
 
     /*
-     * The blocked directory must still exist.
+     * The conflicting directory must remain untouched.
      */
     if (!is_dir($server . '/blocked')) {
         throw new RuntimeException(
-            'Rollback damaged the blocked directory.'
+            'Rollback damaged the pre-existing blocked directory.'
         );
     }
 
-    echo "PASS: conflicting target preserved\n";
+    echo "PASS: conflicting directory preserved\n";
 
     echo "3/3 overwrite rollback tests passed.\n";
 } finally {
