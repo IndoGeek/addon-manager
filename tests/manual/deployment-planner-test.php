@@ -1,9 +1,11 @@
 <?php
 
+require __DIR__ . '/../../app/Services/Deployment/DeploymentPolicy.php';
 require __DIR__ . '/../../app/Services/Deployment/DeploymentPlan.php';
 require __DIR__ . '/../../app/Services/Deployment/DeploymentPlanner.php';
 
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentPlanner;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentPolicy;
 
 $root = sys_get_temp_dir() . '/modpack-deployment-test-' . bin2hex(random_bytes(8));
 $workspace = $root . '/workspace';
@@ -33,45 +35,86 @@ file_put_contents(
     'old mod',
 );
 
+file_put_contents(
+    $server . '/server.properties',
+    'motd=Old Pack',
+);
+
 $planner = new DeploymentPlanner();
 
 try {
-    $plan = $planner->plan($workspace, $server);
+    
+	$expectedCreate = [
+	    'config/example.json',
+	    'mods/new-mod.jar',
+	];
 
-    $expectedCreate = [
-        'config/example.json',
-        'mods/new-mod.jar',
-        'server.properties',
-    ];
+	$expectedOverwrite = [
+	    'server.properties',
+	];
 
-    $expectedOverwrite = [
-        'mods/existing-mod.jar',
-    ];
+	$createOnlyPlan = $planner->plan(
+	    $workspace,
+	    $server,
+	    DeploymentPolicy::CREATE_ONLY,
+	);
 
-    /*
-     * existing-mod.jar is not in the workspace, so it must NOT appear
-     * in the overwrite list.
-     *
-     * Instead, the planner should only classify files that actually
-     * exist in the workspace.
-     */
-    $expectedOverwrite = [];
+	if ($createOnlyPlan->create !== $expectedCreate) {
+	    throw new RuntimeException(
+		'CREATE_ONLY create plan does not match expected files.'
+	    );
+	}
 
-    if ($plan->create !== $expectedCreate) {
-        throw new RuntimeException(
-            'Create plan does not match expected files.'
-        );
-    }
+	if ($createOnlyPlan->overwrite !== []) {
+	    throw new RuntimeException(
+		'CREATE_ONLY must never schedule overwrites.'
+	    );
+	}
 
-    if ($plan->overwrite !== $expectedOverwrite) {
-        throw new RuntimeException(
-            'Overwrite plan does not match expected files.'
-        );
-    }
+	echo "PASS: CREATE_ONLY prevents overwrites\n";
 
-    echo "PASS: new files identified correctly\n";
-    echo "PASS: existing server-only files left untouched\n";
-    echo "2/2 tests passed.\n";
+	$skipExistingPlan = $planner->plan(
+	    $workspace,
+	    $server,
+	    DeploymentPolicy::SKIP_EXISTING,
+	);
+
+	if ($skipExistingPlan->create !== $expectedCreate) {
+	    throw new RuntimeException(
+		'SKIP_EXISTING create plan does not match expected files.'
+	    );
+	}
+
+	if ($skipExistingPlan->overwrite !== []) {
+	    throw new RuntimeException(
+		'SKIP_EXISTING must never schedule overwrites.'
+	    );
+	}
+
+	echo "PASS: SKIP_EXISTING prevents overwrites\n";
+
+	$overwritePlan = $planner->plan(
+	    $workspace,
+	    $server,
+	    DeploymentPolicy::OVERWRITE,
+	);
+
+	if ($overwritePlan->create !== $expectedCreate) {
+	    throw new RuntimeException(
+		'OVERWRITE create plan does not match expected files.'
+	    );
+	}
+
+	if ($overwritePlan->overwrite !== $expectedOverwrite) {
+	    throw new RuntimeException(
+		'OVERWRITE plan does not match expected files.'
+	    );
+	}
+
+	echo "PASS: OVERWRITE identifies files for replacement\n";
+
+	echo "3/3 policy tests passed.\n";
+	
 } finally {
     if (is_dir($root)) {
         $iterator = new RecursiveIteratorIterator(

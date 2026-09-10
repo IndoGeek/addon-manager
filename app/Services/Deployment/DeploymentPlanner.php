@@ -10,6 +10,7 @@ final class DeploymentPlanner
     public function plan(
         string $workspace,
         string $serverDirectory,
+        DeploymentPolicy $policy = DeploymentPolicy::CREATE_ONLY,
     ): DeploymentPlan {
         $workspace = $this->normalizeDirectory($workspace);
         $serverDirectory = $this->normalizeDirectory($serverDirectory);
@@ -52,10 +53,14 @@ final class DeploymentPlanner
             $targetPath = $serverDirectory . '/' . $relativePath;
 
             if (is_file($targetPath)) {
-                $overwrite[] = $relativePath;
-            } else {
-                $create[] = $relativePath;
+                if ($policy === DeploymentPolicy::OVERWRITE) {
+                    $overwrite[] = $relativePath;
+                }
+
+                continue;
             }
+
+            $create[] = $relativePath;
         }
 
         sort($create);
