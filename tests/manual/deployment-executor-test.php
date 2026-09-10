@@ -1,5 +1,7 @@
 <?php
 
+require __DIR__ . '/../../app/Services/Server/ServerFileTarget.php';
+require __DIR__ . '/../../app/Services/Server/LocalFilesystemServerFileTarget.php';
 require __DIR__ . '/../../app/Services/Deployment/DeploymentPolicy.php';
 require __DIR__ . '/../../app/Services/Deployment/DeploymentOperation.php';
 require __DIR__ . '/../../app/Services/Deployment/DeploymentPlan.php';
@@ -11,6 +13,7 @@ use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployme
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentOperation;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentPlan;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentPolicy;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Server\LocalFilesystemServerFileTarget;
 
 $root = sys_get_temp_dir() . '/modpack-executor-test-' . bin2hex(random_bytes(8));
 $workspace = $root . '/workspace';
@@ -44,26 +47,30 @@ $plan = new DeploymentPlan([
     new DeploymentOperation(
         relativePath: 'config/example.json',
         source: $workspace . '/config/example.json',
-        destination: $server . '/config/example.json',
+        destination: '',
         policy: DeploymentPolicy::CREATE_ONLY,
     ),
 
     new DeploymentOperation(
         relativePath: 'mods/new-mod.jar',
         source: $workspace . '/mods/new-mod.jar',
-        destination: $server . '/mods/new-mod.jar',
+        destination: '',
         policy: DeploymentPolicy::CREATE_ONLY,
     ),
 
     new DeploymentOperation(
         relativePath: 'mods/existing-mod.jar',
         source: $workspace . '/mods/existing-mod.jar',
-        destination: $server . '/mods/existing-mod.jar',
+        destination: '',
         policy: DeploymentPolicy::OVERWRITE,
     ),
 ]);
 
-$executor = new DeploymentExecutor();
+$serverTarget = new LocalFilesystemServerFileTarget($server);
+
+$executor = new DeploymentExecutor(
+    $serverTarget,
+);
 
 try {
     $deployed = $executor->execute($plan);
@@ -125,7 +132,6 @@ try {
 
         try {
             $unsafeSource = $workspace . '/safe.txt';
-            $unsafeDestination = $server . '/' . $unsafePath;
 
             file_put_contents($unsafeSource, 'unsafe test');
 
@@ -134,7 +140,7 @@ try {
                     new DeploymentOperation(
                         relativePath: $unsafePath,
                         source: $unsafeSource,
-                        destination: $unsafeDestination,
+                        destination: '',
                         policy: DeploymentPolicy::CREATE_ONLY,
                     ),
                 ]),

@@ -59,7 +59,9 @@ $planner = new DeploymentPlanner();
 $backupManager = new BackupManager(
     new LocalFilesystemServerFileTarget($server),
 );
-$executor = new DeploymentExecutor();
+$executor = new DeploymentExecutor(
+    new LocalFilesystemServerFileTarget($server),
+);
 $packageRootResolver = new PackageRootResolver();
 
 $orchestrator = new InstallationOrchestrator(

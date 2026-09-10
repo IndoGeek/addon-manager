@@ -2,11 +2,17 @@
 
 namespace Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment;
 
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Server\ServerFileTarget;
 use RuntimeException;
 use Throwable;
 
 final class DeploymentExecutor
 {
+    public function __construct(
+        private readonly ServerFileTarget $serverFileTarget,
+    ) {
+    }
+
     public function execute(
         DeploymentPlan $plan,
     ): array {
@@ -14,7 +20,7 @@ final class DeploymentExecutor
 
         try {
             foreach ($plan->operations as $operation) {
-                $this->copyFile($operation);
+                $this->deployFile($operation);
 
                 $deployed[] = $operation->relativePath;
             }
@@ -29,7 +35,7 @@ final class DeploymentExecutor
         return $deployed;
     }
 
-    private function copyFile(
+    private function deployFile(
         DeploymentOperation $operation,
     ): void {
         $relativePath = $this->validateRelativePath(
@@ -42,29 +48,24 @@ final class DeploymentExecutor
             );
         }
 
-        $parent = dirname($operation->destination);
+        $contents = file_get_contents($operation->source);
 
-        if (
-            !is_dir($parent)
-            && !mkdir($parent, 0750, true)
-            && !is_dir($parent)
-        ) {
+        if ($contents === false) {
             throw new RuntimeException(
-                "Unable to create target directory: {$parent}"
+                "Unable to read workspace file: {$relativePath}"
             );
         }
 
-        if (is_dir($operation->destination)) {
+        if ($this->serverFileTarget->isDirectory($relativePath)) {
             throw new RuntimeException(
                 "Target path is a directory: {$relativePath}"
             );
         }
 
-        if (!copy($operation->source, $operation->destination)) {
-            throw new RuntimeException(
-                "Unable to deploy file: {$relativePath}"
-            );
-        }
+        $this->serverFileTarget->write(
+            $relativePath,
+            $contents,
+        );
     }
 
     private function validateRelativePath(string $relativePath): string
