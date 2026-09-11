@@ -120,7 +120,6 @@ final class InstallationOrchestrator
             }
 
             $rollbackErrors = $this->rollback(
-                $serverDirectory,
                 $backups,
                 $created,
             );
@@ -173,48 +172,45 @@ final class InstallationOrchestrator
     }
 
     private function rollback(
-        string $serverDirectory,
         array $backups,
         array $created,
     ): array {
         $errors = [];
 
         foreach (array_reverse($created) as $relativePath) {
-            $target = rtrim(
-                realpath($serverDirectory),
-                DIRECTORY_SEPARATOR,
-            ) . '/' . $relativePath;
-
-            if (is_file($target) && !unlink($target)) {
+            try {
+                if (
+                    $this->serverFileTarget->exists($relativePath)
+                    && !$this->serverFileTarget->isDirectory($relativePath)
+                ) {
+                    $this->serverFileTarget->delete($relativePath);
+                }
+            } catch (Throwable $exception) {
                 $errors[] = "Unable to remove created file: {$relativePath}";
             }
         }
 
         foreach ($backups as $relativePath => $backupPath) {
-            $serverRoot = realpath($serverDirectory);
+            try {
+                $contents = file_get_contents($backupPath);
 
-            if ($serverRoot === false) {
-                $errors[] = 'Unable to resolve the server directory during rollback.';
-                break;
-            }
+                if ($contents === false) {
+                    throw new RuntimeException(
+                        "Unable to read backup: {$relativePath}"
+                    );
+                }
 
-            $target = rtrim(
-                $serverRoot,
-                DIRECTORY_SEPARATOR,
-            ) . '/' . $relativePath;
+                $parent = dirname($relativePath);
 
-            $parent = dirname($target);
+                if ($parent !== '.') {
+                    $this->serverFileTarget->ensureDirectory($parent);
+                }
 
-            if (
-                !is_dir($parent)
-                && !mkdir($parent, 0750, true)
-                && !is_dir($parent)
-            ) {
-                $errors[] = "Unable to recreate target directory: {$relativePath}";
-                continue;
-            }
-
-            if (!copy($backupPath, $target)) {
+                $this->serverFileTarget->write(
+                    $relativePath,
+                    $contents,
+                );
+            } catch (Throwable $exception) {
                 $errors[] = "Unable to restore backup: {$relativePath}";
             }
         }
