@@ -75,7 +75,6 @@ $orchestrator = new InstallationOrchestrator(
 try {
     $result = $orchestrator->install(
         archivePath: $archive,
-        serverDirectory: $server,
         layout: PackageLayout::OVERRIDES,
     );
 

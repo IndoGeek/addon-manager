@@ -88,7 +88,6 @@ $orchestrator = new InstallationOrchestrator(
 
 $preview = $orchestrator->preview(
     archivePath: $archive,
-    serverDirectory: $server,
 );
 
 if (!$preview instanceof InstallationPreview) {

@@ -1,85 +1,79 @@
 <?php
 
-use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Server\LocalFilesystemServerFileTarget;
-use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Server\ServerFileTarget;
+require __DIR__ . '/../../app/Services/Server/ServerFileTarget.php';
+require __DIR__ . '/../../app/Services/Server/LocalFilesystemServerFileTarget.php';
+require __DIR__ . '/../../app/Services/Server/ServerIdentity.php';
+require __DIR__ . '/../../app/Services/Server/ServerFileTargetFactory.php';
+
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Server\ServerFileTargetFactory;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Server\ServerIdentity;
 
-require_once __DIR__ . '/../../app/Services/Server/ServerFileTarget.php';
-require_once __DIR__ . '/../../app/Services/Server/ServerIdentity.php';
-require_once __DIR__ . '/../../app/Services/Server/LocalFilesystemServerFileTarget.php';
-require_once __DIR__ . '/../../app/Services/Server/ServerFileTargetFactory.php';
+$root = sys_get_temp_dir()
+    . '/modpack-server-factory-'
+    . bin2hex(random_bytes(8));
 
-$serverRoot = sys_get_temp_dir() . '/modpack-installer-factory-test-' . bin2hex(random_bytes(4));
+$serverA = $root . '/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+$serverB = $root . '/bbbbbbbb-bbbb-4bbb-9bbb-bbbbbbbbbbbb';
 
-if (!mkdir($serverRoot, 0750, true) && !is_dir($serverRoot)) {
-    throw new RuntimeException('Unable to create temporary server root.');
+mkdir($serverA, 0750, true);
+mkdir($serverB, 0750, true);
+
+file_put_contents($serverA . '/server.txt', 'server-a');
+file_put_contents($serverB . '/server.txt', 'server-b');
+
+$factory = new ServerFileTargetFactory($root);
+
+$identityA = ServerIdentity::fromUuid(
+    'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+);
+
+$identityB = ServerIdentity::fromUuid(
+    'bbbbbbbb-bbbb-4bbb-9bbb-bbbbbbbbbbbb',
+);
+
+$targetA = $factory->forServer($identityA);
+$targetB = $factory->forServer($identityB);
+
+if ($targetA->read('server.txt') !== 'server-a') {
+    throw new RuntimeException(
+        'Server A target resolved to the wrong server root.'
+    );
 }
 
-try {
-    $server = ServerIdentity::fromUuid(
-        '539fdca8-4a08-4551-a8d2-8ee5475b50d9'
+echo "PASS: server A target resolved correctly\n";
+
+if ($targetB->read('server.txt') !== 'server-b') {
+    throw new RuntimeException(
+        'Server B target resolved to the wrong server root.'
     );
+}
 
-    $factory = new ServerFileTargetFactory($serverRoot);
+echo "PASS: server B target resolved correctly\n";
 
-    $target = $factory->forServer($server);
-
-    if (!$target instanceof ServerFileTarget) {
-        throw new RuntimeException(
-            'Factory did not return a ServerFileTarget.'
-        );
-    }
-
-    echo "✓ Factory returns ServerFileTarget\n";
-
-    if (!$target instanceof LocalFilesystemServerFileTarget) {
-        throw new RuntimeException(
-            'Factory did not return LocalFilesystemServerFileTarget.'
-        );
-    }
-
-    echo "✓ Factory returns local filesystem target\n";
-
-    $target->write('factory-test.txt', 'factory works');
-
-    if (!$target->exists('factory-test.txt')) {
-        throw new RuntimeException(
-            'Factory-created target cannot access the server root.'
-        );
-    }
-
-    echo "✓ Factory-created target works\n";
-
-    if ($target->read('factory-test.txt') !== 'factory works') {
-        throw new RuntimeException(
-            'Factory-created target returned unexpected file contents.'
-        );
-    }
-
-    echo "✓ Factory-created target reads files correctly\n";
-
-    $secondServer = ServerIdentity::fromUuid(
-        '123e4567-e89b-42d3-a456-426614174000'
+if ($targetA->read('server.txt') === $targetB->read('server.txt')) {
+    throw new RuntimeException(
+        'Different server identities resolved to the same target.'
     );
+}
 
-    $secondTarget = $factory->forServer($secondServer);
+echo "PASS: server targets are isolated\n";
 
-    if (!$secondTarget instanceof ServerFileTarget) {
-        throw new RuntimeException(
-            'Factory failed for a second server identity.'
-        );
-    }
+$iterator = new RecursiveIteratorIterator(
+    new RecursiveDirectoryIterator(
+        $root,
+        FilesystemIterator::SKIP_DOTS,
+    ),
+    RecursiveIteratorIterator::CHILD_FIRST,
+);
 
-    echo "✓ Factory accepts server identities\n";
-
-    echo "\n5/5 tests passed.\n";
-} finally {
-    if (is_file($serverRoot . '/factory-test.txt')) {
-        unlink($serverRoot . '/factory-test.txt');
-    }
-
-    if (is_dir($serverRoot)) {
-        rmdir($serverRoot);
+foreach ($iterator as $item) {
+    if ($item->isDir()) {
+        rmdir($item->getPathname());
+    } else {
+        unlink($item->getPathname());
     }
 }
+
+rmdir($root);
+
+echo "3/3 server factory tests passed.\n";

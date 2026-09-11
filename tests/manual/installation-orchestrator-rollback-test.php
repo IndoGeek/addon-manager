@@ -98,7 +98,6 @@ $failed = false;
 try {
     $orchestrator->install(
         archivePath: $archive,
-        serverDirectory: $server,
     );
 } catch (Throwable $exception) {
     $failed = true;

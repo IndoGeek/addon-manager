@@ -108,7 +108,6 @@ $failed = false;
 try {
     $orchestrator->install(
         archivePath: $archive,
-        serverDirectory: $server,
         policy: DeploymentPolicy::OVERWRITE,
     );
 } catch (Throwable $exception) {

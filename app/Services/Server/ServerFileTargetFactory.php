@@ -5,11 +5,14 @@ namespace Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Se
 final class ServerFileTargetFactory
 {
     public function __construct(
-        private readonly string $localRoot,
-    ) {}
+        private readonly string $volumesRoot,
+    ) {
+    }
 
     public function forServer(ServerIdentity $server): ServerFileTarget
     {
-        return new LocalFilesystemServerFileTarget($this->localRoot);
+        return new LocalFilesystemServerFileTarget(
+            $this->volumesRoot . '/' . $server->uuid,
+        );
     }
 }

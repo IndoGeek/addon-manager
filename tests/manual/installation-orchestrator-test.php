@@ -80,7 +80,6 @@ $orchestrator = new InstallationOrchestrator(
 try {
     $result = $orchestrator->install(
         archivePath: $archive,
-        serverDirectory: $server,
     );
 
     if (!$result instanceof \Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\InstallationResult) {

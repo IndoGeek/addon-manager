@@ -1,0 +1,7 @@
+Navigation:
+  Routes:
+    - Name: Modpack Installer
+      Path: /modpack-installer
+      Type: server
+      Component: ModpackInstaller
+      AdminOnly: 'false'

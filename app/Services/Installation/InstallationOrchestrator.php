@@ -26,7 +26,6 @@ final class InstallationOrchestrator
 
     public function preview(
         string $archivePath,
-        string $serverDirectory,
         DeploymentPolicy $policy = DeploymentPolicy::OVERWRITE,
         PackageLayout $layout = PackageLayout::DIRECT,
     ): InstallationPreview {
@@ -55,7 +54,6 @@ final class InstallationOrchestrator
 
     public function install(
         string $archivePath,
-        string $serverDirectory,
         DeploymentPolicy $policy = DeploymentPolicy::OVERWRITE,
         PackageLayout $layout = PackageLayout::DIRECT,
     ): InstallationResult {

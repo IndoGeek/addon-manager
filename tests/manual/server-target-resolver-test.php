@@ -22,10 +22,17 @@ if (!mkdir($serverRoot, 0750, true) && !is_dir($serverRoot)) {
     );
 }
 
+$serverAUuid = '539fdca8-4a08-4551-a8d2-8ee5475b50d9';
+$serverBUuid = '123e4567-e89b-42d3-a456-426614174000';
+
+$serverADirectory = $serverRoot . '/' . $serverAUuid;
+$serverBDirectory = $serverRoot . '/' . $serverBUuid;
+
+mkdir($serverADirectory, 0750, true);
+mkdir($serverBDirectory, 0750, true);
+
 try {
-    $server = ServerIdentity::fromUuid(
-        '539fdca8-4a08-4551-a8d2-8ee5475b50d9'
-    );
+    $server = ServerIdentity::fromUuid($serverAUuid);
 
     $factory = new ServerFileTargetFactory($serverRoot);
     $resolver = new ServerTargetResolver($factory);
@@ -66,9 +73,7 @@ try {
 
     echo "✓ Resolver-created target reads correctly\n";
 
-    $secondServer = ServerIdentity::fromUuid(
-        '123e4567-e89b-42d3-a456-426614174000'
-    );
+    $secondServer = ServerIdentity::fromUuid($serverBUuid);
 
     $secondTarget = $resolver->resolve($secondServer);
 
@@ -82,10 +87,16 @@ try {
 
     echo "\n5/5 tests passed.\n";
 } finally {
-    $testFile = $serverRoot . '/resolver-test.txt';
+    foreach ([$serverADirectory, $serverBDirectory] as $directory) {
+        $testFile = $directory . '/resolver-test.txt';
 
-    if (is_file($testFile)) {
-        unlink($testFile);
+        if (is_file($testFile)) {
+            unlink($testFile);
+        }
+
+        if (is_dir($directory)) {
+            rmdir($directory);
+        }
     }
 
     if (is_dir($serverRoot)) {
