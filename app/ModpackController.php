@@ -215,8 +215,16 @@ final class ModpackController extends Controller
     private function serverTarget(
         ServerIdentity $identity,
     ): ServerFileTarget {
+        $volumesRoot = self::VOLUMES_ROOT;
+
+        $envRoot = env('MODPACK_INSTALLER_SERVER_ROOT');
+
+        if (is_string($envRoot) && $envRoot !== '') {
+            $volumesRoot = $envRoot;
+        }
+
         $factory = new ServerFileTargetFactory(
-            self::VOLUMES_ROOT,
+            $volumesRoot,
         );
 
         $resolver = new ServerTargetResolver($factory);
