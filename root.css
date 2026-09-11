@@ -169,3 +169,144 @@
 .text-green-100 { color: var(--green-100); }
 .text-yellow-800 { color: var(--yellow-800); }
 .text-primary-300 { color: var(--primary-300); }
+.modpackinstaller-page {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 24px;
+}
+
+.modpackinstaller-header {
+    margin-bottom: 24px;
+}
+
+.modpackinstaller-header h2 {
+    margin-bottom: 8px;
+}
+
+.modpackinstaller-header p {
+    margin: 0;
+    opacity: 0.75;
+}
+
+.modpackinstaller-card {
+    padding: 24px;
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.15);
+}
+
+.modpackinstaller-card h3 {
+    margin-top: 0;
+}
+
+.modpackinstaller-form {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 20px;
+}
+
+.modpackinstaller-form label {
+    font-weight: 600;
+}
+
+.modpackinstaller-form input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 10px 12px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.2);
+    color: inherit;
+}
+
+.modpackinstaller-form button {
+    align-self: flex-start;
+    margin-top: 4px;
+    padding: 10px 16px;
+    border: 0;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.modpackinstaller-form button:disabled {
+    cursor: wait;
+    opacity: 0.6;
+}
+
+.modpackinstaller-error {
+    margin-top: 16px;
+    padding: 12px;
+    border-radius: 6px;
+    background: rgba(180, 40, 40, 0.2);
+}
+
+.modpackinstaller-metadata {
+    margin-top: 24px;
+    padding-top: 24px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.modpackinstaller-metadata-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+}
+
+.modpackinstaller-metadata-header h3 {
+    margin-bottom: 8px;
+}
+
+.modpackinstaller-metadata-header p {
+    margin: 0;
+    opacity: 0.75;
+}
+
+.modpackinstaller-icon {
+    width: 64px;
+    height: 64px;
+    border-radius: 8px;
+    object-fit: cover;
+}
+
+.modpackinstaller-details {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-top: 24px;
+}
+
+.modpackinstaller-details > div {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 12px;
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.12);
+}
+
+.modpackinstaller-details span,
+.modpackinstaller-source span {
+    font-size: 0.85rem;
+    opacity: 0.65;
+}
+
+.modpackinstaller-source {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 16px;
+}
+
+.modpackinstaller-source code {
+    word-break: break-all;
+}
+
+@media (max-width: 700px) {
+    .modpackinstaller-page {
+        padding: 16px;
+    }
+
+    .modpackinstaller-details {
+        grid-template-columns: 1fr;
+    }
+}
