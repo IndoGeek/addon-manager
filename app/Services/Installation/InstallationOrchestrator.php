@@ -5,6 +5,7 @@ namespace Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\In
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\BackupManager;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentException;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentExecutor;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Server\ServerFileTarget;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentPlanner;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentPolicy;
 use RuntimeException;
@@ -19,6 +20,7 @@ final class InstallationOrchestrator
         private readonly DeploymentExecutor $executor,
         private readonly string $temporaryRoot,
         private readonly PackageRootResolver $packageRootResolver,
+        private readonly ServerFileTarget $serverFileTarget,
     ) {
     }
 
@@ -40,7 +42,6 @@ final class InstallationOrchestrator
 
             $plan = $this->planner->plan(
                 $packageRoot,
-                $serverDirectory,
                 $policy,
             );
 
@@ -73,7 +74,6 @@ final class InstallationOrchestrator
 
             $plan = $this->planner->plan(
                 $packageRoot,
-                $serverDirectory,
                 $policy,
             );
 

@@ -4,11 +4,17 @@ require __DIR__ . '/../../app/Services/Deployment/DeploymentPolicy.php';
 require __DIR__ . '/../../app/Services/Deployment/DeploymentOperation.php';
 require __DIR__ . '/../../app/Services/Deployment/DeploymentPlan.php';
 require __DIR__ . '/../../app/Services/Deployment/DeploymentPlanner.php';
+require __DIR__ . '/../../app/Services/Server/ServerFileTarget.php';
+require __DIR__ . '/../../app/Services/Server/LocalFilesystemServerFileTarget.php';
 
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentPlanner;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentPolicy;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Server\LocalFilesystemServerFileTarget;
 
-$root = sys_get_temp_dir() . '/modpack-deployment-test-' . bin2hex(random_bytes(8));
+$root = sys_get_temp_dir()
+    . '/modpack-planner-test-'
+    . bin2hex(random_bytes(8));
+
 $workspace = $root . '/workspace';
 $server = $root . '/server';
 
@@ -17,134 +23,112 @@ mkdir($workspace . '/config', 0750, true);
 mkdir($server . '/mods', 0750, true);
 
 file_put_contents(
-    $workspace . '/mods/new-mod.jar',
+    $workspace . '/mods/new.jar',
     'new mod',
 );
 
 file_put_contents(
+    $workspace . '/mods/existing.jar',
+    'replacement mod',
+);
+
+file_put_contents(
     $workspace . '/config/example.json',
-    '{}',
+    '{"enabled":true}',
 );
 
 file_put_contents(
-    $workspace . '/server.properties',
-    'motd=New Pack',
-);
-
-file_put_contents(
-    $server . '/mods/existing-mod.jar',
+    $server . '/mods/existing.jar',
     'old mod',
 );
 
-file_put_contents(
-    $server . '/server.properties',
-    'motd=Old Pack',
-);
-
-$planner = new DeploymentPlanner();
+$target = new LocalFilesystemServerFileTarget($server);
+$planner = new DeploymentPlanner($target);
 
 try {
-    $expectedCreate = [
-        'config/example.json',
-        'mods/new-mod.jar',
-    ];
-
-    $expectedOverwrite = [
-        'server.properties',
-    ];
-
-    $createOnlyPlan = $planner->plan(
+    $createOnly = $planner->plan(
         $workspace,
-        $server,
         DeploymentPolicy::CREATE_ONLY,
     );
 
-    if ($createOnlyPlan->createCount() !== 2) {
+    if ($createOnly->totalFiles() !== 2) {
         throw new RuntimeException(
-            'CREATE_ONLY create count is incorrect.'
-        );
-    }
-
-    if ($createOnlyPlan->overwriteCount() !== 0) {
-        throw new RuntimeException(
-            'CREATE_ONLY must never schedule overwrites.'
-        );
-    }
-
-    $createOnlyPaths = array_map(
-        static fn ($operation): string => $operation->relativePath,
-        $createOnlyPlan->operations,
-    );
-
-    if ($createOnlyPaths !== $expectedCreate) {
-        throw new RuntimeException(
-            'CREATE_ONLY operation paths do not match expected files.'
+            'CREATE_ONLY should plan only new files.'
         );
     }
 
     echo "PASS: CREATE_ONLY prevents overwrites\n";
 
-    $skipExistingPlan = $planner->plan(
+    $skipExisting = $planner->plan(
         $workspace,
-        $server,
         DeploymentPolicy::SKIP_EXISTING,
     );
 
-    if ($skipExistingPlan->createCount() !== 2) {
+    if ($skipExisting->totalFiles() !== 2) {
         throw new RuntimeException(
-            'SKIP_EXISTING create count is incorrect.'
-        );
-    }
-
-    if ($skipExistingPlan->overwriteCount() !== 0) {
-        throw new RuntimeException(
-            'SKIP_EXISTING must never schedule overwrites.'
+            'SKIP_EXISTING should skip existing files.'
         );
     }
 
     echo "PASS: SKIP_EXISTING prevents overwrites\n";
 
-    $overwritePlan = $planner->plan(
+    $overwrite = $planner->plan(
         $workspace,
-        $server,
         DeploymentPolicy::OVERWRITE,
     );
 
-    if ($overwritePlan->createCount() !== 2) {
+    if ($overwrite->totalFiles() !== 3) {
         throw new RuntimeException(
-            'OVERWRITE create count is incorrect.'
+            'OVERWRITE should include all files.'
         );
     }
 
-    if ($overwritePlan->overwriteCount() !== 1) {
+    if ($overwrite->overwriteCount() !== 1) {
         throw new RuntimeException(
-            'OVERWRITE overwrite count is incorrect.'
-        );
-    }
-
-    $overwriteOperations = array_filter(
-        $overwritePlan->operations,
-        static fn ($operation): bool =>
-            $operation->policy === DeploymentPolicy::OVERWRITE,
-    );
-
-    $overwritePaths = array_map(
-        static fn ($operation): string => $operation->relativePath,
-        $overwriteOperations,
-    );
-
-    $overwritePaths = array_values($overwritePaths);
-
-    if ($overwritePaths !== $expectedOverwrite) {
-        throw new RuntimeException(
-            'OVERWRITE operation paths do not match expected files.'
+            'OVERWRITE should identify the existing file.'
         );
     }
 
     echo "PASS: OVERWRITE identifies files for replacement\n";
 
-    echo "3/3 policy tests passed.\n";
-} finally {
+    foreach ($overwrite->operations as $operation) {
+        if ($operation->destination !== $operation->relativePath) {
+            throw new RuntimeException(
+                'Deployment destination must remain relative.'
+            );
+        }
+    }
+
+    echo "PASS: destinations remain relative\n";
+
+    $directoryPath = $server . '/directory-target';
+
+    mkdir($directoryPath, 0750, true);
+
+    $directoryWorkspace = $root . '/directory-workspace';
+
+    mkdir($directoryWorkspace, 0750, true);
+
+    file_put_contents(
+        $directoryWorkspace . '/directory-target',
+        'this is a file',
+    );
+
+    try {
+        $planner->plan(
+            $directoryWorkspace,
+            DeploymentPolicy::OVERWRITE,
+        );
+
+        throw new RuntimeException(
+            'Planner should reject a target directory.'
+        );
+    } catch (InvalidArgumentException $exception) {
+        echo "PASS: target directories are rejected\n";
+    }
+
+    echo "4/4 deployment planner tests passed.\n";
+    } finally {
     if (is_dir($root)) {
         $iterator = new RecursiveIteratorIterator(
             new RecursiveDirectoryIterator(

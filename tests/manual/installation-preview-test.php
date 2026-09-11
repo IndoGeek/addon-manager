@@ -64,12 +64,15 @@ $zip->addFromString(
 $zip->close();
 
 $workspaceManager = new InstallationWorkspace($temp);
-$planner = new DeploymentPlanner();
+$serverFileTarget = new LocalFilesystemServerFileTarget($server);
+$planner = new DeploymentPlanner(
+    $serverFileTarget,
+);
 $backupManager = new BackupManager(
-    new LocalFilesystemServerFileTarget($server),
+    $serverFileTarget,
 );
 $executor = new DeploymentExecutor(
-    new LocalFilesystemServerFileTarget($server),
+    $serverFileTarget,
 );
 $packageRootResolver = new PackageRootResolver();
 
@@ -80,6 +83,7 @@ $orchestrator = new InstallationOrchestrator(
     backupManager: $backupManager,
     executor: $executor,
     temporaryRoot: $temp,
+    serverFileTarget: $serverFileTarget,
 );
 
 $preview = $orchestrator->preview(

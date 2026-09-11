@@ -2,28 +2,25 @@
 
 namespace Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment;
 
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Server\ServerFileTarget;
 use InvalidArgumentException;
-use RuntimeException;
 
 final class DeploymentPlanner
 {
+    public function __construct(
+        private readonly ServerFileTarget $serverFileTarget,
+    ) {
+    }
+
     public function plan(
         string $workspace,
-        string $serverDirectory,
         DeploymentPolicy $policy = DeploymentPolicy::CREATE_ONLY,
     ): DeploymentPlan {
-        $workspace = $this->normalizeDirectory($workspace);
-        $serverDirectory = $this->normalizeDirectory($serverDirectory);
+        $workspace = $this->normalizeWorkspace($workspace);
 
         if (!is_dir($workspace)) {
             throw new InvalidArgumentException(
                 'The installation workspace does not exist.'
-            );
-        }
-
-        if (!is_dir($serverDirectory)) {
-            throw new InvalidArgumentException(
-                'The target server directory does not exist.'
             );
         }
 
@@ -49,9 +46,13 @@ final class DeploymentPlanner
                 DIRECTORY_SEPARATOR,
             );
 
-            $targetPath = $serverDirectory . '/' . $relativePath;
+            if ($this->serverFileTarget->exists($relativePath)) {
+                if ($this->serverFileTarget->isDirectory($relativePath)) {
+                    throw new InvalidArgumentException(
+                        "Target path is a directory: {$relativePath}"
+                    );
+                }
 
-            if (is_file($targetPath)) {
                 if ($policy !== DeploymentPolicy::OVERWRITE) {
                     continue;
                 }
@@ -59,7 +60,7 @@ final class DeploymentPlanner
                 $operations[] = new DeploymentOperation(
                     relativePath: $relativePath,
                     source: $sourcePath,
-                    destination: $targetPath,
+                    destination: $relativePath,
                     policy: DeploymentPolicy::OVERWRITE,
                 );
 
@@ -69,7 +70,7 @@ final class DeploymentPlanner
             $operations[] = new DeploymentOperation(
                 relativePath: $relativePath,
                 source: $sourcePath,
-                destination: $targetPath,
+                destination: $relativePath,
                 policy: DeploymentPolicy::CREATE_ONLY,
             );
         }
@@ -85,13 +86,13 @@ final class DeploymentPlanner
         return new DeploymentPlan($operations);
     }
 
-    private function normalizeDirectory(string $directory): string
+    private function normalizeWorkspace(string $workspace): string
     {
-        $realPath = realpath($directory);
+        $realPath = realpath($workspace);
 
         if ($realPath === false) {
-            throw new RuntimeException(
-                "Unable to resolve directory: {$directory}"
+            throw new InvalidArgumentException(
+                "Unable to resolve workspace: {$workspace}"
             );
         }
 
