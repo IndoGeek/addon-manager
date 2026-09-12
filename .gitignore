@@ -18,3 +18,6 @@
 
 # PHP CS Fixer configuration
 /.php-cs-fixer.php
+
+# Binaries
+*.sh
