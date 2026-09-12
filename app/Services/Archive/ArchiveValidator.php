@@ -48,6 +48,7 @@ final class ArchiveValidator
             }
 
             $totalExtractedBytes = 0;
+            $seenNames = [];
 
             for ($index = 0; $index < $zip->numFiles; $index++) {
                 $entry = $zip->statIndex($index);
@@ -63,6 +64,16 @@ final class ArchiveValidator
                 $this->validatePath($name);
                 $this->validateEntryType($zip, $index, $name);
 
+                $canonicalName = rtrim($name, '/');
+
+                if (isset($seenNames[$canonicalName])) {
+                    throw new InvalidArgumentException(
+                        "Archive contains duplicate entries: {$name}"
+                    );
+                }
+
+                $seenNames[$canonicalName] = str_ends_with($name, '/');
+
                 $size = (int) ($entry['size'] ?? 0);
 
                 if ($size < 0 || $size > $this->maxEntryBytes) {
@@ -77,6 +88,30 @@ final class ArchiveValidator
                     throw new InvalidArgumentException(
                         'Archive exceeds the maximum allowed extracted size.'
                     );
+                }
+            }
+
+            // A file entry must never be a directory prefix of another entry,
+            // otherwise extraction would have to clobber a directory to place
+            // the file.
+            foreach ($seenNames as $canonicalName => $isDirectory) {
+                if ($isDirectory) {
+                    continue;
+                }
+
+                $parent = dirname($canonicalName);
+
+                while ($parent !== '.' && $parent !== '/') {
+                    if (
+                        isset($seenNames[$parent])
+                        && $seenNames[$parent] === false
+                    ) {
+                        throw new InvalidArgumentException(
+                            "Archive contains conflicting file and directory entries."
+                        );
+                    }
+
+                    $parent = dirname($parent);
                 }
             }
         } finally {
@@ -142,10 +177,17 @@ final class ArchiveValidator
         ) {
             $fileType = ($attributes >> 16) & 0xF000;
 
-            // 0120000 = symbolic link in Unix file mode bits.
-            if ($fileType === 0xA000) {
+            $specialTypes = [
+                0x1000, // 0100000 named pipe (FIFO)
+                0x2000, // 0200000 character device
+                0x6000, // 0600000 block device
+                0xA000, // 0120000 symbolic link
+                0xC000, // 0140000 socket
+            ];
+
+            if (in_array($fileType, $specialTypes, true)) {
                 throw new InvalidArgumentException(
-                    "Archive contains a symbolic link: {$name}"
+                    "Archive contains an unsupported entry type: {$name}"
                 );
             }
         }

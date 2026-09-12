@@ -46,6 +46,18 @@ final class DeploymentPlanner
                 DIRECTORY_SEPARATOR,
             );
 
+            if ($relativePath === '') {
+                throw new InvalidArgumentException(
+                    'The workspace contains an invalid empty path.'
+                );
+            }
+
+            if (!str_starts_with($sourcePath, $workspace . DIRECTORY_SEPARATOR)) {
+                throw new InvalidArgumentException(
+                    "Workspace file escapes the extraction root: {$relativePath}"
+                );
+            }
+
             if ($this->serverFileTarget->exists($relativePath)) {
                 if ($this->serverFileTarget->isDirectory($relativePath)) {
                     throw new InvalidArgumentException(

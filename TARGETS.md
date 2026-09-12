@@ -77,6 +77,11 @@ php -r 'var_dump(env("MODPACK_INSTALLER_SERVER_TARGET", "local"));'
 - The file tree is currently read and written only through the installer's
   operations (`exists` / `isDirectory` / `read` / `write` / `delete` /
   `ensureDirectory`); there is no full recursive directory listing surface.
-- Concurrency is not controlled. Two simultaneous installs targeting the same
-  server are not coordinated, so installs are safest when run one at a time
-  per server.
+- Concurrent installs for the **same** server are serialized by a per-server
+  filesystem lock (see ARCHITECTURE.md): while one install is
+  running, a second one for that server fails fast with `503 Service
+  Unavailable`. Stale locks are reclaimed automatically after their timeout.
+  Different servers never contend with each other.
+- The downloader's live success/redirect path is validated at deployment time
+  rather than in the hermetic test suite (the downloader never routes to
+  private hosts, including the loopback interface, by design).

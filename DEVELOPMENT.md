@@ -33,3 +33,30 @@ Examples:
     fix: prevent archive path traversal
     test: add provider resolution tests
     chore: initialize project foundation
+
+## Testing
+
+Manual integration tests live in `tests/manual/` and run against the real
+classes (no Pterodactyl boot required). Each file prints `PASS` per
+assertion and exits non-zero on the first failure:
+
+```bash
+for f in tests/manual/*-test.php; do php "$f"; done
+```
+
+Standalone (non-extension) tests may `require` the classes directly;
+tests that exercise the extension namespace register an `spl_autoload_register`
+callback that maps `Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\...`
+onto `app/`. Network-dependent assertions (the downloader's live success and
+redirect path, see ARCHITECTURE.md) are deferred to deployment-time
+validation rather than the hermetic suite.
+
+## Verification checklist
+
+Run every meaningful change against:
+
+1. All manual tests (`tests/manual/*-test.php`).
+2. `php -l` on every tracked `.php` file.
+3. `git diff --check` (whitespace hygiene).
+4. `./sync.sh` and `blueprint -build` (deployment compatibility), then lint
+   the deployed controller under `/var/www/pterodactyl/.blueprint/dev`.

@@ -222,22 +222,27 @@ final class InstallationOrchestrator
             return;
         }
 
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator(
-                $directory,
-                \FilesystemIterator::SKIP_DOTS,
-            ),
-            \RecursiveIteratorIterator::CHILD_FIRST,
-        );
+        try {
+            $iterator = new \RecursiveIteratorIterator(
+                new \RecursiveDirectoryIterator(
+                    $directory,
+                    \FilesystemIterator::SKIP_DOTS,
+                ),
+                \RecursiveIteratorIterator::CHILD_FIRST,
+            );
 
-        foreach ($iterator as $item) {
-            if ($item->isDir()) {
-                rmdir($item->getPathname());
-            } else {
-                unlink($item->getPathname());
+            foreach ($iterator as $item) {
+                if ($item->isDir()) {
+                    @rmdir($item->getPathname());
+                } else {
+                    @unlink($item->getPathname());
+                }
             }
-        }
 
-        rmdir($directory);
+            @rmdir($directory);
+        } catch (\Throwable) {
+            // Backup cleanup is best-effort and must never mask the
+            // installation outcome.
+        }
     }
 }

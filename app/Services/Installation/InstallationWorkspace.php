@@ -43,22 +43,27 @@ final class InstallationWorkspace
             return;
         }
 
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator(
-                $workspace,
-                \FilesystemIterator::SKIP_DOTS,
-            ),
-            \RecursiveIteratorIterator::CHILD_FIRST,
-        );
+        try {
+            $iterator = new \RecursiveIteratorIterator(
+                new \RecursiveDirectoryIterator(
+                    $workspace,
+                    \FilesystemIterator::SKIP_DOTS,
+                ),
+                \RecursiveIteratorIterator::CHILD_FIRST,
+            );
 
-        foreach ($iterator as $item) {
-            if ($item->isDir()) {
-                rmdir($item->getPathname());
-            } else {
-                unlink($item->getPathname());
+            foreach ($iterator as $item) {
+                if ($item->isDir()) {
+                    @rmdir($item->getPathname());
+                } else {
+                    @unlink($item->getPathname());
+                }
             }
-        }
 
-        rmdir($workspace);
+            @rmdir($workspace);
+        } catch (\Throwable) {
+            // Cleanup is best-effort and must never mask the installation
+            // outcome, even when a workspace file is unreadable.
+        }
     }
 }

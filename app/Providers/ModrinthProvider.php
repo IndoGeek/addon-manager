@@ -176,6 +176,12 @@ final class ModrinthProvider implements ModpackProvider
                 self::API_BASE . '/project/' . rawurlencode($identifier),
             );
 
+            if (!is_array($response->body)) {
+                throw new InvalidArgumentException(
+                    'The Modrinth project response was invalid.',
+                );
+            }
+
             return $response->body;
         } catch (ProviderHttpException $exception) {
             if ($exception->status() === 404) {
@@ -209,6 +215,20 @@ final class ModrinthProvider implements ModpackProvider
             $response = $this->http->get(
                 self::API_BASE . '/project/' . rawurlencode($identifier) . '/version',
             );
+
+            if (!is_array($response->body)) {
+                throw new InvalidArgumentException(
+                    'The Modrinth version list was invalid.',
+                );
+            }
+
+            foreach ($response->body as $entry) {
+                if (!is_array($entry)) {
+                    throw new InvalidArgumentException(
+                        'The Modrinth version list was invalid.',
+                    );
+                }
+            }
 
             return $response->body;
         } catch (ProviderHttpException $exception) {

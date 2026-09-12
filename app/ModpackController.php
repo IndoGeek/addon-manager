@@ -16,6 +16,8 @@ use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployme
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentPlanner;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentPolicy;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Download\DownloadManager;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\InstallationLock;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\InstallationLockedException;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\InstallationOrchestrator;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\InstallationWorkspace;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\PackageLayout;
@@ -39,11 +41,19 @@ final class ModpackController extends Controller
 
     public function metadata(Request $request): JsonResponse
     {
-        $source = trim((string) $request->query('source'));
+        $sourceValue = $request->query('source');
 
-        if ($source === '') {
+        if (!is_string($sourceValue) || trim($sourceValue) === '') {
             return response()->json([
                 'error' => 'The source parameter is required.',
+            ], 422);
+        }
+
+        $source = trim($sourceValue);
+
+        if (strlen($source) > 1024) {
+            return response()->json([
+                'error' => 'The source parameter is too long.',
             ], 422);
         }
 
@@ -147,8 +157,15 @@ final class ModpackController extends Controller
     ): JsonResponse {
         $provider = null;
         $package = null;
+        $lock = null;
+        $token = bin2hex(random_bytes(16));
 
         try {
+            $lock = $this->installationLock()->acquire(
+                $this->lockKey($server),
+                $token,
+            );
+
             [$source, $policy, $layout] =
                 $this->installationOptions($request);
 
@@ -174,6 +191,10 @@ final class ModpackController extends Controller
                     'backed_up' => $result->backupCount(),
                 ],
             ]);
+        } catch (InstallationLockedException $exception) {
+            return response()->json([
+                'error' => 'Another installation is already running for this server. Please wait and try again.',
+            ], 503);
         } catch (InvalidArgumentException $exception) {
             return response()->json([
                 'error' => $exception->getMessage(),
@@ -197,6 +218,15 @@ final class ModpackController extends Controller
                 'error' => 'Unable to install the modpack.',
             ], 500);
         } finally {
+            if ($lock !== null) {
+                try {
+                    $this->installationLock()->release($lock, $token);
+                } catch (Throwable) {
+                    // Releasing the lock must never mask the installation
+                    // outcome; stale-lock handling covers leftover locks.
+                }
+            }
+
             if ($provider !== null && $package !== null) {
                 $provider->cleanup($package);
             }
@@ -206,20 +236,34 @@ final class ModpackController extends Controller
     private function installationOptions(
         Request $request,
     ): array {
-        $source = trim((string) $request->input('source'));
+        $sourceValue = $request->input('source');
 
-        if ($source === '') {
+        if (!is_string($sourceValue) || trim($sourceValue) === '') {
             throw new InvalidArgumentException(
                 'The source parameter is required.',
             );
         }
 
-        $policy = DeploymentPolicy::tryFrom(
-            (string) $request->input(
-                'policy',
-                DeploymentPolicy::OVERWRITE->value,
-            ),
+        $source = trim($sourceValue);
+
+        if (strlen($source) > 1024) {
+            throw new InvalidArgumentException(
+                'The source parameter is too long.',
+            );
+        }
+
+        $policyValue = $request->input(
+            'policy',
+            DeploymentPolicy::OVERWRITE->value,
         );
+
+        if (!is_string($policyValue)) {
+            throw new InvalidArgumentException(
+                'Invalid installation policy.',
+            );
+        }
+
+        $policy = DeploymentPolicy::tryFrom($policyValue);
 
         if ($policy === null) {
             throw new InvalidArgumentException(
@@ -227,12 +271,18 @@ final class ModpackController extends Controller
             );
         }
 
-        $layout = PackageLayout::tryFrom(
-            (string) $request->input(
-                'layout',
-                PackageLayout::DIRECT->value,
-            ),
+        $layoutValue = $request->input(
+            'layout',
+            PackageLayout::DIRECT->value,
         );
+
+        if (!is_string($layoutValue)) {
+            throw new InvalidArgumentException(
+                'Invalid package layout.',
+            );
+        }
+
+        $layout = PackageLayout::tryFrom($layoutValue);
 
         if ($layout === null) {
             throw new InvalidArgumentException(
@@ -247,6 +297,25 @@ final class ModpackController extends Controller
         ];
     }
 
+    private function installationLock(): InstallationLock
+    {
+        return new InstallationLock(
+            temporaryRoot: self::TEMPORARY_ROOT,
+        );
+    }
+
+    private function lockKey(
+        Server $server,
+    ): string {
+        $uuid = (string) $server->uuid;
+
+        if ($uuid === '') {
+            return 'server-' . md5((string) $server->id);
+        }
+
+        return $uuid;
+    }
+
     private function providerRegistry(): ModpackProviderRegistry
     {
         $http = $this->providerHttp();
@@ -255,19 +324,29 @@ final class ModpackController extends Controller
             new MockModpackProvider(),
             new ModrinthProvider(
                 http: $http,
-                downloader: new DownloadManager(
-                    self::TEMPORARY_ROOT,
-                ),
+                downloader: $this->downloader(),
                 temporaryRoot: self::TEMPORARY_ROOT,
             ),
             new CurseForgeProvider(
                 http: $http,
-                downloader: new DownloadManager(
-                    self::TEMPORARY_ROOT,
-                ),
+                downloader: $this->downloader(),
                 apiKey: $this->curseForgeApiKey(),
             ),
         ]);
+    }
+
+    private function downloader(): DownloadManager
+    {
+        $maxMb = env('MODPACK_INSTALLER_MAX_DOWNLOAD_MB');
+
+        if (is_numeric($maxMb) && (int) $maxMb > 0) {
+            return new DownloadManager(
+                self::TEMPORARY_ROOT,
+                (int) $maxMb * 1024 * 1024,
+            );
+        }
+
+        return new DownloadManager(self::TEMPORARY_ROOT);
     }
 
     private function providerHttp(): ProviderHttpClient

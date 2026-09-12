@@ -10,6 +10,7 @@ final class DeploymentExecutor
 {
     public function __construct(
         private readonly ServerFileTarget $serverFileTarget,
+        private readonly int $maxFileBytes = 1_073_741_824,
     ) {
     }
 
@@ -45,6 +46,17 @@ final class DeploymentExecutor
         if (!is_file($operation->source)) {
             throw new RuntimeException(
                 "Workspace file does not exist: {$relativePath}"
+            );
+        }
+
+        $sourceBytes = filesize($operation->source);
+
+        if (
+            $sourceBytes === false
+            || $sourceBytes > $this->maxFileBytes
+        ) {
+            throw new RuntimeException(
+                "Workspace file is too large: {$relativePath}"
             );
         }
 

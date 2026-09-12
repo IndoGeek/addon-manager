@@ -120,12 +120,14 @@ export default () => {
     const selectLayout = (value: string) => {
         setLayout(value);
         setPreview(null);
+        setResult(null);
         setStatus(null);
     };
 
     const selectPolicy = (value: string) => {
         setPolicy(value);
         setPreview(null);
+        setResult(null);
         setStatus(null);
     };
 

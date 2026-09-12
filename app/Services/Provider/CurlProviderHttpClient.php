@@ -10,6 +10,13 @@ final class CurlProviderHttpClient implements ProviderHttpClient
 
     private const REQUEST_TIMEOUT = 30;
 
+    private const MAX_RESPONSE_BYTES = 8_388_608;
+
+    public function __construct(
+        private readonly int $maxResponseBytes = self::MAX_RESPONSE_BYTES,
+    ) {
+    }
+
     public function get(
         string $url,
         array $query = [],
@@ -40,11 +47,27 @@ final class CurlProviderHttpClient implements ProviderHttpClient
                 CURLOPT_SSL_VERIFYHOST => 2,
                 CURLOPT_USERAGENT => 'ModpackInstaller/1.0',
                 CURLOPT_HTTPHEADER => $headers,
+                CURLOPT_NOPROGRESS => false,
+                CURLOPT_XFERINFOFUNCTION => function (
+                    $curl,
+                    float $downloadSize,
+                    float $downloaded,
+                    float $uploadSize,
+                    float $uploaded,
+                ): int {
+                    return $downloaded > $this->maxResponseBytes ? 1 : 0;
+                },
             ]);
 
             $raw = curl_exec($curl);
 
             if ($raw === false) {
+                if (curl_errno($curl) === CURLE_ABORTED_BY_CALLBACK) {
+                    throw new ProviderHttpException(
+                        'The provider response was too large.',
+                    );
+                }
+
                 throw new ProviderHttpException(
                     'Unable to reach the provider.',
                 );

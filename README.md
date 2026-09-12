@@ -41,6 +41,40 @@ Pterodactyl Wings daemon for the server's node.
 See [TARGETS.md](TARGETS.md) for both modes, configuration, security
 considerations, and current limitations.
 
+## Security & Reliability
+
+Untrusted input (modpack sources, provider payloads, downloaded archives,
+client-supplied options) is validated at every boundary:
+
+- **Downloads** reject non-HTTP schemes, credentialed URLs, and any host that
+  resolves to a private, loopback, link-local, multicast, CGNAT, NAT64,
+  benchmark, or documentation address. Redirect hops are resolved and
+  re-validated individually, capped at 5, and each hop's body is size-bounded.
+- **Archives** must be valid ZIPs with relative-only, normalized paths. Path
+  traversal, absolute paths, drive letters, NUL bytes, backslashes, duplicate
+  entries, file/directory collisions, symbolic links and special device
+  entries are rejected before extraction; entropy (archive size, per-entry
+  size, extracted size, entry count) is bounded both before and during
+  extraction.
+- **Deployment** only writes through the server file target with re-validated
+  relative paths, honors backup/rollback for every overwrite, and never lets
+  best-effort cleanup mask an installation outcome.
+- **Concurrency** is serialized per server with a filesystem lock: second
+  installs for the same server receive `503 Service Unavailable` while one is
+  already running, and stale locks are reclaimed automatically.
+- **Errors** returned to clients are static and never include hosts, URLs,
+  tokens, or the CurseForge API key.
+
+Optional knobs (server-side environment variables):
+
+| Variable                            | Meaning                                        |
+|-------------------------------------|------------------------------------------------|
+| `MODPACK_INSTALLER_MAX_DOWNLOAD_MB` | Max modpack download in MiB (default 2048).   |
+| `CURSEFORGE_API_KEY`                | CurseForge API key (`Providers` document).    |
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the hardening model and
+[DEVELOPMENT.md](DEVELOPMENT.md) for how the guarantees are verified.
+
 ## License
 
 TBD

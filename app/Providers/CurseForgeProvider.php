@@ -174,7 +174,13 @@ final class CurseForgeProvider implements ModpackProvider
                 headers: $this->headers(),
             );
 
-            return $response->body['data'] ?? [];
+            if (!is_array($response->body) || !is_array($response->body['data'] ?? null)) {
+                throw new InvalidArgumentException(
+                    'The CurseForge project response was invalid.',
+                );
+            }
+
+            return $response->body['data'];
         } catch (ProviderHttpException $exception) {
             throw $this->requestFailure($exception);
         }
@@ -195,9 +201,23 @@ final class CurseForgeProvider implements ModpackProvider
                 headers: $this->headers(),
             );
 
-            $files = $response->body['data'] ?? [];
+            if (!is_array($response->body) || !is_array($response->body['data'] ?? null)) {
+                throw new InvalidArgumentException(
+                    'The CurseForge file list was invalid.',
+                );
+            }
 
-            return is_array($files) ? $files : [];
+            $files = $response->body['data'];
+
+            foreach ($files as $file) {
+                if (!is_array($file)) {
+                    throw new InvalidArgumentException(
+                        'The CurseForge file list was invalid.',
+                    );
+                }
+            }
+
+            return $files;
         } catch (ProviderHttpException $exception) {
             throw $this->requestFailure($exception);
         }

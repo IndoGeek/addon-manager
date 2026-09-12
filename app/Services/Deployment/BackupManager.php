@@ -55,6 +55,24 @@ final class BackupManager
             );
         }
 
+        $backupReal = realpath($backupDirectory);
+        $parentReal = realpath($parent) ?: $parent;
+
+        if (
+            $backupReal === false
+            || (
+                $parentReal !== $backupReal
+                && !str_starts_with(
+                    $parentReal,
+                    $backupReal . DIRECTORY_SEPARATOR,
+                )
+            )
+        ) {
+            throw new RuntimeException(
+                'Backup target escapes the backup directory.'
+            );
+        }
+
         $contents = $this->serverFileTarget->read($relativePath);
 
         if (file_put_contents($backupPath, $contents) === false) {

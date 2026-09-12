@@ -46,6 +46,16 @@ final class PackageRootResolver
             );
         }
 
+        // Defense in depth: the resolved directory must stay inside the
+        // extraction workspace even if archive validation changes later.
+        if (
+            !str_starts_with($resolved, $workspace . DIRECTORY_SEPARATOR)
+        ) {
+            throw new RuntimeException(
+                'The overrides directory escapes the installation workspace.'
+            );
+        }
+
         return $resolved;
     }
 }
