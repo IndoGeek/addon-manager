@@ -17,6 +17,8 @@ final class CurseForgeProvider implements ModpackProvider
 
     private const API_KEY_HEADER = 'X-Api-Key';
 
+    private const MODPACK_CLASS_ID = 4471;
+
     /**
      * @var array<string, true> Paths of temporary archives awaiting cleanup.
      */
@@ -31,20 +33,26 @@ final class CurseForgeProvider implements ModpackProvider
 
     public function supports(string $source): bool
     {
-        return preg_match('/^curseforge:\/\/\d+$/', trim($source)) === 1;
+        return $this->parseSource($source) !== null;
     }
 
     public function getMetadata(string $source): ModpackMetadata
     {
-        $projectId = $this->resolveProjectId($source);
+        $parsed = $this->parseSource($source);
+
+        if ($parsed === null) {
+            throw new InvalidArgumentException(
+                'Unsupported modpack source.',
+            );
+        }
 
         $this->assertConfigured();
 
-        $project = $this->fetchProject($projectId);
+        $project = $this->fetchProject($parsed['projectId']);
 
-        $files = $this->fetchFiles($projectId);
+        $this->assertModpackProject($project);
 
-        $file = $this->selectFile($files);
+        $file = $this->resolveFile($parsed['projectId'], $parsed['fileId']);
 
         $version = $this->nullableString($file['displayName'] ?? null)
             ?? $this->nullableString($file['fileName'] ?? null);
@@ -65,33 +73,45 @@ final class CurseForgeProvider implements ModpackProvider
             );
         }
 
+        $logo = is_array($project['logo'] ?? null)
+            ? $project['logo']
+            : [];
+
+        $iconUrl = $this->nullableString($logo['thumbnailUrl'] ?? null)
+            ?? $this->nullableString($logo['url'] ?? null)
+            ?? $this->nullableString($project['links']['iconUrl'] ?? null);
+
         return new ModpackMetadata(
-            id: (string) ($project['id'] ?? $projectId),
+            id: (string) ($project['id'] ?? $parsed['projectId']),
             name: (string) ($project['name'] ?? ''),
             version: (string) $version,
             minecraftVersion: $minecraftVersion,
             loader: $loader,
             description: $this->nullableString($project['summary'] ?? null),
-            iconUrl: $this->validImageUrl(
-                $this->nullableString(
-                    $project['links']['iconUrl'] ?? null,
-                ),
-            ),
-            source: 'curseforge://' . $projectId,
+            iconUrl: $this->validImageUrl($iconUrl),
+            source: $this->canonicalSource($parsed['projectId'], $parsed['fileId']),
         );
     }
 
     public function getPackage(string $source): ModpackPackage
     {
-        $projectId = $this->resolveProjectId($source);
+        $parsed = $this->parseSource($source);
+
+        if ($parsed === null) {
+            throw new InvalidArgumentException(
+                'Unsupported modpack source.',
+            );
+        }
 
         $this->assertConfigured();
 
+        $projectId = $parsed['projectId'];
+
         $project = $this->fetchProject($projectId);
 
-        $files = $this->fetchFiles($projectId);
+        $this->assertModpackProject($project);
 
-        $file = $this->selectFile($files);
+        $file = $this->resolveFile($projectId, $parsed['fileId']);
 
         if ($file === null) {
             throw new InvalidArgumentException(
@@ -99,13 +119,15 @@ final class CurseForgeProvider implements ModpackProvider
             );
         }
 
-        $downloadUrl = (string) ($file['downloadUrl'] ?? '');
+        $file = $this->resolvePackageFile($file, $projectId);
 
-        if ($downloadUrl === '') {
+        if (!$this->isPubliclyDownloadable($file)) {
             throw new InvalidArgumentException(
                 'The CurseForge modpack does not provide a public download URL.',
             );
         }
+
+        $downloadUrl = (string) ($file['downloadUrl'] ?? '');
 
         $archivePath = $this->downloader->download($downloadUrl);
 
@@ -116,7 +138,7 @@ final class CurseForgeProvider implements ModpackProvider
 
             return new ModpackPackage(
                 archivePath: $archivePath,
-                source: 'curseforge://' . $projectId,
+                source: $this->canonicalSource($projectId, $parsed['fileId']),
             );
         } catch (Throwable $exception) {
             $this->removeTracked($archivePath);
@@ -143,15 +165,207 @@ final class CurseForgeProvider implements ModpackProvider
         unset($this->temporaryPackages[$path]);
     }
 
-    private function resolveProjectId(string $source): string
+    /**
+     * Resolves a source string to a CurseForge project id and an optional
+     * exact-file pin (curseforge://projectId@fileId). Returns null when the
+     * syntax is unsupported.
+     *
+     * @return array{projectId: string, fileId: string|null}|null
+     */
+    private function parseSource(string $source): ?array
     {
-        if (!$this->supports($source)) {
+        $source = trim($source);
+
+        if (!str_starts_with($source, 'curseforge://')) {
+            return null;
+        }
+
+        $rest = substr($source, strlen('curseforge://'));
+
+        $pieces = explode('@', $rest, 2);
+
+        $projectId = (string) ($pieces[0] ?? '');
+
+        if (preg_match('/^\d+$/', $projectId) !== 1) {
+            return null;
+        }
+
+        $fileId = null;
+
+        if (isset($pieces[1])) {
+            $fileId = trim((string) $pieces[1]);
+
+            if ($fileId === '' || preg_match('/^\d+$/', $fileId) !== 1) {
+                return null;
+            }
+        }
+
+        return [
+            'projectId' => $projectId,
+            'fileId' => $fileId,
+        ];
+    }
+
+    private function canonicalSource(string $projectId, ?string $fileId): string
+    {
+        $source = 'curseforge://' . $projectId;
+
+        if ($fileId !== null) {
+            return $source . '@' . $fileId;
+        }
+
+        return $source;
+    }
+
+    /**
+     * Selects a file for the project: the exact pinned file when a pin is
+     * present, otherwise the newest Release file (falling back to the newest
+     * file).
+     *
+     * @return array<string, mixed>
+     */
+    private function resolveFile(string $projectId, ?string $fileId): array
+    {
+        if ($fileId !== null) {
+            $file = $this->fetchFileById($projectId, $fileId);
+
+            $this->assertFileBelongsToProject($file, $projectId);
+
+            return $file;
+        }
+
+        $files = $this->fetchFiles($projectId);
+
+        $file = $this->selectFile($files);
+
+        if ($file === null) {
             throw new InvalidArgumentException(
-                'Unsupported modpack source.',
+                'The CurseForge project has no files.',
             );
         }
 
-        return substr(trim($source), strlen('curseforge://'));
+        return $file;
+    }
+
+    /**
+     * Prefers a dedicated server pack when the selected file references one,
+     * falling back to the selected file when the server pack cannot be
+     * resolved to a public download.
+     *
+     * @param array<string, mixed> $file
+     *
+     * @return array<string, mixed>
+     */
+    private function resolvePackageFile(array $file, string $projectId): array
+    {
+        $serverPackFileId = $this->intOrNull(
+            $file['serverPackFileId'] ?? null,
+        );
+
+        if ($serverPackFileId === null || $serverPackFileId <= 0) {
+            return $file;
+        }
+
+        $serverPack = $this->fetchServerPackFile(
+            $projectId,
+            (string) $serverPackFileId,
+        );
+
+        if ($serverPack === null) {
+            return $file;
+        }
+
+        return $serverPack;
+    }
+
+    /**
+     * Whether a file is installable: public status (or unspecified), marked
+     * available (or unspecified), with a public download URL.
+     *
+     * @param array<string, mixed> $file
+     */
+    private function isPubliclyDownloadable(array $file): bool
+    {
+        $status = $this->intOrNull($file['fileStatus'] ?? null);
+
+        if ($status !== null && !in_array($status, [4, 10], true)) {
+            return false;
+        }
+
+        if (($file['isAvailable'] ?? true) === false) {
+            return false;
+        }
+
+        return $this->nullableString($file['downloadUrl'] ?? null) !== null;
+    }
+
+    /**
+     * Fetches the dedicated server pack file referenced by a file. Returns
+     * null when it no longer exists (404) or has no public download URL so the
+     * caller can fall back to the selected file.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function fetchServerPackFile(
+        string $projectId,
+        string $fileId,
+    ): ?array {
+        try {
+            $response = $this->http->get(
+                self::API_BASE . '/mods/' . $projectId . '/files/' . $fileId,
+                headers: $this->headers(),
+            );
+
+            if (
+                !is_array($response->body)
+                || !is_array($response->body['data'] ?? null)
+            ) {
+                throw new InvalidArgumentException(
+                    'The CurseForge file was invalid.',
+                );
+            }
+
+            $file = $response->body['data'];
+        } catch (ProviderHttpException $exception) {
+            if ($exception->status() === 404) {
+                return null;
+            }
+
+            throw $this->requestFailure($exception);
+        }
+
+        $this->assertFileBelongsToProject($file, $projectId);
+
+        if (!$this->isPubliclyDownloadable($file)) {
+            return null;
+        }
+
+        return $file;
+    }
+
+    /**
+     * Prevents a client-supplied file id from referencing a file that belongs
+     * to a different project. A file payload without a mod id is tolerated so
+     * providers without the field keep working, but any id that is present
+     * must match the requested project.
+     *
+     * @param array<string, mixed> $file
+     */
+    private function assertFileBelongsToProject(
+        array $file,
+        string $projectId,
+    ): void {
+        $modId = $this->intOrNull($file['modId'] ?? null);
+
+        if ($modId === null) {
+            return;
+        }
+
+        if ((string) $modId !== $projectId) {
+            throw new InvalidArgumentException(
+                'The requested file does not belong to the selected project.',
+            );
+        }
     }
 
     private function assertConfigured(): void
@@ -159,6 +373,28 @@ final class CurseForgeProvider implements ModpackProvider
         if ($this->apiKey === null || $this->apiKey === '') {
             throw new InvalidArgumentException(
                 'CurseForge is not configured. Set the CURSEFORGE_API_KEY server-side environment variable.',
+            );
+        }
+    }
+
+    /**
+     * CurseForge does not mark modpacks with a project type; the Modpacks
+     * class (classId 4471) is the equivalent. A mod without a class id is
+     * tolerated, but any class id that is present must be the modpacks class.
+     *
+     * @param array<string, mixed> $project
+     */
+    private function assertModpackProject(array $project): void
+    {
+        $classId = $this->intOrNull($project['classId'] ?? null);
+
+        if ($classId === null) {
+            return;
+        }
+
+        if ($classId !== self::MODPACK_CLASS_ID) {
+            throw new InvalidArgumentException(
+                'The CurseForge project is not a modpack.',
             );
         }
     }
@@ -195,8 +431,8 @@ final class CurseForgeProvider implements ModpackProvider
             $response = $this->http->get(
                 self::API_BASE . '/mods/' . $projectId . '/files',
                 query: [
-                    'pageSize' => 20,
-                    'pageIndex' => 0,
+                    'pageSize' => 50,
+                    'index' => 0,
                 ],
                 headers: $this->headers(),
             );
@@ -219,6 +455,38 @@ final class CurseForgeProvider implements ModpackProvider
 
             return $files;
         } catch (ProviderHttpException $exception) {
+            throw $this->requestFailure($exception);
+        }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function fetchFileById(string $projectId, string $fileId): array
+    {
+        try {
+            $response = $this->http->get(
+                self::API_BASE . '/mods/' . $projectId . '/files/' . $fileId,
+                headers: $this->headers(),
+            );
+
+            if (
+                !is_array($response->body)
+                || !is_array($response->body['data'] ?? null)
+            ) {
+                throw new InvalidArgumentException(
+                    'The CurseForge file was invalid.',
+                );
+            }
+
+            return $response->body['data'];
+        } catch (ProviderHttpException $exception) {
+            if ($exception->status() === 404) {
+                throw new InvalidArgumentException(
+                    'The requested CurseForge file was not found.',
+                );
+            }
+
             throw $this->requestFailure($exception);
         }
     }
@@ -348,6 +616,19 @@ final class CurseForgeProvider implements ModpackProvider
         return new InvalidArgumentException(
             'Unable to load the modpack from CurseForge.',
         );
+    }
+
+    private function intOrNull(mixed $value): ?int
+    {
+        if (is_int($value)) {
+            return $value;
+        }
+
+        if (is_string($value) && is_numeric($value)) {
+            return (int) $value;
+        }
+
+        return null;
     }
 
     private function nullableString(mixed $value): ?string

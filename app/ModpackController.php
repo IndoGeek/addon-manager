@@ -621,6 +621,7 @@ final class ModpackController extends Controller
                     $this->providerHttp(),
                 ),
                 new CurseForgeCatalogProvider(
+                    $this->providerHttp(),
                     $this->curseForgeApiKey(),
                 ),
             ]),

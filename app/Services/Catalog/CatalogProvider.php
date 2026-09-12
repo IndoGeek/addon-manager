@@ -27,6 +27,13 @@ interface CatalogProvider
     public function available(): bool;
 
     /**
+     * A short, static reason the provider is currently unavailable, or null
+     * when it is available. Shown to the user so they can react (for example
+     * configuring a missing API key). Must never leak secrets or internals.
+     */
+    public function unavailableReason(): ?string;
+
+    /**
      * @throws CatalogUnavailableException When the provider is unreachable,
      *                                     timing out, rate limited, or disabled.
      * @throws CatalogProviderException    When the provider responds with a

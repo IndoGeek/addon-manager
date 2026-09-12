@@ -64,6 +64,11 @@ final class ModrinthCatalogProvider implements CatalogProvider
         return true;
     }
 
+    public function unavailableReason(): ?string
+    {
+        return null;
+    }
+
     public function search(CatalogSearchQuery $query): CatalogResult
     {
         $payload = $this->fetch($query);

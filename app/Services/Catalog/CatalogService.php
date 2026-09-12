@@ -26,6 +26,7 @@ final class CatalogService
                 'name' => $provider->name(),
                 'label' => $provider->label(),
                 'available' => $provider->available(),
+                'unavailable_reason' => $provider->unavailableReason(),
             ];
         }
 
@@ -38,7 +39,7 @@ final class CatalogService
 
         if (!$provider->available()) {
             throw new CatalogUnavailableException(
-                'The requested modpack catalog provider is not available.',
+                $this->unavailableMessage($provider),
             );
         }
 
@@ -51,7 +52,7 @@ final class CatalogService
 
         if (!$provider->available()) {
             throw new CatalogUnavailableException(
-                'The requested modpack catalog provider is not available.',
+                $this->unavailableMessage($provider),
             );
         }
 
@@ -61,5 +62,16 @@ final class CatalogService
             appliedLoader: $query->loader,
             versions: $provider->versions($query),
         );
+    }
+
+    private function unavailableMessage(CatalogProvider $provider): string
+    {
+        $reason = $provider->unavailableReason();
+
+        if ($reason !== null && $reason !== '') {
+            return $reason;
+        }
+
+        return 'The requested modpack catalog provider is not available.';
     }
 }

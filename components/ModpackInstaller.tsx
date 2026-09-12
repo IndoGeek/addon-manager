@@ -124,6 +124,7 @@ interface CatalogProviderOption {
     name: string;
     label: string;
     available: boolean;
+    unavailable_reason: string | null;
 }
 
 interface ProvidersResponse {
@@ -1288,9 +1289,17 @@ export default () => {
 
     const providerList = providers ?? [];
 
-    const providerOptions = providerList.filter(
-        (provider) =>
-            provider.available || provider.name === filters.provider,
+    const providerOptions = providerList.map((provider) => ({
+        name: provider.name,
+        label: provider.available
+            ? provider.label
+            : `${provider.label} (not available)`,
+        available: provider.available,
+        unavailable_reason: provider.unavailable_reason,
+    }));
+
+    const providerLabels = new Map(
+        providerList.map((p) => [p.name, p.label]),
     );
 
     const catalogBusy = searching || providerList.length === 0;
@@ -1386,10 +1395,9 @@ export default () => {
                                         key={provider.name}
                                         value={provider.name}
                                         disabled={!provider.available}
+                                    title={provider.unavailable_reason ?? ''}
                                     >
-                                        {provider.available
-                                            ? provider.label
-                                            : `${provider.label} (not available)`}
+                                    {provider.label}
                                     </option>
                                 ))}
                             </select>
@@ -2040,6 +2048,8 @@ export default () => {
                             </button>
                         </div>
 
+                        <div className="modpackinstaller-status modpackinstaller-status--info" style={{display: 'none'}}>
+
                         {modalStatus && (
                             <div
                                 className={`modpackinstaller-status modpackinstaller-status--${modalStatus.kind}`}
@@ -2113,7 +2123,9 @@ export default () => {
                                             referrerPolicy="no-referrer"
                                             className="modpackinstaller-modal-link"
                                         >
-                                            View on Modrinth
+                                            View on ${providerLabels.get(
+                                                modalItem.provider,
+                                            ) ?? modalItem.provider}
                                         </a>
                                     )}
                                 </div>

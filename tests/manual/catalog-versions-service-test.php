@@ -54,7 +54,7 @@ $http = new StubProviderHttpClient();
 $registry = new CatalogProviderRegistry([
     new MockCatalogProvider(),
     new ModrinthCatalogProvider($http),
-    new CurseForgeCatalogProvider(null),
+    new CurseForgeCatalogProvider(new StubProviderHttpClient(), null),
 ]);
 
 $service = new CatalogService($registry);
@@ -123,7 +123,7 @@ try {
     ));
     throw new RuntimeException('Unavailable provider versions were accepted.');
 } catch (CatalogUnavailableException $exception) {
-    if (!str_contains($exception->getMessage(), 'not available')) {
+    if (!str_contains($exception->getMessage(), 'not configured')) {
         throw new RuntimeException('Unexpected unavailable message.');
     }
 }

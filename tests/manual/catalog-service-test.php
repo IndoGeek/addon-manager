@@ -55,7 +55,7 @@ $http = new StubProviderHttpClient();
 $registry = new CatalogProviderRegistry([
     new MockCatalogProvider(),
     new ModrinthCatalogProvider($http),
-    new CurseForgeCatalogProvider(null),
+    new CurseForgeCatalogProvider(new StubProviderHttpClient(), null),
 ]);
 
 if (count($registry->all()) !== 3) {
@@ -123,7 +123,7 @@ try {
     ));
     throw new RuntimeException('Unavailable provider search was accepted.');
 } catch (CatalogUnavailableException $exception) {
-    if (!str_contains($exception->getMessage(), 'not available')) {
+    if (!str_contains($exception->getMessage(), 'not configured')) {
         throw new RuntimeException('Unexpected unavailable message.');
     }
 }
@@ -154,7 +154,7 @@ try {
     pass('registry lookup of unknown provider rejected');
 }
 
-$stub = new CurseForgeCatalogProvider('configured-but-stub');
+$stub = new CurseForgeCatalogProvider(new StubProviderHttpClient(), 'configured-but-stub');
 
 try {
     $stub->search(new CatalogSearchQuery());
@@ -162,14 +162,14 @@ try {
         'CurseForge stub returned results even when configured.',
     );
 } catch (CatalogUnavailableException $exception) {
-    if (!str_contains($exception->getMessage(), 'not available yet')) {
+    if (!str_contains($exception->getMessage(), 'temporarily unavailable')) {
         throw new RuntimeException('CurseForge stub unavailable message incorrect.');
     }
 }
 
 pass('CurseForge stub never returns results even when configured');
 
-$unconfiguredStub = new CurseForgeCatalogProvider(null);
+$unconfiguredStub = new CurseForgeCatalogProvider(new StubProviderHttpClient(), null);
 
 try {
     $unconfiguredStub->search(new CatalogSearchQuery());

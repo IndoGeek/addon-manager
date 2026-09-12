@@ -146,6 +146,11 @@ final class MockCatalogProvider implements CatalogProvider
         return true;
     }
 
+    public function unavailableReason(): ?string
+    {
+        return null;
+    }
+
     public function search(CatalogSearchQuery $query): CatalogResult
     {
         $items = array_filter(

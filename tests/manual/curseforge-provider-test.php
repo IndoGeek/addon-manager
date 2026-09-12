@@ -104,6 +104,7 @@ $projectResponse = new ProviderHttpResponse(200, [
         'id' => 314768,
         'name' => 'Prominence 2 RPG',
         'summary' => 'A dark fantasy modpack.',
+        'classId' => 4471,
         'links' => [
             'websiteUrl' => 'https://www.curseforge.com/minecraft/modpacks/prominence-2-rpg',
             'iconUrl' => 'https://cdn.example/icon.png',
