@@ -29,7 +29,22 @@ development deployment target.
 
 The installer ships with a mock provider for development plus Modrinth and
 CurseForge providers. See [PROVIDERS.md](PROVIDERS.md) for source formats,
-configuration, and current package limitations.
+configuration, catalog support, and current package limitations.
+
+## Catalog
+
+The dashboard is catalog-first: it searches, filters, sorts, and pages through
+modpacks from a normalised catalog endpoint (`/metadata`-style client route
+`/api/client/extensions/modpackinstaller/catalog`). Provider browsing is
+read-only and never asks a provider to download or install anything.
+
+- Real Modrinth catalog search is served directly from `api.modrinth.com`.
+- CurseForge exposes a catalog provider contract but is listed as unavailable
+  until search support is implemented; it never claims live results.
+- Searches are **not cached**: every request is answered live by the selected
+  provider, and upstream calls go through the same pinned HTTP client as the
+  rest of the extension. See [ARCHITECTURE.md](ARCHITECTURE.md) for the
+  filter/sort mapping and error handling.
 
 ## Server Target
 

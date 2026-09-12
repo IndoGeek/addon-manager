@@ -86,6 +86,52 @@ Get an API key at <https://console.curseforge.com/>.
 - Packages depend on the server already having the matching game/loader
   runtime; the installer does not provision the server binary.
 
+## Catalog
+
+The catalog is a read-only browsing/search layer that is separate from project
+metadata and package download. Providers implement a
+`CatalogProvider` contract and are advertised to the dashboard through
+`/catalog/providers` with an availability flag.
+
+### Query parameters
+
+`GET /catalog` accepts (all optional except where noted):
+
+| Parameter      | Meaning                                         | Validation / limits                          |
+| -------------- | ----------------------------------------------- | -------------------------------------------- |
+| `query`        | Free-text search                                | ≤ 128 chars                                  |
+| `provider`     | Catalog provider (default `modrinth`)           | `[a-z0-9-]{1,32}`                            |
+| `game_version` | Minecraft version facet                         | `[0-9A-Za-z._-]{1,32}`                       |
+| `loader`       | Loader facet (`fabric`, `forge`, ...)           | lowercased `[a-z0-9-]{1,32}`                 |
+| `category`     | Category facet                                  | lowercased `[a-z0-9-]{1,32}`                 |
+| `sort`         | `relevance` (default), `downloads`, `follows`, `newest`, `updated` | enum                 |
+| `page`         | 1-based page, default 1                         | 1..10000                                     |
+| `limit`        | Page size, default 20                           | 1..50                                        |
+
+Invalid parameters return `422`. The response echoes the active provider, the
+filters as applied, and the sort; item fields are nullable when a provider has
+no equivalent. Filtered strings are strict slugs/versions so they can be
+embedded in upstream query facets without path injection.
+
+### Provider support
+
+- **Mock (dev)** – deterministic in-memory catalog for development and tests.
+  Clearly labeled "Mock (development)"; items never fake popularity metrics,
+  icons, or project URLs.
+- **Modrinth** – full real search against the official `v2/search` endpoint.
+  Facets: `project_type:modpack`, `versions:<minecraft>`, and `categories` for
+  loader/category. `sort` maps 1:1 to Modrinth `index` values. Downloads,
+  follows, versions, loaders, and latest version are carried through.
+- **CurseForge** – the contract is implemented (and it is always marked
+  unavailable) but catalog search is **not implemented yet**. The stub never
+  makes an upstream request and never sends the API key; missing configuration
+  reports a clear `CURSEFORGE_API_KEY` error.
+
+Searches are not cached; every request is answered live by the selected
+provider. Upstream 429/5xx/timeouts surface as `503` retryable errors, malformed
+or rejected upstream responses as `502`, and client input problems as `422`.
+The dashboard treats an empty result as a valid response, never an error.
+
 ## Development
 
 Manual tests use fake HTTP responses and local fixture archives. They never

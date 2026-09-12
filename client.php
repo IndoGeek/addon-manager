@@ -11,6 +11,16 @@ Route::get('/metadata', [
     'metadata',
 ]);
 
+Route::get('/catalog', [
+    ModpackController::class,
+    'catalog',
+]);
+
+Route::get('/catalog/providers', [
+    ModpackController::class,
+    'catalogProviders',
+]);
+
 Route::group([
     'prefix' => '/servers/{server}',
     'middleware' => [

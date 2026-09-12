@@ -243,6 +243,305 @@
     background: rgba(127, 127, 127, 0.15);
 }
 
+.modpackinstaller-catalog-toolbar {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    margin-top: 16px;
+}
+
+.modpackinstaller-catalog-search {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.modpackinstaller-catalog-search-row {
+    display: flex;
+    gap: 8px;
+}
+
+.modpackinstaller-catalog-search-row input {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.modpackinstaller-catalog-search-row input,
+.modpackinstaller-catalog-filters select {
+    box-sizing: border-box;
+    padding: 9px 12px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.2);
+    color: inherit;
+}
+
+.modpackinstaller-catalog-search-row input:disabled,
+.modpackinstaller-catalog-filters select:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.modpackinstaller-catalog-search-row button {
+    flex: 0 0 auto;
+    padding: 9px 16px;
+    border: 0;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.modpackinstaller-catalog-search-row button:disabled {
+    cursor: wait;
+    opacity: 0.6;
+}
+
+.modpackinstaller-catalog-filters {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px;
+}
+
+.modpackinstaller-catalog-filters > div {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+.modpackinstaller-catalog-filters label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    opacity: 0.8;
+}
+
+.modpackinstaller-catalog-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 14px;
+    margin-top: 20px;
+}
+
+.modpackinstaller-catalog-grid[aria-busy='true'] {
+    opacity: 0.6;
+}
+
+.modpackinstaller-catalog-card {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    overflow: hidden;
+    border: 1px solid rgba(127, 127, 127, 0.15);
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.12);
+}
+
+.modpackinstaller-card-image {
+    display: block;
+    width: 100%;
+    height: 140px;
+    object-fit: cover;
+    background: rgba(127, 127, 127, 0.1);
+}
+
+.modpackinstaller-card-image--fallback {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 140px;
+    font-size: 2.5rem;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.25);
+}
+
+.modpackinstaller-catalog-card-content {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 14px;
+}
+
+.modpackinstaller-catalog-card-header {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.modpackinstaller-catalog-card-header h4 {
+    margin: 0;
+    font-size: 1.05rem;
+    overflow-wrap: anywhere;
+}
+
+.modpackinstaller-catalog-card-badge {
+    align-self: flex-start;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.modpackinstaller-catalog-card-summary {
+    margin: 0;
+    font-size: 0.85rem;
+    opacity: 0.8;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+}
+
+.modpackinstaller-catalog-card-meta {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 6px 10px;
+    margin: 0;
+    padding: 8px 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.modpackinstaller-catalog-card-meta > div {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.modpackinstaller-catalog-card-meta dt {
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    opacity: 0.55;
+}
+
+.modpackinstaller-catalog-card-meta dd {
+    margin: 0;
+    font-size: 0.85rem;
+    overflow-wrap: anywhere;
+}
+
+.modpackinstaller-catalog-card-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: auto;
+    padding-top: 4px;
+}
+
+.modpackinstaller-catalog-card-actions button {
+    flex: 0 0 auto;
+    padding: 8px 12px;
+    border: 0;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    cursor: pointer;
+}
+
+.modpackinstaller-catalog-card-actions button:disabled {
+    cursor: wait;
+    opacity: 0.6;
+}
+
+.modpackinstaller-catalog-card-actions a {
+    flex: 0 0 auto;
+    padding: 8px 12px;
+    border: 1px solid rgba(127, 127, 127, 0.3);
+    border-radius: 6px;
+    font-size: 0.85rem;
+    text-decoration: none;
+}
+
+.modpackinstaller-catalog-state {
+    margin-top: 20px;
+    padding: 20px;
+    border: 1px dashed rgba(127, 127, 127, 0.3);
+    border-radius: 8px;
+    text-align: center;
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.modpackinstaller-catalog-state p {
+    margin: 0 0 12px;
+}
+
+.modpackinstaller-catalog-state--error {
+    border: 1px solid rgba(180, 40, 40, 0.4);
+    background: rgba(180, 40, 40, 0.15);
+}
+
+.modpackinstaller-catalog-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    margin-top: 18px;
+}
+
+.modpackinstaller-catalog-pagination button {
+    padding: 8px 14px;
+    border: 0;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    cursor: pointer;
+}
+
+.modpackinstaller-catalog-pagination button:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+
+.modpackinstaller-catalog-pagination-label {
+    min-width: 110px;
+    font-size: 0.9rem;
+    text-align: center;
+    opacity: 0.8;
+}
+
+.modpackinstaller-catalog-source {
+    margin-top: 20px;
+    padding-top: 14px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.modpackinstaller-catalog-source summary {
+    font-size: 0.9rem;
+    opacity: 0.85;
+    cursor: pointer;
+}
+
+.modpackinstaller-form--inline {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.modpackinstaller-form--inline label {
+    flex: 0 0 auto;
+}
+
+.modpackinstaller-form--inline input {
+    flex: 1 1 220px;
+    min-width: 0;
+}
+
+.modpackinstaller-form--inline button {
+    flex: 0 0 auto;
+    align-self: auto;
+    margin-top: 0;
+}
+
+.modpackinstaller-form--inline .modpackinstaller-source-hint {
+    flex: 1 1 100%;
+}
+
 @media (max-width: 768px) {
     .modpackinstaller-root {
         padding: 16px;
@@ -250,6 +549,24 @@
 
     .modpackinstaller-details {
         grid-template-columns: 1fr;
+    }
+
+    .modpackinstaller-catalog-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .modpackinstaller-catalog-card-actions {
+        flex-direction: column;
+    }
+
+    .modpackinstaller-catalog-card-actions button,
+    .modpackinstaller-catalog-card-actions a {
+        width: 100%;
+        text-align: center;
+    }
+
+    .modpackinstaller-catalog-pagination {
+        flex-wrap: wrap;
     }
 
     .modpackinstaller-card button,

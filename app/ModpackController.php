@@ -7,10 +7,19 @@ use Illuminate\Http\Request;
 use InvalidArgumentException;
 use Pterodactyl\Http\Controllers\Controller;
 use Pterodactyl\Models\Server;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Providers\Catalog\CurseForgeCatalogProvider;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Providers\Catalog\MockCatalogProvider;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Providers\Catalog\ModrinthCatalogProvider;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Providers\CurseForgeProvider;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Providers\MockModpackProvider;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Providers\ModrinthProvider;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Providers\UnsupportedModpackPackageException;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogProviderException;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogProviderRegistry;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogSearchQuery;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogService;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogSort;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogUnavailableException;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\BackupManager;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentExecutor;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentPlanner;
@@ -78,6 +87,44 @@ final class ModpackController extends Controller
                 'error' => $exception->getMessage(),
             ], 422);
         }
+    }
+
+    public function catalog(Request $request): JsonResponse
+    {
+        try {
+            $query = $this->catalogQuery($request);
+
+            $result = $this->catalogService()->search($query);
+
+            return response()->json([
+                'data' => $result->toArray(),
+            ]);
+        } catch (InvalidArgumentException $exception) {
+            return response()->json([
+                'error' => $exception->getMessage(),
+            ], 422);
+        } catch (CatalogUnavailableException $exception) {
+            return response()->json([
+                'error' => $exception->getMessage(),
+            ], 503);
+        } catch (CatalogProviderException $exception) {
+            return response()->json([
+                'error' => $exception->getMessage(),
+            ], 502);
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return response()->json([
+                'error' => 'Unable to load the modpack catalog.',
+            ], 500);
+        }
+    }
+
+    public function catalogProviders(): JsonResponse
+    {
+        return response()->json([
+            'data' => $this->catalogService()->providers(),
+        ]);
     }
 
     public function preview(
@@ -295,6 +342,200 @@ final class ModpackController extends Controller
             $policy,
             $layout,
         ];
+    }
+
+    private function catalogQuery(
+        Request $request,
+    ): CatalogSearchQuery {
+        $provider = $this->paramString(
+            $request,
+            'provider',
+            CatalogSearchQuery::DEFAULT_PROVIDER,
+            32,
+            '/^[a-z0-9-]{1,32}$/',
+        );
+
+        $query = $this->paramString(
+            $request,
+            'query',
+            null,
+            CatalogSearchQuery::MAX_QUERY_LENGTH,
+        );
+
+        $gameVersion = $this->paramString(
+            $request,
+            'game_version',
+            null,
+            32,
+            CatalogSearchQuery::VERSION_PATTERN,
+        );
+
+        $loader = $this->paramString(
+            $request,
+            'loader',
+            null,
+            32,
+            CatalogSearchQuery::SLUG_PATTERN,
+        );
+
+        $category = $this->paramString(
+            $request,
+            'category',
+            null,
+            32,
+            CatalogSearchQuery::SLUG_PATTERN,
+        );
+
+        $sortValue = $this->paramString(
+            $request,
+            'sort',
+            CatalogSort::RELEVANCE->value,
+            16,
+        );
+
+        $sort = CatalogSort::tryFrom((string) $sortValue);
+
+        if ($sort === null) {
+            throw new InvalidArgumentException(
+                'Invalid catalog sort.',
+            );
+        }
+
+        $page = $this->paramInt(
+            $request,
+            'page',
+            CatalogSearchQuery::DEFAULT_PAGE,
+            CatalogSearchQuery::DEFAULT_PAGE,
+            CatalogSearchQuery::MAX_PAGE,
+        );
+
+        $limit = $this->paramInt(
+            $request,
+            'limit',
+            CatalogSearchQuery::DEFAULT_LIMIT,
+            CatalogSearchQuery::MIN_LIMIT,
+            CatalogSearchQuery::MAX_LIMIT,
+        );
+
+        return new CatalogSearchQuery(
+            provider: $provider,
+            query: $query,
+            gameVersion: $gameVersion,
+            loader: $loader,
+            category: $category,
+            sort: $sort,
+            page: $page,
+            limit: $limit,
+        );
+    }
+
+    private function paramString(
+        Request $request,
+        string $key,
+        ?string $default,
+        int $maxLength,
+        ?string $pattern = null,
+    ): ?string {
+        $value = $request->query($key);
+
+        if ($value === null) {
+            return $default;
+        }
+
+        if (!is_string($value)) {
+            throw new InvalidArgumentException(
+                $this->invalidParameterMessage($key),
+            );
+        }
+
+        $value = trim($value);
+
+        if ($value === '') {
+            return null;
+        }
+
+        if (strlen($value) > $maxLength) {
+            throw new InvalidArgumentException(
+                'The ' . $this->parameterLabel($key)
+                    . ' parameter is too long.',
+            );
+        }
+
+        if ($pattern !== null && preg_match($pattern, $value) !== 1) {
+            throw new InvalidArgumentException(
+                $this->invalidParameterMessage($key),
+            );
+        }
+
+        return $value;
+    }
+
+    private function paramInt(
+        Request $request,
+        string $key,
+        int $default,
+        int $minimum,
+        int $maximum,
+    ): int {
+        $value = $request->query($key);
+
+        if ($value === null) {
+            return $default;
+        }
+
+        if (!is_string($value) || !is_numeric($value)) {
+            throw new InvalidArgumentException(
+                $this->invalidParameterMessage($key),
+            );
+        }
+
+        $integer = (int) $value;
+
+        if ((string) $integer !== trim($value)) {
+            throw new InvalidArgumentException(
+                $this->invalidParameterMessage($key),
+            );
+        }
+
+        if ($integer < $minimum || $integer > $maximum) {
+            if ($key === 'page') {
+                throw new InvalidArgumentException(
+                    'The requested page is out of range.',
+                );
+            }
+
+            throw new InvalidArgumentException(
+                'Invalid ' . $this->parameterLabel($key)
+                    . ' parameter.',
+            );
+        }
+
+        return $integer;
+    }
+
+    private function invalidParameterMessage(string $key): string
+    {
+        return 'Invalid ' . $this->parameterLabel($key) . ' parameter.';
+    }
+
+    private function parameterLabel(string $key): string
+    {
+        return str_replace('_', ' ', $key);
+    }
+
+    private function catalogService(): CatalogService
+    {
+        return new CatalogService(
+            new CatalogProviderRegistry([
+                new MockCatalogProvider(),
+                new ModrinthCatalogProvider(
+                    $this->providerHttp(),
+                ),
+                new CurseForgeCatalogProvider(
+                    $this->curseForgeApiKey(),
+                ),
+            ]),
+        );
     }
 
     private function installationLock(): InstallationLock

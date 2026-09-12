@@ -17,9 +17,8 @@ The system is divided into several logical layers:
          │
          ▼
     Application/API Layer
-         │
-         ▼
-    Installation Engine
+         ├── Catalog
+         └── Installation Engine
          │
          ├── Downloader
          ├── Archive Handler
@@ -28,6 +27,7 @@ The system is divided into several logical layers:
          │
          ▼
     Modpack Providers
+         ├── Catalog
          ├── Modrinth
          ├── CurseForge
          └── Future Providers
@@ -56,6 +56,30 @@ that could break other Blueprint extensions.
 
 The installation engine must not depend directly on a particular
 modpack provider.
+
+### Catalog
+
+Browsing and search is a read-only contract (`CatalogProvider`) separate from
+project metadata and package download, so no catalog path ever downloads or
+deploys anything. The UI only loads the provider list and calls
+`/catalog`; it never embeds provider-specific API logic.
+
+- **Request input.** `query`, `game_version`, `loader`, `category`, `sort`,
+  `page`, and `limit` are scalar-typed, length-capped, and enum/pattern-checked
+  (slugs, MC-version patterns, bounded pages/pages sizes) before they reach a
+  provider. Rejections are `422` with static messages.
+- **Upstream.** The only upstream hosts are constants (`api.modrinth.com` for
+  search, the existing provider API bases). Client-supplied values travel only
+  inside query facets, never in request URLs. Responses are type-checked
+  before mapping: malformed hits lists, bad totals, and invalid item shapes
+  become controlled `502` errors. Rate limits, upstream 5xx, and timeouts map
+  to retryable `503` errors. The CurseForge catalog stub is always marked
+  unavailable, makes no upstream request, and never sends the API key.
+- **No caching.** Catalog responses are not cached; every request is answered
+  live by the selected provider to avoid serving stale or cross-tenant data.
+- **Error hygiene.** Catalog errors are static and never include hosts, URLs,
+  provider API keys, or internal exception details; unexpected failures are
+  reported to the panel logs and surfaced as a generic `500`.
 
 ### Security
 
@@ -114,6 +138,12 @@ Every input boundary treats its data as untrusted and is validated:
 
 - The downloader's success/redirect path uses real public hosts and is
   therefore verified during deployment rather than in the hermetic suite.
+- The Modrinth catalog's live search path is likewise forced to a constant
+  public API host and is verified during deployment; the hermetic suite covers
+  request construction, facet mapping, normalization, and error mapping with
+  fake responses.
+- CurseForge catalog search is not implemented; it is architecture-only and
+  never claims live results.
 - Panel log lines from `report()` are only as sanitized as their inputs;
   provider HTTP failure details are mapped to static messages before
   bubbling up. (CurseForge authorization headers are never logged.)

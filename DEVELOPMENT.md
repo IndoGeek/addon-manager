@@ -44,6 +44,15 @@ assertion and exits non-zero on the first failure:
 for f in tests/manual/*-test.php; do php "$f"; done
 ```
 
+Catalog manual tests (hermetic - they never contact Modrinth or CurseForge):
+
+```bash
+php tests/manual/catalog-query-test.php
+php tests/manual/mock-catalog-provider-test.php
+php tests/manual/modrinth-catalog-provider-test.php
+php tests/manual/catalog-service-test.php
+```
+
 Standalone (non-extension) tests may `require` the classes directly;
 tests that exercise the extension namespace register an `spl_autoload_register`
 callback that maps `Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\...`
