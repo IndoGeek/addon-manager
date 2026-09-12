@@ -276,7 +276,7 @@ final class CurseForgeProvider implements ModpackProvider
 
             if (
                 $minecraftVersion === null
-                && preg_match('/^\d+\.\d+(\.\d+)+$/', $entry) === 1
+                && preg_match('/^\d+\.\d+(\.\d+)*$/', $entry) === 1
             ) {
                 $minecraftVersion = $entry;
             }

@@ -228,6 +228,40 @@ if (!in_array('X-Api-Key: ' . SECRET_KEY, $firstRequest['headers'], true)) {
 
 pass('metadata maps response and sends API key header');
 
+$twoPartFiles = new ProviderHttpResponse(200, [
+    'data' => [
+        [
+            'displayName' => 'V2.0.0',
+            'fileName' => 'Pack-2.0.0.zip',
+            'fileDate' => '2024-05-01T00:00:00Z',
+            'releaseType' => 1,
+            'gameVersions' => ['NeoForge', '1.20'],
+            'downloadUrl' => 'https://cdn.example/pack-2.0.0.zip',
+        ],
+    ],
+]);
+
+$http = new FakeProviderHttpClient([$projectResponse, $twoPartFiles]);
+$provider = new CurseForgeProvider(
+    $http,
+    new FakeDownloader('/does/not/matter'),
+    SECRET_KEY,
+);
+
+$metadata = $provider->getMetadata('curseforge://314768');
+
+if ($metadata->minecraftVersion !== '1.20') {
+    throw new RuntimeException(
+        'Two-part Minecraft version was not mapped: ' . $metadata->minecraftVersion,
+    );
+}
+
+if ($metadata->loader !== 'NeoForge') {
+    throw new RuntimeException('NeoForge loader was not mapped.');
+}
+
+pass('two-part Minecraft version (1.20) mapped with loader');
+
 $http = new FakeProviderHttpClient([
     new ProviderHttpException('The provider returned an HTTP 404 response.', 404),
 ]);
