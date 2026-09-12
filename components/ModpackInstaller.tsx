@@ -43,6 +43,11 @@ interface InstallResponse {
     data: InstallationResult;
 }
 
+interface StatusMessage {
+    kind: 'error' | 'info' | 'success';
+    message: string;
+}
+
 const API_BASE =
     '/api/client/extensions/modpackinstaller';
 
@@ -95,14 +100,43 @@ export default () => {
     const [installLoading, setInstallLoading] =
         useState(false);
 
-    const [error, setError] =
-        useState<string | null>(null);
+    const [status, setStatus] =
+        useState<StatusMessage | null>(null);
+
+    const busy = loading || previewLoading || installLoading;
+
+    const updateSource = (value: string) => {
+        setSource(value);
+        setPreview(null);
+        setResult(null);
+        setStatus(null);
+
+        if (value.trim() !== selectedSource) {
+            setMetadata(null);
+            setSelectedSource(null);
+        }
+    };
+
+    const selectLayout = (value: string) => {
+        setLayout(value);
+        setPreview(null);
+        setStatus(null);
+    };
+
+    const selectPolicy = (value: string) => {
+        setPolicy(value);
+        setPreview(null);
+        setStatus(null);
+    };
 
     const loadMetadata = async () => {
         const trimmedSource = source.trim();
 
         if (!trimmedSource) {
-            setError('Please enter a modpack source.');
+            setStatus({
+                kind: 'error',
+                message: 'Please enter a modpack source.',
+            });
             setMetadata(null);
             setSelectedSource(null);
             setPreview(null);
@@ -115,7 +149,7 @@ export default () => {
         }
 
         setLoading(true);
-        setError(null);
+        setStatus(null);
         setMetadata(null);
         setSelectedSource(null);
         setPreview(null);
@@ -138,6 +172,10 @@ export default () => {
 
             setMetadata(response.data.data);
             setSelectedSource(trimmedSource);
+            setStatus({
+                kind: 'info',
+                message: `Metadata loaded for ${trimmedSource}.`,
+            });
         } catch (requestError: any) {
             if (!alive.current) {
                 return;
@@ -147,7 +185,10 @@ export default () => {
                 requestError.response?.data?.error ||
                 'Unable to load modpack metadata.';
 
-            setError(message);
+            setStatus({
+                kind: 'error',
+                message,
+            });
         } finally {
             if (alive.current) {
                 setLoading(false);
@@ -157,16 +198,20 @@ export default () => {
 
     const previewInstallation = async () => {
         if (!server) {
-            setError(
-                'Unable to determine the current server.',
-            );
+            setStatus({
+                kind: 'error',
+                message:
+                    'Unable to determine the current server.',
+            });
             return;
         }
 
         if (!selectedSource) {
-            setError(
-                'Load a modpack before previewing installation.',
-            );
+            setStatus({
+                kind: 'error',
+                message:
+                    'Load a modpack before previewing installation.',
+            });
             return;
         }
 
@@ -175,7 +220,7 @@ export default () => {
         }
 
         setPreviewLoading(true);
-        setError(null);
+        setStatus(null);
         setPreview(null);
         setResult(null);
 
@@ -195,6 +240,11 @@ export default () => {
             }
 
             setPreview(response.data.data);
+            setStatus({
+                kind: 'info',
+                message:
+                    'Installation preview is ready. Review the operations below.',
+            });
         } catch (requestError: any) {
             if (!alive.current) {
                 return;
@@ -204,7 +254,10 @@ export default () => {
                 requestError.response?.data?.error ||
                 'Unable to preview the modpack installation.';
 
-            setError(message);
+            setStatus({
+                kind: 'error',
+                message,
+            });
         } finally {
             if (alive.current) {
                 setPreviewLoading(false);
@@ -214,16 +267,29 @@ export default () => {
 
     const installModpack = async () => {
         if (!server) {
-            setError(
-                'Unable to determine the current server.',
-            );
+            setStatus({
+                kind: 'error',
+                message:
+                    'Unable to determine the current server.',
+            });
             return;
         }
 
         if (!selectedSource) {
-            setError(
-                'Load a modpack before installing.',
-            );
+            setStatus({
+                kind: 'error',
+                message:
+                    'Load a modpack before installing.',
+            });
+            return;
+        }
+
+        if (!preview) {
+            setStatus({
+                kind: 'error',
+                message:
+                    'Preview the installation before installing.',
+            });
             return;
         }
 
@@ -232,7 +298,7 @@ export default () => {
         }
 
         setInstallLoading(true);
-        setError(null);
+        setStatus(null);
         setResult(null);
 
         try {
@@ -252,6 +318,10 @@ export default () => {
 
             setResult(response.data.data);
             setPreview(null);
+            setStatus({
+                kind: 'success',
+                message: 'Installation complete.',
+            });
         } catch (requestError: any) {
             if (!alive.current) {
                 return;
@@ -261,7 +331,10 @@ export default () => {
                 requestError.response?.data?.error ||
                 'Unable to install the modpack.';
 
-            setError(message);
+            setStatus({
+                kind: 'error',
+                message,
+            });
         } finally {
             if (alive.current) {
                 setInstallLoading(false);
@@ -270,7 +343,10 @@ export default () => {
     };
 
     return (
-        <div className="modpackinstaller-root">
+        <div
+            className="modpackinstaller-root"
+            aria-busy={busy}
+        >
             <div className="modpackinstaller-header">
                 <h2>Modpack Installer</h2>
 
@@ -296,15 +372,16 @@ export default () => {
                         type="text"
                         value={source}
                         onChange={(event) =>
-                            setSource(event.target.value)
+                            updateSource(event.target.value)
                         }
                         placeholder="mock://example-pack"
+                        disabled={loading}
                     />
 
                     <button
                         type="button"
                         onClick={loadMetadata}
-                        disabled={loading}
+                        disabled={busy}
                     >
                         {loading
                             ? 'Loading ...'
@@ -314,9 +391,16 @@ export default () => {
                     </button>
                 </div>
 
-                {error && (
-                    <div className="modpackinstaller-error">
-                        {error}
+                {status && (
+                    <div
+                        className={`modpackinstaller-status modpackinstaller-status--${status.kind}`}
+                        role={
+                            status.kind === 'error'
+                                ? 'alert'
+                                : 'status'
+                        }
+                    >
+                        {status.message}
                     </div>
                 )}
 
@@ -384,10 +468,8 @@ export default () => {
                     <h3>Installation options</h3>
 
                     <div className="modpackinstaller-options">
-                        <div>
-                            <strong>
-                                Package layout
-                            </strong>
+                        <fieldset>
+                            <legend>Package layout</legend>
 
                             <label>
                                 <input
@@ -398,7 +480,7 @@ export default () => {
                                         layout === 'direct'
                                     }
                                     onChange={() =>
-                                        setLayout('direct')
+                                        selectLayout('direct')
                                     }
                                 />
 
@@ -414,18 +496,18 @@ export default () => {
                                         layout === 'overrides'
                                     }
                                     onChange={() =>
-                                        setLayout('overrides')
+                                        selectLayout(
+                                            'overrides',
+                                        )
                                     }
                                 />
 
                                 Overrides
                             </label>
-                        </div>
+                        </fieldset>
 
-                        <div>
-                            <strong>
-                                Existing files
-                            </strong>
+                        <fieldset>
+                            <legend>Existing files</legend>
 
                             <label>
                                 <input
@@ -436,7 +518,7 @@ export default () => {
                                         policy === 'overwrite'
                                     }
                                     onChange={() =>
-                                        setPolicy('overwrite')
+                                        selectPolicy('overwrite')
                                     }
                                 />
 
@@ -452,7 +534,7 @@ export default () => {
                                         policy === 'skip_existing'
                                     }
                                     onChange={() =>
-                                        setPolicy(
+                                        selectPolicy(
                                             'skip_existing',
                                         )
                                     }
@@ -470,7 +552,7 @@ export default () => {
                                         policy === 'create_only'
                                     }
                                     onChange={() =>
-                                        setPolicy(
+                                        selectPolicy(
                                             'create_only',
                                         )
                                     }
@@ -478,7 +560,7 @@ export default () => {
 
                                 Create only
                             </label>
-                        </div>
+                        </fieldset>
                     </div>
 
                     <button
@@ -544,7 +626,10 @@ export default () => {
                     <button
                         type="button"
                         onClick={installModpack}
-                        disabled={installLoading}
+                        disabled={
+                            installLoading ||
+                            previewLoading
+                        }
                     >
                         {installLoading
                             ? 'Installing ...'
@@ -557,7 +642,7 @@ export default () => {
                 <div className="modpackinstaller-card">
                     <h3>Installation complete</h3>
 
-                    <div className="modpackinstaller-details">
+                    <div className="modpackinstaller-result-grid">
                         <div>
                             <span>Total files</span>
                             <strong>
