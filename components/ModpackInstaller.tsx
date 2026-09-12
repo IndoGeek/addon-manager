@@ -74,6 +74,35 @@ interface CatalogPagination {
     has_previous: boolean;
 }
 
+interface CatalogVersion {
+    provider: string;
+    project_id: string;
+    project_slug: string | null;
+    project_name: string | null;
+    version_id: string;
+    version_number: string;
+    version_name: string | null;
+    game_versions: string[];
+    loaders: string[];
+    date_published: string | null;
+    date_modified: string | null;
+    downloads: number | null;
+    source: string;
+}
+
+interface CatalogVersionsResponseData {
+    provider: string;
+    filters: {
+        game_version: string | null;
+        loader: string | null;
+    };
+    versions: CatalogVersion[];
+}
+
+interface CatalogVersionsResponse {
+    data: CatalogVersionsResponseData;
+}
+
 interface CatalogResponseData {
     items: CatalogItem[];
     pagination: CatalogPagination;
@@ -180,6 +209,41 @@ const formatCount = (value: number): string => {
     return String(value);
 };
 
+const versionLabel = (version: CatalogVersion): string => {
+    const suffix: string[] = [];
+
+    if (version.game_versions.length > 0) {
+        suffix.push(
+            version.game_versions.length > 2
+                ? `${version.game_versions.slice(0, 2).join(', ')} +`
+                : version.game_versions.join(', '),
+        );
+    }
+
+    if (version.loaders.length > 0) {
+        suffix.push(version.loaders.join('/'));
+    }
+
+    return suffix.length > 0
+        ? `${version.version_number} (${suffix.join(' · ')})`
+        : version.version_number;
+};
+
+const uniqueSorted = (
+    values: string[],
+    fallback: string[],
+): string[] => {
+    const seen = new Set<string>();
+
+    const combined = [...values, ...fallback].filter(
+        (value) => value.trim() !== '',
+    );
+
+    combined.forEach((value) => seen.add(value));
+
+    return Array.from(seen);
+};
+
 const ModpackIcon = ({ item }: { item: CatalogItem }) => {
     const mounted = useRef(true);
 
@@ -280,6 +344,63 @@ export default () => {
         useState<StatusMessage | null>(null);
 
     const busy = loading || previewLoading || installLoading;
+
+    const [modalItem, setModalItem] =
+        useState<CatalogItem | null>(null);
+
+    const [modalGameVersion, setModalGameVersion] =
+        useState('');
+
+    const [modalLoader, setModalLoader] =
+        useState('');
+
+    const [modalVersions, setModalVersions] =
+        useState<CatalogVersion[] | null>(null);
+
+    const [modalVersionsLoading, setModalVersionsLoading] =
+        useState(false);
+
+    const [modalVersionsError, setModalVersionsError] =
+        useState<string | null>(null);
+
+    const [modalPreview, setModalPreview] =
+        useState<InstallationPreview | null>(null);
+
+    const [modalResult, setModalResult] =
+        useState<InstallationResult | null>(null);
+
+    const [modalPreviewLoading, setModalPreviewLoading] =
+        useState(false);
+
+    const [modalInstallLoading, setModalInstallLoading] =
+        useState(false);
+
+    const [modalStatus, setModalStatus] =
+        useState<StatusMessage | null>(null);
+
+    const [modalMetadata, setModalMetadata] =
+        useState<ModpackMetadata | null>(null);
+
+    const [modalMetadataLoading, setModalMetadataLoading] =
+        useState(false);
+
+    const [modalMetadataError, setModalMetadataError] =
+        useState<string | null>(null);
+
+    const [modalVersionSource, setModalVersionSource] =
+        useState<string | null>(null);
+
+    const modalBusy =
+        modalVersionsLoading ||
+        modalMetadataLoading ||
+        modalPreviewLoading ||
+        modalInstallLoading;
+
+    const versionsRequestId = useRef(0);
+
+    const metadataRequestId = useRef(0);
+
+    const closeButtonRef = useRef<HTMLButtonElement | null>(null);
 
     const [providers, setProviders] =
         useState<CatalogProviderOption[] | null>(null);
@@ -504,19 +625,38 @@ export default () => {
         }
     };
 
-    const selectCatalogItem = (item: CatalogItem) => {
+    const clearModalSelection = () => {
+        setModalVersionSource(null);
+        setModalMetadata(null);
+        setModalMetadataError(null);
+        setModalPreview(null);
+        setModalResult(null);
+        setModalStatus(null);
+    };
+
+    const openCatalogModal = (item: CatalogItem) => {
         if (busy) {
             return;
         }
 
-        setSource(item.source);
-        setMetadata(null);
-        setSelectedSource(null);
-        setPreview(null);
-        setResult(null);
-        setStatus(null);
+        versionsRequestId.current++;
+        metadataRequestId.current++;
 
-        fetchMetadata(item.source);
+        setModalItem(item);
+        setModalGameVersion('');
+        setModalLoader('');
+        setModalVersions(null);
+        setModalVersionsError(null);
+        setModalVersionsLoading(false);
+        setModalMetadata(null);
+        setModalMetadataLoading(false);
+        setModalMetadataError(null);
+        setModalVersionSource(null);
+        setModalPreview(null);
+        setModalResult(null);
+        setModalPreviewLoading(false);
+        setModalInstallLoading(false);
+        setModalStatus(null);
     };
 
     const fetchMetadata = async (targetSource: string) => {
@@ -589,6 +729,402 @@ export default () => {
     const loadManualSource = () => {
         fetchMetadata(source);
     };
+
+    const loadVersions = async (
+        gameVersion: string,
+        loader: string,
+    ) => {
+        const item = modalItem;
+
+        if (!item) {
+            return;
+        }
+
+        const id = ++versionsRequestId.current;
+
+        setModalVersionsLoading(true);
+        setModalVersions(null);
+        setModalVersionsError(null);
+
+        const params: Record<string, string> = {
+            provider: item.provider,
+            project: item.provider_project_id,
+        };
+
+        if (gameVersion !== '') {
+            params.game_version = gameVersion;
+        }
+
+        if (loader !== '') {
+            params.loader = loader;
+        }
+
+        try {
+            const response =
+                await axios.get<CatalogVersionsResponse>(
+                    `${API_BASE}/catalog/versions`,
+                    { params },
+                );
+
+            if (
+                !alive.current
+                || id !== versionsRequestId.current
+                || modalItem === null
+            ) {
+                return;
+            }
+
+            const versions = response.data.data.versions;
+
+            setModalVersions(versions);
+
+            if (versions.length === 1) {
+                selectModalVersion(versions[0].source);
+            } else if (
+                modalVersionSource
+                && versions.some(
+                    (version) =>
+                        version.source === modalVersionSource,
+                )
+            ) {
+                // keep the current selection
+            } else {
+                clearModalSelection();
+            }
+        } catch (requestError: any) {
+            if (
+                !alive.current
+                || id !== versionsRequestId.current
+                || modalItem === null
+            ) {
+                return;
+            }
+
+            setModalVersionsError(
+                requestError.response?.data?.error ||
+                'Unable to load the modpack versions.',
+            );
+
+            clearModalSelection();
+        } finally {
+            if (
+                alive.current
+                && id === versionsRequestId.current
+                && modalItem !== null
+            ) {
+                setModalVersionsLoading(false);
+            }
+        }
+    };
+
+    const changeModalGameVersion = (value: string) => {
+        setModalGameVersion(value);
+        clearModalSelection();
+        loadVersions(value, modalLoader);
+    };
+
+    const changeModalLoader = (value: string) => {
+        setModalLoader(value);
+        clearModalSelection();
+        loadVersions(modalGameVersion, value);
+    };
+
+    const selectModalVersion = (source: string) => {
+        setModalVersionSource(source);
+        setModalMetadata(null);
+        setModalMetadataError(null);
+        setModalPreview(null);
+        setModalResult(null);
+        setModalStatus(null);
+
+        fetchModalMetadata(source);
+    };
+
+    const retryModalVersions = () => {
+        loadVersions(modalGameVersion, modalLoader);
+    };
+
+    const fetchModalMetadata = async (targetSource: string) => {
+        const trimmedSource = targetSource.trim();
+
+        if (!trimmedSource) {
+            setModalStatus({
+                kind: 'error',
+                message: 'The selected version has no installable source.',
+            });
+            return;
+        }
+
+        const id = ++metadataRequestId.current;
+
+        setModalMetadataLoading(true);
+        setModalMetadataError(null);
+        setModalStatus(null);
+
+        try {
+            const response =
+                await axios.get<MetadataResponse>(
+                    `${API_BASE}/metadata`,
+                    {
+                        params: {
+                            source: trimmedSource,
+                        },
+                    },
+                );
+
+            if (
+                !alive.current
+                || id !== metadataRequestId.current
+                || modalItem === null
+            ) {
+                return;
+            }
+
+            setModalMetadata(response.data.data);
+            setModalStatus({
+                kind: 'info',
+                message: `Resolved ${response.data.data.name} ${response.data.data.version}.`,
+            });
+        } catch (requestError: any) {
+            if (
+                !alive.current
+                || id !== metadataRequestId.current
+                || modalItem === null
+            ) {
+                return;
+            }
+
+            const message =
+                requestError.response?.data?.error ||
+                'Unable to resolve the selected modpack version.';
+
+            setModalMetadataError(message);
+            setModalStatus({
+                kind: 'error',
+                message,
+            });
+        } finally {
+            if (
+                alive.current
+                && id === metadataRequestId.current
+                && modalItem !== null
+            ) {
+                setModalMetadataLoading(false);
+            }
+        }
+    };
+
+    const modalPreviewInstallation = async () => {
+        if (!server) {
+            setModalStatus({
+                kind: 'error',
+                message:
+                    'Unable to determine the current server.',
+            });
+            return;
+        }
+
+        if (!modalVersionSource) {
+            setModalStatus({
+                kind: 'error',
+                message:
+                    'Select a modpack version before previewing installation.',
+            });
+            return;
+        }
+
+        if (!modalMetadata) {
+            setModalStatus({
+                kind: 'error',
+                message:
+                    'Resolve the modpack version before previewing installation.',
+            });
+            return;
+        }
+
+        if (modalPreviewLoading || modalInstallLoading) {
+            return;
+        }
+
+        setModalPreviewLoading(true);
+        setModalStatus(null);
+        setModalPreview(null);
+        setModalResult(null);
+
+        try {
+            const response =
+                await axios.post<PreviewResponse>(
+                    `${API_BASE}/servers/${server}/preview`,
+                    {
+                        source: modalVersionSource,
+                        policy,
+                        layout,
+                    },
+                );
+
+            if (!alive.current || modalItem === null) {
+                return;
+            }
+
+            setModalPreview(response.data.data);
+            setModalStatus({
+                kind: 'info',
+                message:
+                    'Installation preview is ready. Review the operations below.',
+            });
+        } catch (requestError: any) {
+            if (!alive.current || modalItem === null) {
+                return;
+            }
+
+            const message =
+                requestError.response?.data?.error ||
+                'Unable to preview the modpack installation.';
+
+            setModalStatus({
+                kind: 'error',
+                message,
+            });
+        } finally {
+            if (alive.current && modalItem !== null) {
+                setModalPreviewLoading(false);
+            }
+        }
+    };
+
+    const modalInstallModpack = async () => {
+        if (!server) {
+            setModalStatus({
+                kind: 'error',
+                message:
+                    'Unable to determine the current server.',
+            });
+            return;
+        }
+
+        if (!modalVersionSource) {
+            setModalStatus({
+                kind: 'error',
+                message:
+                    'Select a modpack version before installing.',
+            });
+            return;
+        }
+
+        if (!modalPreview) {
+            setModalStatus({
+                kind: 'error',
+                message:
+                    'Preview the installation before installing.',
+            });
+            return;
+        }
+
+        if (modalInstallLoading || modalPreviewLoading) {
+            return;
+        }
+
+        setModalInstallLoading(true);
+        setModalStatus(null);
+        setModalResult(null);
+
+        try {
+            const response =
+                await axios.post<InstallResponse>(
+                    `${API_BASE}/servers/${server}/install`,
+                    {
+                        source: modalVersionSource,
+                        policy,
+                        layout,
+                    },
+                );
+
+            if (!alive.current || modalItem === null) {
+                return;
+            }
+
+            setModalResult(response.data.data);
+            setModalStatus({
+                kind: 'success',
+                message: 'Installation complete.',
+            });
+        } catch (requestError: any) {
+            if (!alive.current || modalItem === null) {
+                return;
+            }
+
+            const message =
+                requestError.response?.data?.error ||
+                'Unable to install the modpack.';
+
+            setModalStatus({
+                kind: 'error',
+                message,
+            });
+        } finally {
+            if (alive.current && modalItem !== null) {
+                setModalInstallLoading(false);
+            }
+        }
+    };
+
+    const modalSelectLayout = (value: string) => {
+        setLayout(value);
+        setModalPreview(null);
+        setModalResult(null);
+        setModalStatus(null);
+    };
+
+    const modalSelectPolicy = (value: string) => {
+        setPolicy(value);
+        setModalPreview(null);
+        setModalResult(null);
+        setModalStatus(null);
+    };
+
+    const closeCatalogModal = () => {
+        versionsRequestId.current++;
+        metadataRequestId.current++;
+
+        setModalItem(null);
+        setModalVersions(null);
+        setModalVersionsError(null);
+        setModalVersionsLoading(false);
+        setModalGameVersion('');
+        setModalLoader('');
+        setModalMetadata(null);
+        setModalMetadataLoading(false);
+        setModalMetadataError(null);
+        setModalVersionSource(null);
+        setModalPreview(null);
+        setModalResult(null);
+        setModalPreviewLoading(false);
+        setModalInstallLoading(false);
+        setModalStatus(null);
+    };
+
+    useEffect(() => {
+        if (modalItem === null) {
+            return;
+        }
+
+        closeButtonRef.current?.focus();
+
+        const onKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                closeCatalogModal();
+            }
+        };
+
+        window.addEventListener('keydown', onKeyDown);
+
+        loadVersions('', '');
+
+        return () => {
+            window.removeEventListener('keydown', onKeyDown);
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [modalItem]);
 
     const previewInstallation = async () => {
         if (!server) {
@@ -1089,11 +1625,11 @@ export default () => {
                                             <button
                                                 type="button"
                                                 onClick={() =>
-                                                    selectCatalogItem(item)
+                                                    openCatalogModal(item)
                                                 }
                                                 disabled={busy || searching}
                                             >
-                                                Use this modpack
+                                                Select
                                             </button>
 
                                             {item.project_url && (
@@ -1185,7 +1721,9 @@ export default () => {
 
                         <p className="modpackinstaller-source-hint">
                             Sources: modrinth://project-slug ·
-                            curseforge://project-id · mock://example-pack
+                            curseforge://project-id · mock://example-pack.
+                            Append @version-id to pin an exact modpack
+                            version.
                         </p>
                     </div>
                 </details>
@@ -1460,6 +1998,558 @@ export default () => {
                                 {result.backed_up}
                             </strong>
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {modalItem && (
+                <div
+                    className="modpackinstaller-modal-overlay"
+                    onClick={(event) => {
+                        if (event.target === event.currentTarget) {
+                            closeCatalogModal();
+                        }
+                    }}
+                >
+                    <div
+                        className="modpackinstaller-modal"
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="modpackinstaller-modal-title"
+                        aria-busy={modalBusy}
+                    >
+                        <div className="modpackinstaller-modal-header">
+                            <div className="modpackinstaller-modal-heading">
+                                <span className="modpackinstaller-catalog-card-badge">
+                                    {modalItem.provider}
+                                </span>
+
+                                <h3 id="modpackinstaller-modal-title">
+                                    {modalItem.name}
+                                </h3>
+                            </div>
+
+                            <button
+                                type="button"
+                                ref={closeButtonRef}
+                                className="modpackinstaller-modal-close"
+                                aria-label="Close"
+                                onClick={closeCatalogModal}
+                            >
+                                &times;
+                            </button>
+                        </div>
+
+                        {modalStatus && (
+                            <div
+                                className={`modpackinstaller-status modpackinstaller-status--${modalStatus.kind}`}
+                                role={
+                                    modalStatus.kind === 'error'
+                                        ? 'alert'
+                                        : 'status'
+                                }
+                            >
+                                {modalStatus.message}
+                            </div>
+                        )}
+
+                        <div className="modpackinstaller-modal-body">
+                            <div className="modpackinstaller-modal-item">
+                                <ModpackIcon item={modalItem} />
+
+                                <div className="modpackinstaller-modal-item-meta">
+                                    <p className="modpackinstaller-catalog-card-summary">
+                                        {modalItem.summary ||
+                                            'No description available.'}
+                                    </p>
+
+                                    <dl className="modpackinstaller-catalog-card-meta">
+                                        {modalItem.loaders.length > 0 && (
+                                            <div>
+                                                <dt>Loader</dt>
+                                                <dd>
+                                                    {modalItem.loaders.join(' · ')}
+                                                </dd>
+                                            </div>
+                                        )}
+
+                                        {modalItem.game_versions.length > 0 && (
+                                            <div>
+                                                <dt>Minecraft</dt>
+                                                <dd>
+                                                    {modalItem.game_versions.length > 3
+                                                        ? `${modalItem.game_versions
+                                                            .slice(0, 3)
+                                                            .join(', ')} +`
+                                                        : modalItem.game_versions.join(', ')}
+                                                </dd>
+                                            </div>
+                                        )}
+
+                                        {modalItem.downloads !== null && (
+                                            <div>
+                                                <dt>Downloads</dt>
+                                                <dd>
+                                                    {formatCount(modalItem.downloads)}
+                                                </dd>
+                                            </div>
+                                        )}
+
+                                        {modalItem.follows !== null && (
+                                            <div>
+                                                <dt>Follows</dt>
+                                                <dd>
+                                                    {formatCount(modalItem.follows)}
+                                                </dd>
+                                            </div>
+                                        )}
+                                    </dl>
+
+                                    {modalItem.project_url && (
+                                        <a
+                                            href={modalItem.project_url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            referrerPolicy="no-referrer"
+                                            className="modpackinstaller-modal-link"
+                                        >
+                                            View on Modrinth
+                                        </a>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="modpackinstaller-modal-filters">
+                                <div>
+                                    <label htmlFor="modpackinstaller-modal-game-version">
+                                        Minecraft version
+                                    </label>
+
+                                    <select
+                                        id="modpackinstaller-modal-game-version"
+                                        value={modalGameVersion}
+                                        onChange={(event) =>
+                                            changeModalGameVersion(
+                                                event.target.value,
+                                            )
+                                        }
+                                        disabled={modalVersionsLoading}
+                                    >
+                                        <option value="">Any</option>
+                                        {uniqueSorted(
+                                            modalItem.game_versions,
+                                            GAME_VERSIONS,
+                                        ).map((mcVersion) => (
+                                            <option
+                                                key={mcVersion}
+                                                value={mcVersion}
+                                            >
+                                                {mcVersion}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                <div>
+                                    <label htmlFor="modpackinstaller-modal-loader">
+                                        Loader
+                                    </label>
+
+                                    <select
+                                        id="modpackinstaller-modal-loader"
+                                        value={modalLoader}
+                                        onChange={(event) =>
+                                            changeModalLoader(
+                                                event.target.value,
+                                            )
+                                        }
+                                        disabled={modalVersionsLoading}
+                                    >
+                                        <option value="">Any</option>
+                                        {uniqueSorted(
+                                            modalItem.loaders,
+                                            LOADERS,
+                                        ).map((loader) => (
+                                            <option
+                                                key={loader}
+                                                value={loader}
+                                            >
+                                                {loader}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div
+                                className="modpackinstaller-modal-versions"
+                                aria-busy={modalVersionsLoading}
+                            >
+                                <div className="modpackinstaller-modal-versions-heading">
+                                    <label htmlFor="modpackinstaller-modal-version">
+                                        Version
+                                    </label>
+
+                                    <span className="modpackinstaller-modal-versions-count">
+                                        {modalVersionsLoading
+                                            ? 'Loading versions ...'
+                                            : modalVersions === null
+                                                ? ''
+                                                : modalVersions.length === 0
+                                                    ? 'No versions match the selected filters.'
+                                                    : `${modalVersions.length} version${modalVersions.length === 1 ? '' : 's'}`}
+                                    </span>
+                                </div>
+
+                                {modalVersionsLoading && (
+                                    <div
+                                        className="modpackinstaller-catalog-state"
+                                        role="status"
+                                    >
+                                        Loading versions ...
+                                    </div>
+                                )}
+
+                                {!modalVersionsLoading
+                                    && modalVersionsError
+                                    && (
+                                        <div className="modpackinstaller-catalog-state modpackinstaller-catalog-state--error">
+                                            <p role="alert">
+                                                {modalVersionsError}
+                                            </p>
+
+                                            <button
+                                                type="button"
+                                                onClick={retryModalVersions}
+                                            >
+                                                Retry
+                                            </button>
+                                        </div>
+                                    )}
+
+                                {!modalVersionsLoading
+                                    && !modalVersionsError
+                                    && modalVersions !== null
+                                    && modalVersions.length === 0 && (
+                                        <div className="modpackinstaller-catalog-state modpackinstaller-catalog-state--empty">
+                                            <p>
+                                                No versions match the
+                                                selected filters. Try
+                                                broadening the Minecraft
+                                                version or loader filters.
+                                            </p>
+                                        </div>
+                                    )}
+
+                                {!modalVersionsLoading
+                                    && !modalVersionsError
+                                    && modalVersions !== null
+                                    && modalVersions.length > 0 && (
+                                        <select
+                                            id="modpackinstaller-modal-version"
+                                            value={modalVersionSource ?? ''}
+                                            onChange={(event) =>
+                                                selectModalVersion(
+                                                    event.target.value,
+                                                )
+                                            }
+                                        >
+                                            <option value="">
+                                                Select a version
+                                            </option>
+
+                                            {modalVersionSource
+                                                && !modalVersions.some(
+                                                    (version) =>
+                                                        version.source
+                                                        === modalVersionSource,
+                                                ) && (
+                                                    <option
+                                                        value={modalVersionSource}
+                                                        disabled
+                                                    >
+                                                        {modalVersionSource}
+                                                    </option>
+                                                )}
+
+                                            {modalVersions.map((version) => (
+                                                <option
+                                                    key={version.source}
+                                                    value={version.source}
+                                                >
+                                                    {versionLabel(version)}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    )}
+                            </div>
+
+                            {modalMetadataLoading && (
+                                <div
+                                    className="modpackinstaller-catalog-state"
+                                    role="status"
+                                >
+                                    Resolving the selected version ...
+                                </div>
+                            )}
+
+                            {!modalMetadataLoading
+                                && modalMetadataError
+                                && (
+                                    <div className="modpackinstaller-catalog-state modpackinstaller-catalog-state--error">
+                                        <p role="alert">
+                                            {modalMetadataError}
+                                        </p>
+
+                                        <button
+                                            type="button"
+                                            onClick={() =>
+                                                modalVersionSource
+                                                    && fetchModalMetadata(
+                                                        modalVersionSource,
+                                                    )
+                                            }
+                                        >
+                                            Retry
+                                        </button>
+                                    </div>
+                                )}
+                        </div>
+
+                        {modalMetadata && (
+                            <div className="modpackinstaller-modal-options">
+                                <div className="modpackinstaller-details">
+                                    <div>
+                                        <span>Version</span>
+                                        <strong>
+                                            {modalMetadata.version}
+                                        </strong>
+                                    </div>
+
+                                    <div>
+                                        <span>Minecraft</span>
+                                        <strong>
+                                            {modalMetadata.minecraft_version}
+                                        </strong>
+                                    </div>
+
+                                    <div>
+                                        <span>Loader</span>
+                                        <strong>
+                                            {modalMetadata.loader}
+                                        </strong>
+                                    </div>
+                                </div>
+
+                                <div className="modpackinstaller-options">
+                                    <fieldset>
+                                        <legend>Package layout</legend>
+
+                                        <label>
+                                            <input
+                                                type="radio"
+                                                name="modpackinstaller-modal-layout"
+                                                value="direct"
+                                                checked={
+                                                    layout === 'direct'
+                                                }
+                                                onChange={() =>
+                                                    modalSelectLayout('direct')
+                                                }
+                                            />
+
+                                            Direct
+                                        </label>
+
+                                        <label>
+                                            <input
+                                                type="radio"
+                                                name="modpackinstaller-modal-layout"
+                                                value="overrides"
+                                                checked={
+                                                    layout === 'overrides'
+                                                }
+                                                onChange={() =>
+                                                    modalSelectLayout(
+                                                        'overrides',
+                                                    )
+                                                }
+                                            />
+
+                                            Overrides
+                                        </label>
+                                    </fieldset>
+
+                                    <fieldset>
+                                        <legend>Existing files</legend>
+
+                                        <label>
+                                            <input
+                                                type="radio"
+                                                name="modpackinstaller-modal-policy"
+                                                value="overwrite"
+                                                checked={
+                                                    policy === 'overwrite'
+                                                }
+                                                onChange={() =>
+                                                    modalSelectPolicy(
+                                                        'overwrite',
+                                                    )
+                                                }
+                                            />
+
+                                            Overwrite
+                                        </label>
+
+                                        <label>
+                                            <input
+                                                type="radio"
+                                                name="modpackinstaller-modal-policy"
+                                                value="skip_existing"
+                                                checked={
+                                                    policy === 'skip_existing'
+                                                }
+                                                onChange={() =>
+                                                    modalSelectPolicy(
+                                                        'skip_existing',
+                                                    )
+                                                }
+                                            />
+
+                                            Skip existing
+                                        </label>
+
+                                        <label>
+                                            <input
+                                                type="radio"
+                                                name="modpackinstaller-modal-policy"
+                                                value="create_only"
+                                                checked={
+                                                    policy === 'create_only'
+                                                }
+                                                onChange={() =>
+                                                    modalSelectPolicy(
+                                                        'create_only',
+                                                    )
+                                                }
+                                            />
+
+                                            Create only
+                                        </label>
+                                    </fieldset>
+                                </div>
+
+                                <div className="modpackinstaller-modal-actions">
+                                    <button
+                                        type="button"
+                                        onClick={modalPreviewInstallation}
+                                        disabled={
+                                            !modalVersionSource
+                                            || modalPreviewLoading
+                                            || modalInstallLoading
+                                        }
+                                    >
+                                        {modalPreviewLoading
+                                            ? 'Preparing Preview ...'
+                                            : 'Preview Installation'}
+                                    </button>
+
+                                    {modalPreview && (
+                                        <button
+                                            type="button"
+                                            onClick={modalInstallModpack}
+                                            disabled={
+                                                modalInstallLoading
+                                                || modalPreviewLoading
+                                            }
+                                        >
+                                            {modalInstallLoading
+                                                ? 'Installing ...'
+                                                : 'Install Modpack'}
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        {modalPreview && (
+                            <div className="modpackinstaller-modal-preview">
+                                <div className="modpackinstaller-details">
+                                    <div>
+                                        <span>Total files</span>
+                                        <strong>
+                                            {modalPreview.total_files}
+                                        </strong>
+                                    </div>
+
+                                    <div>
+                                        <span>New files</span>
+                                        <strong>
+                                            {modalPreview.create_count}
+                                        </strong>
+                                    </div>
+
+                                    <div>
+                                        <span>Overwrite</span>
+                                        <strong>
+                                            {modalPreview.overwrite_count}
+                                        </strong>
+                                    </div>
+                                </div>
+
+                                <div className="modpackinstaller-operation-list">
+                                    {modalPreview.operations.map(
+                                        (operation) => (
+                                            <div
+                                                key={`${operation.action}:${operation.path}`}
+                                            >
+                                                <code>
+                                                    {operation.path}
+                                                </code>
+
+                                                <span>
+                                                    {operation.action}
+                                                </span>
+                                            </div>
+                                        ),
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        {modalResult && (
+                            <div className="modpackinstaller-modal-result">
+                                <div className="modpackinstaller-result-grid">
+                                    <div>
+                                        <span>Total files</span>
+                                        <strong>
+                                            {modalResult.total_files}
+                                        </strong>
+                                    </div>
+
+                                    <div>
+                                        <span>Created</span>
+                                        <strong>
+                                            {modalResult.created}
+                                        </strong>
+                                    </div>
+
+                                    <div>
+                                        <span>Overwritten</span>
+                                        <strong>
+                                            {modalResult.overwritten}
+                                        </strong>
+                                    </div>
+
+                                    <div>
+                                        <span>Backups</span>
+                                        <strong>
+                                            {modalResult.backed_up}
+                                        </strong>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
             )}

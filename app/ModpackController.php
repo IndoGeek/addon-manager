@@ -20,6 +20,7 @@ use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogService;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogSort;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogUnavailableException;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogVersionQuery;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\BackupManager;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentExecutor;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentPlanner;
@@ -125,6 +126,37 @@ final class ModpackController extends Controller
         return response()->json([
             'data' => $this->catalogService()->providers(),
         ]);
+    }
+
+    public function catalogVersions(Request $request): JsonResponse
+    {
+        try {
+            $query = $this->catalogVersionQuery($request);
+
+            $result = $this->catalogService()->versions($query);
+
+            return response()->json([
+                'data' => $result->toArray(),
+            ]);
+        } catch (InvalidArgumentException $exception) {
+            return response()->json([
+                'error' => $exception->getMessage(),
+            ], 422);
+        } catch (CatalogUnavailableException $exception) {
+            return response()->json([
+                'error' => $exception->getMessage(),
+            ], 503);
+        } catch (CatalogProviderException $exception) {
+            return response()->json([
+                'error' => $exception->getMessage(),
+            ], 502);
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return response()->json([
+                'error' => 'Unable to load the modpack versions.',
+            ], 500);
+        }
     }
 
     public function preview(
@@ -426,6 +458,63 @@ final class ModpackController extends Controller
             sort: $sort,
             page: $page,
             limit: $limit,
+        );
+    }
+
+    private function catalogVersionQuery(
+        Request $request,
+    ): CatalogVersionQuery {
+        $provider = $this->paramString(
+            $request,
+            'provider',
+            CatalogVersionQuery::DEFAULT_PROVIDER,
+            32,
+            '/^[a-z0-9-]{1,32}$/',
+        );
+
+        $projectValue = $request->query('project');
+
+        if (!is_string($projectValue) || trim($projectValue) === '') {
+            throw new InvalidArgumentException(
+                'The project parameter is required.',
+            );
+        }
+
+        $project = trim($projectValue);
+
+        if (
+            strlen($project) > 64
+            || preg_match(
+                CatalogVersionQuery::PROJECT_PATTERN,
+                $project,
+            ) !== 1
+        ) {
+            throw new InvalidArgumentException(
+                'Invalid project parameter.',
+            );
+        }
+
+        $gameVersion = $this->paramString(
+            $request,
+            'game_version',
+            null,
+            32,
+            CatalogSearchQuery::VERSION_PATTERN,
+        );
+
+        $loader = $this->paramString(
+            $request,
+            'loader',
+            null,
+            32,
+            CatalogSearchQuery::SLUG_PATTERN,
+        );
+
+        return new CatalogVersionQuery(
+            provider: $provider,
+            project: $project,
+            gameVersion: $gameVersion,
+            loader: $loader,
         );
     }
 

@@ -10,6 +10,8 @@ use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogResult;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogSearchQuery;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogUnavailableException;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogVersion;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogVersionQuery;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Provider\ProviderHttpClient;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Provider\ProviderHttpException;
 
@@ -67,6 +69,124 @@ final class ModrinthCatalogProvider implements CatalogProvider
         $payload = $this->fetch($query);
 
         return $this->mapPayload($query, $payload);
+    }
+
+    /**
+     * @return array<int, CatalogVersion>
+     */
+    public function versions(CatalogVersionQuery $query): array
+    {
+        $payload = $this->fetchVersions($query);
+
+        $versions = [];
+
+        foreach ($payload as $entry) {
+            if (!is_array($entry)) {
+                throw new CatalogProviderException(
+                    'The modpack catalog provider returned an invalid response.',
+                );
+            }
+
+            if (!$this->isPublicVersion($entry)) {
+                continue;
+            }
+
+            $versions[] = $this->mapVersion($query, $entry);
+        }
+
+        return $versions;
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function fetchVersions(CatalogVersionQuery $query): array
+    {
+        $parameters = [];
+
+        if ($query->gameVersion !== null) {
+            $parameters['game_versions'] = json_encode([
+                $query->gameVersion,
+            ]);
+        }
+
+        if ($query->loader !== null) {
+            $parameters['loaders'] = json_encode([$query->loader]);
+        }
+
+        try {
+            $response = $this->http->get(
+                self::API_BASE
+                    . '/project/'
+                    . rawurlencode($query->project)
+                    . '/version',
+                query: $parameters,
+            );
+
+            if (!is_array($response->body)) {
+                throw new CatalogProviderException(
+                    'The modpack catalog provider returned an invalid response.',
+                );
+            }
+
+            return $response->body;
+        } catch (InvalidArgumentException $exception) {
+            throw $exception;
+        } catch (CatalogProviderException $exception) {
+            throw $exception;
+        } catch (ProviderHttpException $exception) {
+            throw $this->requestFailure($exception);
+        }
+    }
+
+    /**
+     * A version is public unless the upstream explicitly marks it as a
+     * non-public status (drafts, scheduled, or unlisted releases).
+     *
+     * @param array<string, mixed> $version
+     */
+    private function isPublicVersion(array $version): bool
+    {
+        $status = $this->stringOrNull($version['status'] ?? null);
+
+        if ($status === null) {
+            return true;
+        }
+
+        return !in_array(
+            strtolower($status),
+            ['draft', 'scheduled', 'unlisted', 'withheld'],
+            true,
+        );
+    }
+
+    /**
+     * @param array<string, mixed> $version
+     */
+    private function mapVersion(
+        CatalogVersionQuery $query,
+        array $version,
+    ): CatalogVersion {
+        $versionId = $this->stringOrNull($version['id'] ?? null) ?? '';
+
+        return new CatalogVersion(
+            provider: $this->name(),
+            projectId: $query->project,
+            projectSlug: null,
+            projectName: null,
+            versionId: $versionId,
+            versionNumber: $this->stringOrNull($version['version_number'] ?? null)
+                ?? '',
+            versionName: $this->stringOrNull($version['name'] ?? null),
+            gameVersions: $this->stringList($version['game_versions'] ?? []),
+            loaders: $this->stringList($version['loaders'] ?? []),
+            datePublished: $this->stringOrNull($version['date_published'] ?? null),
+            dateModified: $this->stringOrNull($version['date_modified'] ?? null),
+            downloads: $this->intOrNull($version['downloads'] ?? null),
+            source: $versionId === ''
+                ? ''
+                : 'modrinth://' . $query->project . '@' . $versionId,
+        );
     }
 
     /**

@@ -44,4 +44,22 @@ final class CatalogService
 
         return $provider->search($query);
     }
+
+    public function versions(CatalogVersionQuery $query): CatalogVersionList
+    {
+        $provider = $this->registry->get($query->provider);
+
+        if (!$provider->available()) {
+            throw new CatalogUnavailableException(
+                'The requested modpack catalog provider is not available.',
+            );
+        }
+
+        return new CatalogVersionList(
+            provider: $provider->name(),
+            appliedGameVersion: $query->gameVersion,
+            appliedLoader: $query->loader,
+            versions: $provider->versions($query),
+        );
+    }
 }

@@ -48,9 +48,19 @@ Catalog manual tests (hermetic - they never contact Modrinth or CurseForge):
 
 ```bash
 php tests/manual/catalog-query-test.php
+php tests/manual/catalog-version-query-test.php
 php tests/manual/mock-catalog-provider-test.php
 php tests/manual/modrinth-catalog-provider-test.php
+php tests/manual/modrinth-catalog-versions-test.php
+php tests/manual/mock-catalog-versions-test.php
 php tests/manual/catalog-service-test.php
+php tests/manual/catalog-versions-service-test.php
+```
+
+Exact-version (pinned source) resolution is covered hermetically:
+
+```bash
+php tests/manual/modrinth-version-resolution-test.php
 ```
 
 Standalone (non-extension) tests may `require` the classes directly;

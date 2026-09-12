@@ -36,7 +36,11 @@ configuration, catalog support, and current package limitations.
 The dashboard is catalog-first: it searches, filters, sorts, and pages through
 modpacks from a normalised catalog endpoint (`/metadata`-style client route
 `/api/client/extensions/modpackinstaller/catalog`). Provider browsing is
-read-only and never asks a provider to download or install anything.
+read-only and never asks a provider to download or install anything. Selecting a
+modpack opens a details dialog that lists its published versions
+(`/catalog/versions`), resolves the chosen version to an exact pinned source
+(`modrinth://<project>@<version-id>`), and feeds that source into the existing
+metadata/preview/install pipeline.
 
 - Real Modrinth catalog search is served directly from `api.modrinth.com`.
 - CurseForge exposes a catalog provider contract but is listed as unavailable

@@ -34,4 +34,19 @@ interface CatalogProvider
      * @throws InvalidArgumentException    When the query itself is invalid.
      */
     public function search(CatalogSearchQuery $query): CatalogResult;
+
+    /**
+     * Returns the exact versions/releases available for a single project.
+     * Every returned entry must carry a resolved installable source for that
+     * exact version so the UI can hand it straight to the installation flow.
+     *
+     * @return array<int, CatalogVersion>
+     *
+     * @throws CatalogUnavailableException When the provider is unreachable,
+     *                                     timing out, rate limited, or disabled.
+     * @throws CatalogProviderException    When the provider responds with a
+     *                                     payload this provider cannot validate.
+     * @throws InvalidArgumentException    When the query itself is invalid.
+     */
+    public function versions(CatalogVersionQuery $query): array;
 }

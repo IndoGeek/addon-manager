@@ -16,6 +16,11 @@ Route::get('/catalog', [
     'catalog',
 ]);
 
+Route::get('/catalog/versions', [
+    ModpackController::class,
+    'catalogVersions',
+]);
+
 Route::get('/catalog/providers', [
     ModpackController::class,
     'catalogProviders',

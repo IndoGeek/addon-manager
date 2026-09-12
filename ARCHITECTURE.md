@@ -75,6 +75,19 @@ deploys anything. The UI only loads the provider list and calls
   become controlled `502` errors. Rate limits, upstream 5xx, and timeouts map
   to retryable `503` errors. The CurseForge catalog stub is always marked
   unavailable, makes no upstream request, and never sends the API key.
+- **Version listings.** `GET /catalog/versions` is a separate read-only
+  endpoint (`provider` + required `project` + optional `game_version` /
+  `loader` filters, all strict slugs/versions) that lists a project's versions.
+  Upstream versions are filtered to public statuses and mapped to
+  `CatalogVersion` value objects whose `source` is **pinned** to the exact
+  version (`modrinth://<project>@<version-id>`). The Modrinth catalog provider
+  encodes the filter arrays as JSON for the `game_versions`/`loaders` query
+  parameters; non-array entries are rejected as `502`.
+- **Source resolution.** The installation engine's `ModrinthProvider` parses the
+  pin, fetches the exact version, and asserts it belongs to the requested
+  project before use. The dashboard therefore resolves a chosen version to a
+  normalized pinned source that the existing metadata/preview/install pipeline
+  consumes unchanged.
 - **No caching.** Catalog responses are not cached; every request is answered
   live by the selected provider to avoid serving stale or cross-tenant data.
 - **Error hygiene.** Catalog errors are static and never include hosts, URLs,

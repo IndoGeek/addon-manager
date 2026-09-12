@@ -10,14 +10,46 @@ final class MockModpackProvider implements ModpackProvider
 {
     private const SOURCE = 'mock://example-pack';
 
+    /**
+     * @var array<string, true>
+     */
+    private const VERSIONS = [
+        '1.0.0' => true,
+        '1.1.0' => true,
+    ];
+
     public function supports(string $source): bool
     {
-        return $source === self::SOURCE;
+        return $this->parse($source) !== null;
+    }
+
+    /**
+     * @return array{version: string|null}|null
+     */
+    private function parse(string $source): ?array
+    {
+        $trimmed = trim($source);
+
+        if ($trimmed === self::SOURCE) {
+            return ['version' => null];
+        }
+
+        if (str_starts_with($trimmed, self::SOURCE . '@')) {
+            $version = substr($trimmed, strlen(self::SOURCE) + 1);
+
+            if (isset(self::VERSIONS[$version])) {
+                return ['version' => $version];
+            }
+        }
+
+        return null;
     }
 
     public function getMetadata(string $source): ModpackMetadata
     {
-        if (!$this->supports($source)) {
+        $parsed = $this->parse($source);
+
+        if ($parsed === null) {
             throw new InvalidArgumentException(
                 'Unsupported modpack source.',
             );
@@ -26,18 +58,18 @@ final class MockModpackProvider implements ModpackProvider
         return new ModpackMetadata(
             id: 'example-pack',
             name: 'Example Modpack',
-            version: '1.0.0',
+            version: $parsed['version'] ?? '1.0.0',
             minecraftVersion: '1.21.1',
             loader: 'fabric',
             description: 'A mock modpack used for development and testing.',
             iconUrl: null,
-            source: $source,
+            source: trim($source),
         );
     }
 
     public function getPackage(string $source): ModpackPackage
     {
-        if (!$this->supports($source)) {
+        if ($this->parse($source) === null) {
             throw new InvalidArgumentException(
                 'Unsupported modpack source.',
             );
@@ -54,7 +86,7 @@ final class MockModpackProvider implements ModpackProvider
 
         return new ModpackPackage(
             archivePath: $archivePath,
-            source: $source,
+            source: trim($source),
         );
     }
 

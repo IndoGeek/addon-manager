@@ -9,12 +9,20 @@ string entered in the dashboard.
 | Provider      | Source format                  | Example                                   |
 | ------------- | ------------------------------ | ----------------------------------------- |
 | Mock (dev)    | `mock://example-pack`          | `mock://example-pack`                     |
+| Mock (dev)    | `mock://example-pack@<version>`| `mock://example-pack@1.1.0`               |
 | Modrinth      | `modrinth://<slug-or-id>`      | `modrinth://prominence-2-rpg`             |
+| Modrinth      | `modrinth://<slug-or-id>@<version-id>` | `modrinth://prominence-2-rpg@abc123` |
 | Modrinth      | `https://modrinth.com/modpack/<slug>` | `https://modrinth.com/modpack/prominence-2-rpg` |
 | CurseForge    | `curseforge://<project-id>`    | `curseforge://314768`                     |
 
-The mock provider is intentionally limited to the exact `mock://example-pack`
-source and is used for deterministic development tests.
+Appending `@<version-id>` to a source pins the exact project version. Unpinned
+sources keep resolving to the latest released version. Pins are validated
+strictly (slug/id characters only); the resolved version is checked to actually
+belong to the project before it is used.
+
+The mock provider is intentionally limited to `mock://example-pack` (plus the
+pinned `mock://example-pack@1.0.0` / `mock://example-pack@1.1.0` fixtures) and
+is used for deterministic development tests.
 
 ## Configuration
 
@@ -50,9 +58,13 @@ Get an API key at <https://console.curseforge.com/>.
 
 - Uses the official Modrinth API (`api.modrinth.com`); no HTML scraping.
 - Only `modpack` projects are accepted.
-- Metadata: project id, title, latest released version (falling back to the
-  newest version), its Minecraft version and loader (first supported value),
-  description, icon, and canonical `modrinth://<slug-or-id>` source.
+- Metadata: project id, title, the selected version (latest released version
+  for unpinned sources, or the exact pinned version), its Minecraft version
+  and loader (first supported value), description, icon, and the canonical
+  `modrinth://<slug-or-id>` (or pinned) source.
+- A pinned `@<version-id>` source is resolved with the version-by-id endpoint
+  and is validated to belong to the requested project before it is used; a
+  missing or unrelated version produces a clean, static error.
 - Packages download the primary `.mrpack` file and normalize it into a
   server-ready archive before installation:
   - `overrides/` files are deployed at the server root;
@@ -131,6 +143,55 @@ Searches are not cached; every request is answered live by the selected
 provider. Upstream 429/5xx/timeouts surface as `503` retryable errors, malformed
 or rejected upstream responses as `502`, and client input problems as `422`.
 The dashboard treats an empty result as a valid response, never an error.
+
+### Version listings
+
+`GET /catalog/versions` lists the published versions of one project so the
+dashboard can offer exact-version selection:
+
+| Parameter      | Meaning                                         | Validation / limits                          |
+| -------------- | ----------------------------------------------- | -------------------------------------------- |
+| `provider`     | Catalog provider (default `modrinth`)           | `[a-z0-9-]{1,32}`                            |
+| `project`      | Project slug or id (required)                   | `[A-Za-z0-9_-]{1,64}`                        |
+| `game_version` | Minecraft version filter                        | `[0-9A-Za-z._-]{1,32}`                       |
+| `loader`       | Loader filter (`fabric`, `forge`, ...)          | lowercased `[a-z0-9-]{1,32}`                 |
+
+Invalid parameters return `422`; an unknown/empty project returns an empty
+`versions` list (not an error). The response echoes the provider, the applied
+filters, and the versions:
+
+```json
+{
+  "data": {
+    "provider": "modrinth",
+    "filters": { "game_version": "1.21.1", "loader": "fabric" },
+    "versions": [
+      {
+        "version_id": "abc123",
+        "version_number": "2.0.1",
+        "version_name": "Prominence 2 RPG 2.0.1",
+        "game_versions": ["1.21.1"],
+        "loaders": ["fabric"],
+        "source": "modrinth://prominence-2-rpg@abc123"
+      }
+    ]
+  }
+}
+```
+
+Each version carries an installable `source` **pinned** to that exact version
+(`@<version-id>`), so the dashboard can hand the version straight to the
+metadata/preview/install endpoints. Non-public upstream versions (drafts,
+scheduled, unlisted, withheld) are excluded server-side. The mock provider
+returns deterministic pinned versions for its fixtures.
+
+### Dashboard flow
+
+The dashboard opens each modpack in a details dialog: Minecraft version and
+loader filters reload `/catalog/versions`, the chosen version's pinned source
+is validated through `/metadata` (which resolves the exact version
+server-side), and the existing preview/install endpoints are called with that
+pinned source.
 
 ## Development
 

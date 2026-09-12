@@ -34,21 +34,23 @@ final class ModrinthProvider implements ModpackProvider
 
     public function getMetadata(string $source): ModpackMetadata
     {
-        $identifier = $this->parseSource($source);
+        $parsed = $this->parseSource($source);
 
-        if ($identifier === null) {
+        if ($parsed === null) {
             throw new InvalidArgumentException(
                 'Unsupported modpack source.',
             );
         }
 
-        $project = $this->fetchProject($identifier);
+        $project = $this->fetchProject($parsed['project']);
 
         $this->assertModpackProject($project);
 
-        $versions = $this->fetchVersions($identifier);
-
-        $version = $this->selectVersion($versions);
+        $version = $this->selectedVersion(
+            $parsed['versionId'],
+            $project,
+            $parsed['project'],
+        );
 
         $minecraftVersion =
             $this->firstNonEmpty($version['game_versions'] ?? [])
@@ -70,27 +72,29 @@ final class ModrinthProvider implements ModpackProvider
             iconUrl: $this->validImageUrl(
                 $this->nullableString($project['icon_url'] ?? null),
             ),
-            source: $this->canonicalSource($project),
+            source: $this->canonicalSource($project, $parsed['versionId']),
         );
     }
 
     public function getPackage(string $source): ModpackPackage
     {
-        $identifier = $this->parseSource($source);
+        $parsed = $this->parseSource($source);
 
-        if ($identifier === null) {
+        if ($parsed === null) {
             throw new InvalidArgumentException(
                 'Unsupported modpack source.',
             );
         }
 
-        $project = $this->fetchProject($identifier);
+        $project = $this->fetchProject($parsed['project']);
 
         $this->assertModpackProject($project);
 
-        $versions = $this->fetchVersions($identifier);
-
-        $version = $this->selectVersion($versions);
+        $version = $this->selectedVersion(
+            $parsed['versionId'],
+            $project,
+            $parsed['project'],
+        );
 
         $file = $this->selectPrimaryFile($version['files'] ?? []);
 
@@ -127,7 +131,7 @@ final class ModrinthProvider implements ModpackProvider
             if ($extension !== 'mrpack') {
                 return new ModpackPackage(
                     archivePath: $archivePath,
-                    source: $this->canonicalSource($project),
+                    source: $this->canonicalSource($project, $parsed['versionId']),
                 );
             }
 
@@ -139,7 +143,7 @@ final class ModrinthProvider implements ModpackProvider
 
             return new ModpackPackage(
                 archivePath: $normalized,
-                source: $this->canonicalSource($project),
+                source: $this->canonicalSource($project, $parsed['versionId']),
             );
         } catch (Throwable $exception) {
             $this->removeTracked($archivePath);
@@ -250,6 +254,97 @@ final class ModrinthProvider implements ModpackProvider
 
             throw new InvalidArgumentException(
                 'Unable to load the modpack versions from Modrinth.',
+            );
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $project
+     *
+     * @return array<string, mixed>
+     */
+    private function selectedVersion(
+        ?string $versionId,
+        array $project,
+        string $projectIdentifier,
+    ): array {
+        if ($versionId !== null) {
+            $version = $this->fetchVersionById($versionId);
+
+            $this->assertVersionBelongsToProject($version, $project);
+
+            return $version;
+        }
+
+        return $this->selectVersion(
+            $this->fetchVersions($projectIdentifier),
+        );
+    }
+
+    /**
+     * Fetches a single Modrinth version by its exact id.
+     *
+     * @return array<string, mixed>
+     */
+    private function fetchVersionById(string $versionId): array
+    {
+        try {
+            $response = $this->http->get(
+                self::API_BASE . '/version/' . rawurlencode($versionId),
+            );
+
+            if (!is_array($response->body)) {
+                throw new InvalidArgumentException(
+                    'The Modrinth version response was invalid.',
+                );
+            }
+
+            return $response->body;
+        } catch (ProviderHttpException $exception) {
+            if ($exception->status() === 404) {
+                throw new InvalidArgumentException(
+                    'The requested Modrinth version was not found.',
+                );
+            }
+
+            if (
+                $exception->status() !== null
+                && $exception->status() >= 400
+                && $exception->status() < 500
+            ) {
+                throw new InvalidArgumentException(
+                    'Modrinth rejected the request.',
+                );
+            }
+
+            throw new InvalidArgumentException(
+                'Unable to load the Modrinth version.',
+            );
+        }
+    }
+
+    /**
+     * Prevents a client-supplied version id from referencing a version that
+     * belongs to a different project. A version payload without a project id
+     * is tolerated so providers without the field keep working, but any id
+     * that is present must match the resolved project.
+     *
+     * @param array<string, mixed> $version
+     * @param array<string, mixed> $project
+     */
+    private function assertVersionBelongsToProject(
+        array $version,
+        array $project,
+    ): void {
+        $versionProjectId = (string) ($version['project_id'] ?? '');
+
+        if ($versionProjectId === '') {
+            return;
+        }
+
+        if ($versionProjectId !== (string) ($project['id'] ?? '')) {
+            throw new InvalidArgumentException(
+                'The requested version does not belong to the selected project.',
             );
         }
     }
@@ -457,17 +552,30 @@ final class ModrinthProvider implements ModpackProvider
         return true;
     }
 
-    private function canonicalSource(array $project): string
-    {
+    private function canonicalSource(
+        array $project,
+        ?string $versionId = null,
+    ): string {
         $slug = $this->nullableString($project['slug'] ?? null);
 
-        return 'modrinth://' . ($slug ?? (string) ($project['id'] ?? ''));
+        $base = 'modrinth://'
+            . ($slug ?? (string) ($project['id'] ?? ''));
+
+        if ($versionId !== null && $versionId !== '') {
+            return $base . '@' . $versionId;
+        }
+
+        return $base;
     }
 
     /**
-     * Resolves a source string to a Modrinth project id or slug.
+     * Resolves a source string to a Modrinth project id/slug and an optional
+     * exact-version pin (modrinth://slug@versionId). Returns null when the
+     * syntax is unsupported.
+     *
+     * @return array{project: string, versionId: string|null}|null
      */
-    private function parseSource(string $source): ?string
+    private function parseSource(string $source): ?array
     {
         $trimmed = trim($source);
 
@@ -476,13 +584,33 @@ final class ModrinthProvider implements ModpackProvider
         }
 
         if (str_starts_with($trimmed, 'modrinth://')) {
-            $identifier = substr($trimmed, strlen('modrinth://'));
+            $rest = substr($trimmed, strlen('modrinth://'));
 
-            if (preg_match('/^[A-Za-z0-9_-]{1,64}$/', $identifier) === 1) {
-                return $identifier;
+            $pieces = explode('@', $rest, 2);
+
+            $identifier = (string) ($pieces[0] ?? '');
+
+            if (preg_match('/^[A-Za-z0-9_-]{1,64}$/', $identifier) !== 1) {
+                return null;
             }
 
-            return null;
+            $versionId = null;
+
+            if (isset($pieces[1])) {
+                $versionId = trim((string) $pieces[1]);
+
+                if (
+                    $versionId === ''
+                    || preg_match('/^[A-Za-z0-9_-]{1,64}$/', $versionId) !== 1
+                ) {
+                    return null;
+                }
+            }
+
+            return [
+                'project' => $identifier,
+                'versionId' => $versionId,
+            ];
         }
 
         $parts = parse_url($trimmed);
@@ -509,7 +637,10 @@ final class ModrinthProvider implements ModpackProvider
             return null;
         }
 
-        return $matches[1];
+        return [
+            'project' => $matches[1],
+            'versionId' => null,
+        ];
     }
 
     /**
