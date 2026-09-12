@@ -1,4 +1,4 @@
-;import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 
 interface ModpackMetadata {
@@ -57,6 +57,14 @@ const getServerIdentifier = (): string | null => {
 export default () => {
     const server = getServerIdentifier();
 
+    const alive = useRef(true);
+
+    useEffect(() => {
+        return () => {
+            alive.current = false;
+        };
+    }, []);
+
     const [source, setSource] =
         useState('mock://example-pack');
 
@@ -102,6 +110,10 @@ export default () => {
             return;
         }
 
+        if (loading) {
+            return;
+        }
+
         setLoading(true);
         setError(null);
         setMetadata(null);
@@ -120,16 +132,26 @@ export default () => {
                     },
                 );
 
+            if (!alive.current) {
+                return;
+            }
+
             setMetadata(response.data.data);
             setSelectedSource(trimmedSource);
         } catch (requestError: any) {
+            if (!alive.current) {
+                return;
+            }
+
             const message =
                 requestError.response?.data?.error ||
                 'Unable to load modpack metadata.';
 
             setError(message);
         } finally {
-            setLoading(false);
+            if (alive.current) {
+                setLoading(false);
+            }
         }
     };
 
@@ -145,6 +167,10 @@ export default () => {
             setError(
                 'Load a modpack before previewing installation.',
             );
+            return;
+        }
+
+        if (previewLoading || installLoading) {
             return;
         }
 
@@ -164,15 +190,25 @@ export default () => {
                     },
                 );
 
+            if (!alive.current) {
+                return;
+            }
+
             setPreview(response.data.data);
         } catch (requestError: any) {
+            if (!alive.current) {
+                return;
+            }
+
             const message =
                 requestError.response?.data?.error ||
                 'Unable to preview the modpack installation.';
 
             setError(message);
         } finally {
-            setPreviewLoading(false);
+            if (alive.current) {
+                setPreviewLoading(false);
+            }
         }
     };
 
@@ -191,6 +227,10 @@ export default () => {
             return;
         }
 
+        if (installLoading) {
+            return;
+        }
+
         setInstallLoading(true);
         setError(null);
         setResult(null);
@@ -206,21 +246,31 @@ export default () => {
                     },
                 );
 
+            if (!alive.current) {
+                return;
+            }
+
             setResult(response.data.data);
             setPreview(null);
         } catch (requestError: any) {
+            if (!alive.current) {
+                return;
+            }
+
             const message =
                 requestError.response?.data?.error ||
                 'Unable to install the modpack.';
 
             setError(message);
         } finally {
-            setInstallLoading(false);
+            if (alive.current) {
+                setInstallLoading(false);
+            }
         }
     };
 
     return (
-        <div className="modpackinstaller-page">
+        <div className="modpackinstaller-root">
             <div className="modpackinstaller-header">
                 <h2>Modpack Installer</h2>
 
