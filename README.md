@@ -25,6 +25,12 @@ The source repository is maintained separately from the Pterodactyl
 installation. Blueprint's `.blueprint/dev` directory is used only as the
 development deployment target.
 
+## Providers
+
+The installer ships with a mock provider for development plus Modrinth and
+CurseForge providers. See [PROVIDERS.md](PROVIDERS.md) for source formats,
+configuration, and current package limitations.
+
 ## License
 
 TBD

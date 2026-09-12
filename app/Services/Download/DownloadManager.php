@@ -5,7 +5,7 @@ namespace Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Do
 use InvalidArgumentException;
 use RuntimeException;
 
-final class DownloadManager
+final class DownloadManager implements Downloader
 {
     public function __construct(
         private readonly string $temporaryRoot,

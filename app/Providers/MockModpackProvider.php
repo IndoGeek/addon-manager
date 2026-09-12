@@ -57,4 +57,9 @@ final class MockModpackProvider implements ModpackProvider
             source: $source,
         );
     }
+
+    public function cleanup(ModpackPackage $package): void
+    {
+        // The mock package is a repository fixture and must persist.
+    }
 }

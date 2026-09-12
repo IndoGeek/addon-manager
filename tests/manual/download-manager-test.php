@@ -1,5 +1,6 @@
 <?php
 
+require __DIR__ . '/../../app/Services/Download/Downloader.php';
 require __DIR__ . '/../../app/Services/Download/DownloadManager.php';
 
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Download\DownloadManager;

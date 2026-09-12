@@ -7,16 +7,22 @@ use Illuminate\Http\Request;
 use InvalidArgumentException;
 use Pterodactyl\Http\Controllers\Controller;
 use Pterodactyl\Models\Server;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Providers\CurseForgeProvider;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Providers\MockModpackProvider;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Providers\ModrinthProvider;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Providers\UnsupportedModpackPackageException;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\BackupManager;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentExecutor;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentPlanner;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentPolicy;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Download\DownloadManager;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\InstallationOrchestrator;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\InstallationWorkspace;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\PackageLayout;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\PackageRootResolver;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\ModpackProviderRegistry;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Provider\CurlProviderHttpClient;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Provider\ProviderHttpClient;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Server\ServerFileTarget;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Server\ServerFileTargetFactory;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Server\ServerIdentity;
@@ -66,6 +72,9 @@ final class ModpackController extends Controller
         Request $request,
         Server $server,
     ): JsonResponse {
+        $provider = null;
+        $package = null;
+
         try {
             [$source, $policy, $layout] =
                 $this->installationOptions($request);
@@ -107,12 +116,20 @@ final class ModpackController extends Controller
             return response()->json([
                 'error' => $exception->getMessage(),
             ], 422);
+        } catch (UnsupportedModpackPackageException $exception) {
+            return response()->json([
+                'error' => $exception->getMessage(),
+            ], 422);
         } catch (Throwable $exception) {
             report($exception);
 
             return response()->json([
                 'error' => 'Unable to preview the modpack installation.',
             ], 500);
+        } finally {
+            if ($provider !== null && $package !== null) {
+                $provider->cleanup($package);
+            }
         }
     }
 
@@ -120,6 +137,9 @@ final class ModpackController extends Controller
         Request $request,
         Server $server,
     ): JsonResponse {
+        $provider = null;
+        $package = null;
+
         try {
             [$source, $policy, $layout] =
                 $this->installationOptions($request);
@@ -152,12 +172,20 @@ final class ModpackController extends Controller
             return response()->json([
                 'error' => $exception->getMessage(),
             ], 422);
+        } catch (UnsupportedModpackPackageException $exception) {
+            return response()->json([
+                'error' => $exception->getMessage(),
+            ], 422);
         } catch (Throwable $exception) {
             report($exception);
 
             return response()->json([
                 'error' => 'Unable to install the modpack.',
             ], 500);
+        } finally {
+            if ($provider !== null && $package !== null) {
+                $provider->cleanup($package);
+            }
         }
     }
 
@@ -207,9 +235,41 @@ final class ModpackController extends Controller
 
     private function providerRegistry(): ModpackProviderRegistry
     {
+        $http = $this->providerHttp();
+
         return new ModpackProviderRegistry([
             new MockModpackProvider(),
+            new ModrinthProvider(
+                http: $http,
+                downloader: new DownloadManager(
+                    self::TEMPORARY_ROOT,
+                ),
+                temporaryRoot: self::TEMPORARY_ROOT,
+            ),
+            new CurseForgeProvider(
+                http: $http,
+                downloader: new DownloadManager(
+                    self::TEMPORARY_ROOT,
+                ),
+                apiKey: $this->curseForgeApiKey(),
+            ),
         ]);
+    }
+
+    private function providerHttp(): ProviderHttpClient
+    {
+        return new CurlProviderHttpClient();
+    }
+
+    private function curseForgeApiKey(): ?string
+    {
+        $key = env('CURSEFORGE_API_KEY');
+
+        if (!is_string($key) || $key === '') {
+            return null;
+        }
+
+        return $key;
     }
 
     private function serverTarget(

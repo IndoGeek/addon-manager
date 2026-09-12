@@ -389,6 +389,11 @@ export default () => {
                                 ? 'Reload Modpack'
                                 : 'Load Modpack'}
                     </button>
+
+                    <p className="modpackinstaller-source-hint">
+                        Sources: modrinth://project-slug ·
+                        curseforge://project-id · mock://example-pack
+                    </p>
                 </div>
 
                 {status && (
