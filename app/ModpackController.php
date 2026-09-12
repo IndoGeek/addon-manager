@@ -25,8 +25,10 @@ use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Provider
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Provider\ProviderHttpClient;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Server\ServerFileTarget;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Server\ServerFileTargetFactory;
-use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Server\ServerIdentity;
-use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Server\ServerTargetResolver;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Server\ServerTargetSelector;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Server\WingsServerFileTargetFactory;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Wings\WingsConnectionException;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Wings\WingsHttpException;
 use Throwable;
 
 final class ModpackController extends Controller
@@ -83,9 +85,7 @@ final class ModpackController extends Controller
 
             $package = $provider->getPackage($source);
 
-            $identity = ServerIdentity::fromUuid($server->uuid);
-
-            $target = $this->serverTarget($identity);
+            $target = $this->serverTarget($server);
 
             $orchestrator = $this->orchestrator($target);
 
@@ -120,6 +120,14 @@ final class ModpackController extends Controller
             return response()->json([
                 'error' => $exception->getMessage(),
             ], 422);
+        } catch (WingsConnectionException $exception) {
+            return response()->json([
+                'error' => 'Unable to reach the server node. Please try again later.',
+            ], 503);
+        } catch (WingsHttpException $exception) {
+            return response()->json([
+                'error' => 'The server node could not complete the operation. Please try again later.',
+            ], 503);
         } catch (Throwable $exception) {
             report($exception);
 
@@ -148,9 +156,7 @@ final class ModpackController extends Controller
 
             $package = $provider->getPackage($source);
 
-            $identity = ServerIdentity::fromUuid($server->uuid);
-
-            $target = $this->serverTarget($identity);
+            $target = $this->serverTarget($server);
 
             $orchestrator = $this->orchestrator($target);
 
@@ -176,6 +182,14 @@ final class ModpackController extends Controller
             return response()->json([
                 'error' => $exception->getMessage(),
             ], 422);
+        } catch (WingsConnectionException $exception) {
+            return response()->json([
+                'error' => 'Unable to reach the server node. Please try again later.',
+            ], 503);
+        } catch (WingsHttpException $exception) {
+            return response()->json([
+                'error' => 'The server node could not complete the operation. Please try again later.',
+            ], 503);
         } catch (Throwable $exception) {
             report($exception);
 
@@ -273,23 +287,48 @@ final class ModpackController extends Controller
     }
 
     private function serverTarget(
-        ServerIdentity $identity,
+        Server $server,
     ): ServerFileTarget {
-        $volumesRoot = self::VOLUMES_ROOT;
-
-        $envRoot = env('MODPACK_INSTALLER_SERVER_ROOT');
-
-        if (is_string($envRoot) && $envRoot !== '') {
-            $volumesRoot = $envRoot;
-        }
-
-        $factory = new ServerFileTargetFactory(
-            $volumesRoot,
+        $selector = new ServerTargetSelector(
+            mode: $this->targetMode(),
+            localFactory: new ServerFileTargetFactory(
+                $this->localServerRoot(),
+            ),
+            wingsFactory: $this->wingsServerTargetFactory(),
         );
 
-        $resolver = new ServerTargetResolver($factory);
+        return $selector->forServer($server);
+    }
 
-        return $resolver->resolve($identity);
+    private function targetMode(): string
+    {
+        $mode = env('MODPACK_INSTALLER_SERVER_TARGET', 'local');
+
+        if (!is_string($mode) || trim($mode) === '') {
+            return 'local';
+        }
+
+        return trim($mode);
+    }
+
+    private function localServerRoot(): string
+    {
+        $root = env('MODPACK_INSTALLER_SERVER_ROOT');
+
+        if (is_string($root) && $root !== '') {
+            return $root;
+        }
+
+        return self::VOLUMES_ROOT;
+    }
+
+    private function wingsServerTargetFactory(): WingsServerFileTargetFactory
+    {
+        return new WingsServerFileTargetFactory(
+            timeout: 30,
+            connectTimeout: 10,
+            verifySsl: app()->environment('production'),
+        );
     }
 
     private function orchestrator(

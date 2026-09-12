@@ -31,6 +31,16 @@ The installer ships with a mock provider for development plus Modrinth and
 CurseForge providers. See [PROVIDERS.md](PROVIDERS.md) for source formats,
 configuration, and current package limitations.
 
+## Server Target
+
+Installer files are written to a server's file tree through a pluggable
+"server file target". In development (and in the test suite) this is the
+local filesystem; in production the installer can talk directly to the
+Pterodactyl Wings daemon for the server's node.
+
+See [TARGETS.md](TARGETS.md) for both modes, configuration, security
+considerations, and current limitations.
+
 ## License
 
 TBD
