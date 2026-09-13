@@ -1022,10 +1022,6 @@ export default () => {
     const [detailsItem, setDetailsItem] =
         useState<CatalogItem | null>(null);
 
-    const [modalGameVersion, setModalGameVersion] = useState('');
-
-    const [modalLoader, setModalLoader] = useState('');
-
     const [modalVersions, setModalVersions] =
         useState<CatalogVersion[] | null>(null);
 
@@ -1554,8 +1550,6 @@ export default () => {
         metadataRequestId.current++;
 
         setDetailsItem(item);
-        setModalGameVersion('');
-        setModalLoader('');
         setModalVersions(null);
         setModalVersionsError(null);
         setModalVersionsLoading(false);
@@ -1576,8 +1570,6 @@ export default () => {
         setModalVersions(null);
         setModalVersionsError(null);
         setModalVersionsLoading(false);
-        setModalGameVersion('');
-        setModalLoader('');
         setModalMetadata(null);
         setModalMetadataLoading(false);
         setModalMetadataError(null);
@@ -1587,10 +1579,7 @@ export default () => {
         setModalStatus(null);
     };
 
-    const loadVersions = async (
-        gameVersion: string,
-        loader: string,
-    ) => {
+    const loadVersions = async () => {
         const item = detailsItem;
 
         if (!item) {
@@ -1607,14 +1596,6 @@ export default () => {
             provider: item.provider,
             project: item.provider_project_id,
         };
-
-        if (gameVersion !== '') {
-            params.game_versions = gameVersion;
-        }
-
-        if (loader !== '') {
-            params.loaders = loader;
-        }
 
         try {
             const response =
@@ -1674,18 +1655,6 @@ export default () => {
         }
     };
 
-    const changeModalGameVersion = (value: string) => {
-        setModalGameVersion(value);
-        clearModalSelection();
-        loadVersions(value, modalLoader);
-    };
-
-    const changeModalLoader = (value: string) => {
-        setModalLoader(value);
-        clearModalSelection();
-        loadVersions(modalGameVersion, value);
-    };
-
     const clearModalSelection = () => {
         setModalVersionSource(null);
         setModalMetadata(null);
@@ -1695,7 +1664,7 @@ export default () => {
     };
 
     const retryModalVersions = () => {
-        loadVersions(modalGameVersion, modalLoader);
+        loadVersions();
     };
 
     const selectModalVersion = (sourceValue: string) => {
@@ -1863,7 +1832,7 @@ export default () => {
             return;
         }
 
-        loadVersions('', '');
+        loadVersions();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [detailsItem]);
 
@@ -2061,16 +2030,6 @@ export default () => {
             onRemove: () => toggleEnvironment(filters.environment),
         });
     }
-
-    const versionOptions = uniqueSorted(
-        detailsItem?.game_versions ?? [],
-        facets.game_versions,
-    );
-
-    const modalLoaderOptions = uniqueSorted(
-        detailsItem?.loaders ?? [],
-        facets.loaders,
-    );
 
     return (
         <div
@@ -2957,66 +2916,6 @@ export default () => {
                             </div>
                         </div>
 
-                        <div className="modpackinstaller-modal-filters">
-                            <div>
-                                <label htmlFor="modpackinstaller-modal-game-version">
-                                    Minecraft version
-                                </label>
-
-                                <select
-                                    id="modpackinstaller-modal-game-version"
-                                    value={modalGameVersion}
-                                    onChange={(event) =>
-                                        changeModalGameVersion(
-                                            event.target.value,
-                                        )
-                                    }
-                                    disabled={modalVersionsLoading}
-                                >
-                                    <option value="">Any</option>
-
-                                    {versionOptions.map((mcVersion) => (
-                                        <option
-                                            key={mcVersion}
-                                            value={mcVersion}
-                                        >
-                                            {mcVersion}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-
-                            <div>
-                                <label htmlFor="modpackinstaller-modal-loader">
-                                    Loader
-                                </label>
-
-                                <select
-                                    id="modpackinstaller-modal-loader"
-                                    value={modalLoader}
-                                    onChange={(event) =>
-                                        changeModalLoader(
-                                            event.target.value,
-                                        )
-                                    }
-                                    disabled={modalVersionsLoading}
-                                >
-                                    <option value="">Any</option>
-
-                                    {modalLoaderOptions.map(
-                                        (loader) => (
-                                            <option
-                                                key={loader}
-                                                value={loader}
-                                            >
-                                                {loader}
-                                            </option>
-                                        ),
-                                    )}
-                                </select>
-                            </div>
-                        </div>
-
                         <div className="modpackinstaller-modal-versions">
                             <div className="modpackinstaller-modal-versions-heading">
                                 <span className="modpackinstaller-modal-versions-title">
@@ -3064,12 +2963,8 @@ export default () => {
                                 && modalVersions !== null
                                 && modalVersions.length === 0 && (
                                     <div className="modpackinstaller-catalog-state modpackinstaller-catalog-state--empty">
-                                        <p>
-                                            No versions match the
-                                            selected filters. Try
-                                            broadening the Minecraft
-                                            version or loader filters.
-                                        </p>
+                                        <p>No versions are available for this
+                                            modpack.</p>
                                     </div>
                                 )}
 
@@ -3170,13 +3065,6 @@ export default () => {
                                             {modalMetadata.loader}
                                         </strong>
                                     </div>
-                                </div>
-
-                                <div className="modpackinstaller-source">
-                                    <span>Source</span>
-                                    <code>
-                                        {modalMetadata.source}
-                                    </code>
                                 </div>
 
                                 {modalMetadata.manual_download ? (
