@@ -1000,14 +1000,6 @@ const CatalogCard = ({
     const visibleTags = tags.slice(0, 5);
     const overflowCount = tags.length - visibleTags.length;
 
-    const gameVersions =
-        item.game_versions.length > 3
-            ? [
-                  ...item.game_versions.slice(0, 3),
-                  `+${item.game_versions.length - 3}`,
-              ]
-            : item.game_versions;
-
     return (
         <article
             className={`modpackinstaller-catalog-card modpackinstaller-catalog-card--${view}`}
@@ -1015,18 +1007,25 @@ const CatalogCard = ({
             <div className="modpackinstaller-card-media">
                 {view === 'grid' && <CardBanner item={item} />}
 
-                <div className="modpackinstaller-card-logo">
-                    <ModpackIcon item={item} compact={view === 'list'} />
-                </div>
+                {view === 'list' && (
+                    <div className="modpackinstaller-card-logo">
+                        <ModpackIcon item={item} compact />
+                    </div>
+                )}
             </div>
 
             <div className="modpackinstaller-catalog-card-content">
                 <div className="modpackinstaller-catalog-card-header">
-                    <h4 title={item.name}>{item.name}</h4>
+                    <div className="modpackinstaller-catalog-card-title">
+                        <h4 title={item.name}>{item.name}</h4>
+
+                        <span className="modpackinstaller-catalog-card-provider">
+                            {item.provider}
+                        </span>
+                    </div>
 
                     <span className="modpackinstaller-catalog-card-author">
-                        {item.author || 'Unknown author'} ·{' '}
-                        {item.provider}
+                        {item.author || 'Unknown author'}
                     </span>
                 </div>
 
@@ -1054,23 +1053,6 @@ const CatalogCard = ({
                                 +{overflowCount}
                             </span>
                         )}
-                    </div>
-                )}
-
-                {gameVersions.length > 0 && (
-                    <div className="modpackinstaller-catalog-card-versions">
-                        <span className="modpackinstaller-catalog-card-versions-label">
-                            MC
-                        </span>
-
-                        {gameVersions.map((version) => (
-                            <span
-                                key={version}
-                                className="modpackinstaller-version-chip"
-                            >
-                                {version}
-                            </span>
-                        ))}
                     </div>
                 )}
 

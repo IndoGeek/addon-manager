@@ -457,7 +457,7 @@
 
 .modpackinstaller-catalog-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(256px, 1fr));
     gap: 14px;
 }
 
@@ -498,7 +498,7 @@
 .modpackinstaller-card-banner {
     display: block;
     width: 100%;
-    height: 96px;
+    height: 104px;
     object-fit: cover;
     background: rgba(127, 127, 127, 0.1);
 }
@@ -515,35 +515,6 @@
 .modpackinstaller-catalog-card--list .modpackinstaller-card-banner,
 .modpackinstaller-catalog-card--list .modpackinstaller-card-banner--fallback {
     display: none;
-}
-
-.modpackinstaller-card-logo .modpackinstaller-card-image,
-.modpackinstaller-card-logo .modpackinstaller-card-image--fallback {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    object-fit: cover;
-    background: rgba(127, 127, 127, 0.14);
-}
-
-.modpackinstaller-catalog-card--grid .modpackinstaller-card-logo {
-    position: absolute;
-    left: 12px;
-    bottom: -26px;
-    z-index: 1;
-}
-
-.modpackinstaller-catalog-card--grid
-    .modpackinstaller-card-logo
-    .modpackinstaller-card-image,
-.modpackinstaller-catalog-card--grid
-    .modpackinstaller-card-logo
-    .modpackinstaller-card-image--fallback {
-    width: 52px;
-    height: 52px;
-    border: 2px solid #10131a;
-    border-radius: 10px;
-    font-size: 1.25rem;
 }
 
 .modpackinstaller-catalog-list
@@ -565,14 +536,10 @@
 .modpackinstaller-catalog-card-content {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 7px;
     flex: 1 1 auto;
     min-width: 0;
     padding: 12px;
-}
-
-.modpackinstaller-catalog-card--grid .modpackinstaller-catalog-card-content {
-    padding-top: 32px;
 }
 
 .modpackinstaller-catalog-card-header {
@@ -581,13 +548,35 @@
     gap: 2px;
 }
 
-.modpackinstaller-catalog-card-header h4 {
+.modpackinstaller-catalog-card-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.modpackinstaller-catalog-card-title h4 {
     margin: 0;
-    font-size: 0.92rem;
+    font-size: 1rem;
     line-height: 1.25;
+    font-weight: 700;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    min-width: 0;
+}
+
+.modpackinstaller-catalog-card-provider {
+    flex: 0 0 auto;
+    padding: 1px 8px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 999px;
+    font-size: 0.66rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.72);
+    background: rgba(127, 127, 127, 0.16);
 }
 
 .modpackinstaller-catalog-card-badge {
@@ -624,11 +613,11 @@
 .modpackinstaller-catalog-card-tags {
     display: flex;
     flex-wrap: wrap;
-    gap: 5px;
+    gap: 6px;
 }
 
 .modpackinstaller-pill {
-    padding: 1px 8px;
+    padding: 2px 9px;
     border: 1px solid rgba(255, 255, 255, 0.14);
     border-radius: 999px;
     font-size: 0.68rem;
@@ -650,36 +639,12 @@
     background: transparent;
 }
 
-.modpackinstaller-catalog-card-versions {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 5px;
-}
-
-.modpackinstaller-catalog-card-versions-label {
-    flex: 0 0 auto;
-    font-size: 0.66rem;
-    font-weight: 700;
-    letter-spacing: 0.05em;
-    opacity: 0.6;
-}
-
-.modpackinstaller-version-chip {
-    padding: 1px 7px;
-    border-radius: 6px;
-    font-size: 0.7rem;
-    font-weight: 600;
-    white-space: nowrap;
-    color: rgba(255, 255, 255, 0.85);
-    background: rgba(127, 127, 127, 0.14);
-}
-
 .modpackinstaller-catalog-card-stats {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     align-items: center;
-    gap: 12px;
+    justify-content: space-between;
+    gap: 10px;
     margin-top: 2px;
     padding: 6px 0;
     border-top: 1px solid rgba(255, 255, 255, 0.08);
@@ -692,6 +657,7 @@
     align-items: center;
     gap: 5px;
     min-width: 0;
+    white-space: nowrap;
 }
 
 .modpackinstaller-catalog-card-actions {
@@ -701,7 +667,8 @@
     padding-top: 4px;
 }
 
-.modpackinstaller-card-action-open {
+.modpackinstaller-card-action-open,
+.modpackinstaller-card-action-details {
     flex: 1 1 auto;
     padding: 6px 12px;
     border: 0;
@@ -709,6 +676,7 @@
     font-size: 0.8rem;
     font-weight: 600;
     text-align: center;
+    text-decoration: none;
     cursor: pointer;
     color: #111827;
     background: #ffffff;
@@ -716,11 +684,14 @@
 }
 
 .modpackinstaller-card-action-open:hover,
-.modpackinstaller-card-action-open:focus-visible {
+.modpackinstaller-card-action-open:focus-visible,
+.modpackinstaller-card-action-details:hover,
+.modpackinstaller-card-action-details:focus-visible {
     background: #e5e7eb;
 }
 
-.modpackinstaller-card-action-open:active {
+.modpackinstaller-card-action-open:active,
+.modpackinstaller-card-action-details:active {
     background: #d1d5db;
     transform: translateY(1px);
 }
@@ -729,25 +700,6 @@
     background: #9ca3af;
     opacity: 0.55;
     cursor: wait;
-}
-
-.modpackinstaller-card-action-details {
-    flex: 1 1 auto;
-    padding: 6px 12px;
-    border: 1px solid rgba(127, 127, 127, 0.35);
-    border-radius: 6px;
-    font-size: 0.8rem;
-    text-align: center;
-    text-decoration: none;
-    color: rgba(255, 255, 255, 0.82);
-    background: transparent;
-    transition: background 0.12s ease, border-color 0.12s ease;
-}
-
-.modpackinstaller-card-action-details:hover,
-.modpackinstaller-card-action-details:focus-visible {
-    background: rgba(127, 127, 127, 0.12);
-    border-color: rgba(127, 127, 127, 0.55);
 }
 
 .modpackinstaller-catalog-card--list .modpackinstaller-card-action-open,
