@@ -2557,8 +2557,6 @@ export default () => {
                             </button>
                         </div>
 
-                        <div className="modpackinstaller-status modpackinstaller-status--info" style={{display: 'none'}}>
-
                         {modalStatus && (
                             <div
                                 className={`modpackinstaller-status modpackinstaller-status--${modalStatus.kind}`}
