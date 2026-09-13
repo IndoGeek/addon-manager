@@ -5,33 +5,6 @@
     min-width: 0;
 }
 
-.modpackinstaller-page-header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 16px;
-    flex-wrap: wrap;
-    margin-bottom: 24px;
-}
-
-.modpackinstaller-page-header h2 {
-    margin: 0 0 8px;
-}
-
-.modpackinstaller-page-header p {
-    margin: 0;
-    opacity: 0.75;
-}
-
-.modpackinstaller-installed-button {
-    flex: 0 0 auto;
-    padding: 10px 16px;
-    border: 0;
-    border-radius: 6px;
-    font-size: 0.9rem;
-    cursor: pointer;
-}
-
 .modpackinstaller-card {
     padding: 24px;
     border: 1px solid rgba(127, 127, 127, 0.15);
@@ -63,6 +36,8 @@
     display: flex;
     flex-direction: column;
     gap: 6px;
+    flex: 1 1 100%;
+    min-width: 0;
 }
 
 .modpackinstaller-search > label {
@@ -71,44 +46,263 @@
     opacity: 0.8;
 }
 
-.modpackinstaller-search-row {
+.modpackinstaller-controls-row {
     display: flex;
+    align-items: stretch;
+    flex-wrap: wrap;
     gap: 8px;
 }
 
-.modpackinstaller-search-row input {
+.modpackinstaller-search-box {
+    display: flex;
+    align-items: center;
+    flex: 1 1 240px;
+    min-width: 200px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.2);
+    overflow: hidden;
+}
+
+.modpackinstaller-search-box input {
     flex: 1 1 auto;
     min-width: 0;
     box-sizing: border-box;
-    padding: 10px 12px;
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    border-radius: 6px;
-    background: rgba(0, 0, 0, 0.2);
+    padding: 9px 12px;
+    border: 0;
+    background: transparent;
     color: inherit;
+    font-size: 0.95rem;
 }
 
-.modpackinstaller-search-row input:disabled {
+.modpackinstaller-search-box input:focus {
+    outline: none;
+}
+
+.modpackinstaller-search-box:focus-within {
+    border-color: rgba(108, 182, 255, 0.55);
+}
+
+.modpackinstaller-search-box input:disabled {
     cursor: not-allowed;
     opacity: 0.6;
 }
 
-.modpackinstaller-search-row button {
+.modpackinstaller-search-clear {
     flex: 0 0 auto;
-    padding: 10px 16px;
+    width: 34px;
+    height: 38px;
+    padding: 0;
     border: 0;
-    border-radius: 6px;
+    background: transparent;
+    color: inherit;
+    font-size: 1.1rem;
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0.7;
+}
+
+.modpackinstaller-search-clear:hover {
+    opacity: 1;
+}
+
+.modpackinstaller-search-go {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 38px;
+    padding: 0;
+    border: 0;
+    border-left: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.06);
+    color: #ffffff;
     cursor: pointer;
 }
 
-.modpackinstaller-search-row button:disabled {
+.modpackinstaller-search-go:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.12);
+}
+
+.modpackinstaller-search-go:disabled {
     cursor: wait;
     opacity: 0.6;
 }
 
-.modpackinstaller-search-clear {
-    min-width: 42px;
-    font-size: 1.2rem;
-    line-height: 1;
+.modpackinstaller-install-toggle {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 16px;
+    border: 0;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    background: #16a34a;
+    color: #ffffff;
+    transition: background 0.12s ease;
+}
+
+.modpackinstaller-install-toggle:hover:not(:disabled) {
+    background: #15803d;
+}
+
+.modpackinstaller-install-toggle[aria-expanded='true'] {
+    background: #15803d;
+}
+
+.modpackinstaller-install-toggle:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.modpackinstaller-installed-toggle {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 16px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 8px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    background: rgba(255, 255, 255, 0.06);
+    color: inherit;
+    transition: background 0.12s ease;
+}
+
+.modpackinstaller-installed-toggle:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.12);
+}
+
+.modpackinstaller-icon-button {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border: 0;
+    border-radius: 8px;
+    cursor: pointer;
+    color: #ffffff;
+    transition: background 0.12s ease, opacity 0.12s ease;
+}
+
+.modpackinstaller-icon-button--blue {
+    background: #2563eb;
+}
+
+.modpackinstaller-icon-button--blue:hover:not(:disabled) {
+    background: #1d4ed8;
+}
+
+.modpackinstaller-icon-button--green {
+    background: #16a34a;
+}
+
+.modpackinstaller-icon-button--green:hover:not(:disabled) {
+    background: #15803d;
+}
+
+.modpackinstaller-icon-button--red {
+    background: #dc2626;
+}
+
+.modpackinstaller-icon-button--red:hover:not(:disabled) {
+    background: #b91c1c;
+}
+
+.modpackinstaller-icon-button:disabled {
+    cursor: wait;
+    opacity: 0.6;
+}
+
+.modpackinstaller-icon-spinner {
+    animation: modpackinstaller-spin 0.8s linear infinite;
+}
+
+.modpackinstaller-manual-panel {
+    margin-top: 16px;
+    padding: 16px;
+    border: 1px solid rgba(127, 127, 127, 0.2);
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.15);
+    animation: modpackinstaller-panel-in 0.18s ease-out;
+}
+
+.modpackinstaller-manual-panel .modpackinstaller-form {
+    margin-top: 0;
+}
+
+.modpackinstaller-metadata-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.modpackinstaller-metadata-title h4 {
+    margin: 0;
+    font-weight: 700;
+    overflow-wrap: anywhere;
+}
+
+.modpackinstaller-pill-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.modpackinstaller-confirm p {
+    margin: 0;
+    line-height: 1.5;
+    opacity: 0.9;
+}
+
+.modpackinstaller-confirm-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 18px;
+}
+
+.modpackinstaller-confirm-actions button {
+    padding: 9px 16px;
+    border: 0;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.modpackinstaller-confirm-cancel {
+    background: rgba(255, 255, 255, 0.12);
+    color: inherit;
+}
+
+.modpackinstaller-confirm-cancel:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.18);
+}
+
+.modpackinstaller-confirm-danger {
+    background: #dc2626;
+    color: #ffffff;
+}
+
+.modpackinstaller-confirm-danger:hover:not(:disabled) {
+    background: #b91c1c;
+}
+
+.modpackinstaller-confirm-actions button:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
 }
 
 .modpackinstaller-toolbar-row {
@@ -708,18 +902,6 @@
     padding: 6px 14px;
 }
 
-.modpackinstaller-catalog-source {
-    margin-top: 20px;
-    padding-top: 14px;
-    border-top: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.modpackinstaller-catalog-source summary {
-    font-size: 0.9rem;
-    opacity: 0.85;
-    cursor: pointer;
-}
-
 .modpackinstaller-form {
     display: flex;
     flex-direction: column;
@@ -944,11 +1126,11 @@
 
 .modpackinstaller-modal {
     width: 100%;
-    max-width: 720px;
+    max-width: 640px;
     max-height: calc(100vh - 64px);
     overflow-y: auto;
     box-sizing: border-box;
-    padding: 24px;
+    padding: 20px;
     border: 1px solid rgba(127, 127, 127, 0.25);
     border-radius: 10px;
     background: rgba(18, 18, 18, 0.98);
@@ -1032,9 +1214,9 @@
 
 .modpackinstaller-modal-item > .modpackinstaller-card-image,
 .modpackinstaller-modal-item > .modpackinstaller-card-image--fallback {
-    flex: 0 0 120px;
-    width: 120px;
-    height: 120px;
+    flex: 0 0 96px;
+    width: 96px;
+    height: 96px;
     border-radius: 8px;
     object-fit: cover;
     background: rgba(127, 127, 127, 0.1);
@@ -1251,63 +1433,88 @@
     background: rgba(0, 0, 0, 0.12);
 }
 
-.modpackinstaller-installed-header {
+.modpackinstaller-installed-item {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 12px;
+    padding: 10px 12px;
+    border: 1px solid rgba(127, 127, 127, 0.15);
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.12);
 }
 
-.modpackinstaller-installed-header h4 {
+.modpackinstaller-installed-image {
+    flex: 0 0 72px;
+    width: 72px;
+    height: 72px;
+    border-radius: 8px;
+    object-fit: cover;
+    background: rgba(127, 127, 127, 0.1);
+}
+
+.modpackinstaller-installed-image--fallback {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 1.4rem;
+    color: rgba(255, 255, 255, 0.25);
+    background: linear-gradient(
+        135deg,
+        rgba(37, 99, 235, 0.3),
+        rgba(37, 99, 235, 0.08) 45%,
+        rgba(127, 127, 127, 0.12)
+    );
+}
+
+.modpackinstaller-installed-item-content {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.modpackinstaller-installed-item-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.modpackinstaller-installed-item-title h4 {
     margin: 0;
+    font-size: 0.95rem;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
 }
 
-.modpackinstaller-installed-source {
-    margin-top: 14px;
-}
-
-.modpackinstaller-installed-source span {
-    display: block;
-    margin-bottom: 4px;
-    font-size: 0.8rem;
-    opacity: 0.7;
-}
-
-.modpackinstaller-installed-source code {
-    overflow-wrap: anywhere;
+.modpackinstaller-installed-item .modpackinstaller-pill-row {
+    margin-top: 6px;
 }
 
 .modpackinstaller-installed-meta {
-    margin: 10px 0 0;
-    font-size: 0.85rem;
+    margin: 8px 0 0;
+    font-size: 0.78rem;
     opacity: 0.7;
 }
 
 .modpackinstaller-installed-actions {
+    flex: 0 0 auto;
     display: flex;
-    flex-wrap: wrap;
+    align-items: center;
     gap: 8px;
-    margin-top: 14px;
+    margin-left: auto;
 }
 
 .modpackinstaller-installed-actions button {
-    padding: 8px 14px;
     border: 0;
-    border-radius: 6px;
-    font-size: 0.9rem;
     cursor: pointer;
 }
 
 .modpackinstaller-installed-actions button:disabled {
     cursor: wait;
     opacity: 0.6;
-}
-
-.modpackinstaller-installed-actions .modpackinstaller-danger-armed {
-    background: rgba(180, 40, 40, 0.8);
-}
-
-.modpackinstaller-details + .modpackinstaller-installed-source {
-    margin-top: 14px;
 }
 
 @keyframes modpackinstaller-fade-in {
@@ -1378,11 +1585,22 @@
     }
 }
 
+@keyframes modpackinstaller-spin {
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(360deg);
+    }
+}
+
 @media (prefers-reduced-motion: reduce) {
     .modpackinstaller-modal-overlay,
     .modpackinstaller-modal,
     .modpackinstaller-dropdown-menu,
-    .modpackinstaller-filter-panel {
+    .modpackinstaller-filter-panel,
+    .modpackinstaller-icon-spinner {
         animation: none;
     }
 }
@@ -1392,11 +1610,30 @@
         padding: 16px;
     }
 
-    .modpackinstaller-page-header {
+    .modpackinstaller-controls-row {
         flex-direction: column;
+        align-items: stretch;
     }
 
-    .modpackinstaller-installed-button {
+    .modpackinstaller-install-toggle,
+    .modpackinstaller-installed-toggle {
+        justify-content: center;
+    }
+
+    .modpackinstaller-installed-item {
+        flex-wrap: wrap;
+    }
+
+    .modpackinstaller-installed-actions {
+        width: 100%;
+        justify-content: flex-end;
+    }
+
+    .modpackinstaller-confirm-actions {
+        flex-direction: column-reverse;
+    }
+
+    .modpackinstaller-confirm-actions button {
         width: 100%;
     }
 

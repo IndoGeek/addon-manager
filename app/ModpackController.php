@@ -1136,6 +1136,8 @@ final class ModpackController extends Controller
             version: $version,
             minecraftVersion: $metadata?->minecraftVersion,
             loader: $metadata?->loader,
+            iconUrl: $metadata?->iconUrl
+                ?? $existingRecord?->iconUrl,
             installedAt: $existingRecord?->installedAt ?? gmdate('c'),
             updatedAt: gmdate('c'),
             status: InstallRecord::STATUS_INSTALLED,

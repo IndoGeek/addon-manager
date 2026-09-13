@@ -49,6 +49,7 @@ interface InstallRecordData {
     version: string;
     minecraft_version: string | null;
     loader: string | null;
+    icon_url: string | null;
     installed_at: string;
     updated_at: string;
     status: string;
@@ -944,6 +945,121 @@ const UpdatedStatIcon = () => (
     </svg>
 );
 
+const SearchIcon = () => (
+    <svg
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+    >
+        <circle cx="11" cy="11" r="8" />
+        <line x1="21" y1="21" x2="16.65" y2="16.65" />
+    </svg>
+);
+
+const PackageIcon = () => (
+    <svg
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+    >
+        <path d="M16.5 9.4 7.55 4.24" />
+        <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+        <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
+        <line x1="12" y1="22.08" x2="12" y2="12" />
+    </svg>
+);
+
+const RefreshIcon = () => (
+    <svg
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+    >
+        <polyline points="23 4 23 10 17 10" />
+        <polyline points="1 20 1 14 7 14" />
+        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+    </svg>
+);
+
+const UploadIcon = () => (
+    <svg
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+    >
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+        <polyline points="17 8 12 3 7 8" />
+        <line x1="12" y1="3" x2="12" y2="15" />
+    </svg>
+);
+
+const TrashIcon = () => (
+    <svg
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+    >
+        <polyline points="3 6 5 6 21 6" />
+        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+        <line x1="10" y1="11" x2="10" y2="17" />
+        <line x1="14" y1="11" x2="14" y2="17" />
+    </svg>
+);
+
+const SpinnerIcon = () => (
+    <svg
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+        className="modpackinstaller-icon-spinner"
+    >
+        <line x1="12" y1="2" x2="12" y2="6" />
+        <line x1="12" y1="18" x2="12" y2="22" />
+        <line x1="4.93" y1="4.93" x2="7.76" y2="7.76" />
+        <line x1="16.24" y1="16.24" x2="19.07" y2="19.07" />
+        <line x1="2" y1="12" x2="6" y2="12" />
+        <line x1="18" y1="12" x2="22" y2="12" />
+        <line x1="4.93" y1="19.07" x2="7.76" y2="16.24" />
+        <line x1="16.24" y1="7.76" x2="19.07" y2="4.93" />
+    </svg>
+);
+
 const CardBanner = ({ item }: { item: CatalogItem }) => {
     const mounted = useRef(true);
 
@@ -988,6 +1104,55 @@ const CardBanner = ({ item }: { item: CatalogItem }) => {
             onError={() => {
                 if (mounted.current) {
                     setAttempt((current) => current + 1);
+                }
+            }}
+        />
+    );
+};
+
+const InstalledModpackImage = ({
+    record,
+}: {
+    record: InstallRecordData;
+}) => {
+    const mounted = useRef(true);
+
+    const [failed, setFailed] = useState(false);
+
+    useEffect(() => {
+        setFailed(false);
+    }, [record.icon_url, record.id]);
+
+    useEffect(() => {
+        return () => {
+            mounted.current = false;
+        };
+    }, []);
+
+    const initial =
+        record.display_name.trim().charAt(0).toUpperCase() || '?';
+
+    if (!record.icon_url || failed) {
+        return (
+            <div
+                className="modpackinstaller-installed-image modpackinstaller-installed-image--fallback"
+                aria-hidden="true"
+            >
+                {initial}
+            </div>
+        );
+    }
+
+    return (
+        <img
+            src={record.icon_url}
+            alt=""
+            className="modpackinstaller-installed-image"
+            loading="lazy"
+            referrerPolicy="no-referrer"
+            onError={() => {
+                if (mounted.current) {
+                    setFailed(true);
                 }
             }}
         />
@@ -1198,10 +1363,12 @@ export default () => {
     const [lifecycleRecordId, setLifecycleRecordId] =
         useState<string | null>(null);
 
-    const [armedUninstall, setArmedUninstall] =
-        useState<string | null>(null);
+    const [pendingUninstall, setPendingUninstall] =
+        useState<InstallRecordData | null>(null);
 
     const [installedOpen, setInstalledOpen] = useState(false);
+
+    const [manualOpen, setManualOpen] = useState(false);
 
     const [detailsItem, setDetailsItem] =
         useState<CatalogItem | null>(null);
@@ -1484,7 +1651,6 @@ export default () => {
 
     const refreshInstalled = () => {
         loadInstalled();
-        setArmedUninstall(null);
     };
 
     const openInstalledModal = () => {
@@ -1520,10 +1686,7 @@ export default () => {
                 return;
             }
 
-            setInstalledStatus({
-                kind: 'success',
-                message: `Updated ${response.data.data.display_name} from ${response.data.data.previous_version} to ${response.data.data.version}.`,
-            });
+            setInstalledStatus(null);
             refreshInstalled();
         } catch (requestError: any) {
             if (!alive.current) {
@@ -1567,20 +1730,21 @@ export default () => {
         setInstalledStatus(null);
 
         try {
-            const response =
-                await axios.post<UninstallResponse>(
-                    `${API_BASE}/servers/${server}/installed/${record.id}/uninstall`,
-                );
+            await axios.post<UninstallResponse>(
+                `${API_BASE}/servers/${server}/installed/${record.id}/uninstall`,
+            );
 
             if (!alive.current) {
                 return;
             }
 
-            setInstalledStatus({
-                kind: 'success',
-                message: `Uninstalled ${response.data.data.display_name} (${response.data.data.removed} files removed).`,
-            });
-            refreshInstalled();
+            setInstalled((current) =>
+                current === null
+                    ? null
+                    : current.filter(
+                        (item) => item.id !== record.id,
+                    ),
+            );
         } catch (requestError: any) {
             if (!alive.current) {
                 return;
@@ -2209,28 +2373,6 @@ export default () => {
             className="modpackinstaller-root"
             aria-busy={processing || searching}
         >
-            <header className="modpackinstaller-page-header">
-                <div>
-                    <h2>Modpack Installer</h2>
-
-                    <p>
-                        Browse, search, and install a modpack directly
-                        onto this server.
-                    </p>
-                </div>
-
-                <button
-                    type="button"
-                    className="modpackinstaller-installed-button"
-                    onClick={openInstalledModal}
-                >
-                    Installed modpacks
-                    {installed !== null && installed.length > 0
-                        ? ` (${installed.length})`
-                        : ''}
-                </button>
-            </header>
-
             <div className="modpackinstaller-card">
                 <div className="modpackinstaller-browser-toolbar">
                     <div className="modpackinstaller-search">
@@ -2238,42 +2380,74 @@ export default () => {
                             Search
                         </label>
 
-                        <div className="modpackinstaller-search-row">
-                            <input
-                                id="modpackinstaller-search"
-                                type="search"
-                                value={filters.query}
-                                onChange={(event) =>
-                                    onQueryChange(event.target.value)
-                                }
-                                onKeyDown={(event) => {
-                                    if (event.key === 'Enter') {
-                                        submitQuery();
+                        <div className="modpackinstaller-controls-row">
+                            <div className="modpackinstaller-search-box">
+                                <input
+                                    id="modpackinstaller-search"
+                                    type="search"
+                                    value={filters.query}
+                                    onChange={(event) =>
+                                        onQueryChange(event.target.value)
                                     }
-                                }}
-                                placeholder="Search modpacks"
-                                disabled={catalogBusy}
-                                aria-label="Search modpacks"
-                            />
+                                    onKeyDown={(event) => {
+                                        if (event.key === 'Enter') {
+                                            submitQuery();
+                                        }
+                                    }}
+                                    placeholder="Search modpacks"
+                                    disabled={catalogBusy}
+                                    aria-label="Search modpacks"
+                                />
 
-                            {filters.query.trim() !== '' && (
+                                {filters.query.trim() !== '' && (
+                                    <button
+                                        type="button"
+                                        className="modpackinstaller-search-clear"
+                                        onClick={clearQuery}
+                                        aria-label="Clear search"
+                                        disabled={catalogBusy}
+                                    >
+                                        &times;
+                                    </button>
+                                )}
+
                                 <button
                                     type="button"
-                                    className="modpackinstaller-search-clear"
-                                    onClick={clearQuery}
-                                    aria-label="Clear search"
+                                    className="modpackinstaller-search-go"
+                                    onClick={submitQuery}
                                     disabled={catalogBusy}
+                                    aria-label="Search"
                                 >
-                                    &times;
+                                    <SearchIcon />
                                 </button>
-                            )}
+                            </div>
 
                             <button
                                 type="button"
-                                onClick={submitQuery}
-                                disabled={catalogBusy}
+                                className="modpackinstaller-install-toggle"
+                                onClick={() =>
+                                    setManualOpen(
+                                        (current) => !current,
+                                    )
+                                }
+                                aria-expanded={manualOpen}
+                                disabled={loading}
                             >
-                                {searching ? 'Searching ...' : 'Search'}
+                                <PackageIcon />
+                                Install Modpack
+                            </button>
+
+                            <button
+                                type="button"
+                                className="modpackinstaller-installed-toggle"
+                                onClick={openInstalledModal}
+                            >
+                                <PackageIcon />
+                                Installed modpacks
+                                {installed !== null
+                                    && installed.length > 0
+                                    ? ` (${installed.length})`
+                                    : ''}
                             </button>
                         </div>
                     </div>
@@ -2625,12 +2799,9 @@ export default () => {
                         </>
                     )}
 
-                <details className="modpackinstaller-catalog-source">
-                    <summary>
-                        Or enter a modpack source manually
-                    </summary>
-
-                    <div className="modpackinstaller-form modpackinstaller-form--inline">
+                {manualOpen && (
+                    <div className="modpackinstaller-manual-panel">
+                        <div className="modpackinstaller-form modpackinstaller-form--inline">
                         <label htmlFor="modpackinstaller-source">
                             Modpack source
                         </label>
@@ -2660,8 +2831,9 @@ export default () => {
                             Append @version-id to pin an exact modpack
                             version.
                         </p>
+                        </div>
                     </div>
-                </details>
+                )}
             </div>
 
             {status && (
@@ -2690,40 +2862,36 @@ export default () => {
                             )}
 
                             <div>
-                                <h4>{metadata.name}</h4>
+                                <div className="modpackinstaller-metadata-title">
+                                    <h4>{metadata.name}</h4>
+
+                                    <span className="modpackinstaller-catalog-card-provider">
+                                        {metadata.source.split('://')[0]}
+                                    </span>
+                                </div>
 
                                 {metadata.description && (
                                     <p>{metadata.description}</p>
                                 )}
 
-                                <div className="modpackinstaller-selected">
-                                    Selected modpack
+                                <div className="modpackinstaller-pill-row">
+                                    <span className="modpackinstaller-pill">
+                                        {metadata.version}
+                                    </span>
+
+                                    {metadata.minecraft_version && (
+                                        <span className="modpackinstaller-pill">
+                                            {metadata.minecraft_version}
+                                        </span>
+                                    )}
+
+                                    {metadata.loader && (
+                                        <span className="modpackinstaller-pill modpackinstaller-pill--loader">
+                                            {metadata.loader}
+                                        </span>
+                                    )}
                                 </div>
                             </div>
-                        </div>
-
-                        <div className="modpackinstaller-details">
-                            <div>
-                                <span>Version</span>
-                                <strong>{metadata.version}</strong>
-                            </div>
-
-                            <div>
-                                <span>Minecraft</span>
-                                <strong>
-                                    {metadata.minecraft_version}
-                                </strong>
-                            </div>
-
-                            <div>
-                                <span>Loader</span>
-                                <strong>{metadata.loader}</strong>
-                            </div>
-                        </div>
-
-                        <div className="modpackinstaller-source">
-                            <span>Source</span>
-                            <code>{metadata.source}</code>
                         </div>
 
                         {metadata.manual_download ? (
@@ -2789,12 +2957,14 @@ export default () => {
                 headerActions={
                     <button
                         type="button"
+                        className="modpackinstaller-icon-button modpackinstaller-icon-button--blue"
                         onClick={refreshInstalled}
                         disabled={installedLoading}
+                        aria-label="Refresh installed modpacks"
                     >
                         {installedLoading
-                            ? 'Refreshing ...'
-                            : 'Refresh'}
+                            ? <SpinnerIcon />
+                            : <RefreshIcon />}
                     </button>
                 }
             >
@@ -2838,10 +3008,7 @@ export default () => {
                     && installed.length === 0
                     && !installedLoading && (
                         <div className="modpackinstaller-catalog-state modpackinstaller-catalog-state--empty">
-                            <p>
-                                No modpacks are installed on this server
-                                yet.
-                            </p>
+                            <p>No modpacks installed</p>
                         </div>
                     )}
 
@@ -2854,56 +3021,53 @@ export default () => {
                                     className="modpackinstaller-installed-item"
                                     key={record.id}
                                 >
-                                    <div className="modpackinstaller-installed-header">
-                                        <span className="modpackinstaller-catalog-card-badge">
-                                            {record.provider}
-                                        </span>
+                                    <InstalledModpackImage record={record} />
 
-                                        <h4>{record.display_name}</h4>
-                                    </div>
+                                    <div className="modpackinstaller-installed-item-content">
+                                        <div className="modpackinstaller-installed-item-title">
+                                            <h4 title={record.display_name}>
+                                                {record.display_name}
+                                            </h4>
 
-                                    <div className="modpackinstaller-details">
-                                        <div>
-                                            <span>Version</span>
-                                            <strong>
-                                                {record.version}
-                                            </strong>
+                                            <span className="modpackinstaller-catalog-card-provider">
+                                                {record.provider}
+                                            </span>
                                         </div>
 
-                                        {record.minecraft_version && (
-                                            <div>
-                                                <span>Minecraft</span>
-                                                <strong>
+                                        <div className="modpackinstaller-pill-row">
+                                            <span className="modpackinstaller-pill">
+                                                {record.version}
+                                            </span>
+
+                                            {record.minecraft_version && (
+                                                <span className="modpackinstaller-pill">
                                                     {record.minecraft_version}
-                                                </strong>
-                                            </div>
-                                        )}
+                                                </span>
+                                            )}
 
-                                        {record.loader && (
-                                            <div>
-                                                <span>Loader</span>
-                                                <strong>
+                                            {record.loader && (
+                                                <span className="modpackinstaller-pill modpackinstaller-pill--loader">
                                                     {record.loader}
-                                                </strong>
-                                            </div>
-                                        )}
-                                    </div>
+                                                </span>
+                                            )}
+                                        </div>
 
-                                    <div className="modpackinstaller-installed-source">
-                                        <span>Source</span>
-                                        <code>{record.source}</code>
+                                        <p className="modpackinstaller-installed-meta">
+                                            Installed{' '}
+                                            {formatDate(
+                                                record.installed_at,
+                                            )}
+                                            {' '}· Updated{' '}
+                                            {formatDate(
+                                                record.updated_at,
+                                            )}
+                                        </p>
                                     </div>
-
-                                    <p className="modpackinstaller-installed-meta">
-                                        Installed{' '}
-                                        {formatDate(record.installed_at)}
-                                        {' '}· Updated{' '}
-                                        {formatDate(record.updated_at)}
-                                    </p>
 
                                     <div className="modpackinstaller-installed-actions">
                                         <button
                                             type="button"
+                                            className="modpackinstaller-icon-button modpackinstaller-icon-button--green"
                                             onClick={() =>
                                                 updateInstalledModpack(
                                                     record,
@@ -2912,65 +3076,31 @@ export default () => {
                                             disabled={
                                                 lifecycleRecordId !== null
                                             }
+                                            aria-label="Update modpack"
+                                            title="Update"
                                         >
                                             {lifecycleRecordId
                                                 === record.id
-                                                ? 'Working ...'
-                                                : 'Update to latest'}
+                                                ? <SpinnerIcon />
+                                                : <UploadIcon />}
                                         </button>
 
-                                        {armedUninstall === record.id ? (
-                                            <>
-                                                <button
-                                                    type="button"
-                                                    className="modpackinstaller-danger-armed"
-                                                    onClick={() =>
-                                                        uninstallInstalledModpack(
-                                                            record,
-                                                        )
-                                                    }
-                                                    disabled={
-                                                        lifecycleRecordId
-                                                        !== null
-                                                    }
-                                                >
-                                                    {lifecycleRecordId
-                                                        === record.id
-                                                        ? 'Removing ...'
-                                                        : 'Confirm uninstall'}
-                                                </button>
-
-                                                <button
-                                                    type="button"
-                                                    onClick={() =>
-                                                        setArmedUninstall(
-                                                            null,
-                                                        )
-                                                    }
-                                                    disabled={
-                                                        lifecycleRecordId
-                                                        !== null
-                                                    }
-                                                >
-                                                    Cancel
-                                                </button>
-                                            </>
-                                        ) : (
-                                            <button
-                                                type="button"
-                                                onClick={() =>
-                                                    setArmedUninstall(
-                                                        record.id,
-                                                    )
-                                                }
-                                                disabled={
-                                                    lifecycleRecordId
-                                                    !== null
-                                                }
-                                            >
-                                                Uninstall
-                                            </button>
-                                        )}
+                                        <button
+                                            type="button"
+                                            className="modpackinstaller-icon-button modpackinstaller-icon-button--red"
+                                            onClick={() =>
+                                                setPendingUninstall(
+                                                    record,
+                                                )
+                                            }
+                                            disabled={
+                                                lifecycleRecordId !== null
+                                            }
+                                            aria-label="Uninstall modpack"
+                                            title="Uninstall"
+                                        >
+                                            <TrashIcon />
+                                        </button>
                                     </div>
                                 </article>
                             ))}
@@ -3007,6 +3137,16 @@ export default () => {
                             />
 
                             <div className="modpackinstaller-modal-item-meta">
+                                <div className="modpackinstaller-metadata-title">
+                                    <h4 title={detailsItem.name}>
+                                        {detailsItem.name}
+                                    </h4>
+
+                                    <span className="modpackinstaller-catalog-card-provider">
+                                        {detailsItem.provider}
+                                    </span>
+                                </div>
+
                                 <PillTags
                                     tags={buildCardTags(detailsItem)}
                                 />
@@ -3189,27 +3329,22 @@ export default () => {
 
                         {modalMetadata && (
                             <div className="modpackinstaller-modal-selected">
-                                <div className="modpackinstaller-details">
-                                    <div>
-                                        <span>Version</span>
-                                        <strong>
-                                            {modalMetadata.version}
-                                        </strong>
-                                    </div>
+                                <div className="modpackinstaller-pill-row">
+                                    <span className="modpackinstaller-pill">
+                                        {modalMetadata.version}
+                                    </span>
 
-                                    <div>
-                                        <span>Minecraft</span>
-                                        <strong>
+                                    {modalMetadata.minecraft_version && (
+                                        <span className="modpackinstaller-pill">
                                             {modalMetadata.minecraft_version}
-                                        </strong>
-                                    </div>
+                                        </span>
+                                    )}
 
-                                    <div>
-                                        <span>Loader</span>
-                                        <strong>
+                                    {modalMetadata.loader && (
+                                        <span className="modpackinstaller-pill modpackinstaller-pill--loader">
                                             {modalMetadata.loader}
-                                        </strong>
-                                    </div>
+                                        </span>
+                                    )}
                                 </div>
 
                                 {modalMetadata.manual_download ? (
@@ -3277,9 +3412,61 @@ export default () => {
                                     </div>
                                 </div>
                             </div>
-                        )}
-                    </div>
+                        )}                    </div>
                 )}
+            </Modal>
+
+            <Modal
+                open={pendingUninstall !== null}
+                onClose={() => setPendingUninstall(null)}
+                labelledBy="modpackinstaller-uninstall-title"
+                title="Uninstall modpack"
+                busy={lifecycleRecordId !== null}
+            >
+                <div className="modpackinstaller-confirm">
+                    <p>
+                        Uninstalling{' '}
+                        <strong>
+                            {pendingUninstall?.display_name}
+                        </strong>{' '}
+                        will remove the modpack and all of its files from
+                        this server. This cannot be undone.
+                    </p>
+
+                    <div className="modpackinstaller-confirm-actions">
+                        <button
+                            type="button"
+                            className="modpackinstaller-confirm-cancel"
+                            onClick={() => setPendingUninstall(null)}
+                            disabled={lifecycleRecordId !== null}
+                        >
+                            Cancel
+                        </button>
+
+                        <button
+                            type="button"
+                            className="modpackinstaller-confirm-danger"
+                            onClick={() => {
+                                if (pendingUninstall === null) {
+                                    return;
+                                }
+
+                                const record = pendingUninstall;
+
+                                setPendingUninstall(null);
+                                uninstallInstalledModpack(record);
+                            }}
+                            disabled={
+                                lifecycleRecordId !== null
+                                || pendingUninstall === null
+                            }
+                        >
+                            {lifecycleRecordId !== null
+                                ? 'Uninstalling ...'
+                                : 'Confirm Uninstallation'}
+                        </button>
+                    </div>
+                </div>
             </Modal>
         </div>
     );

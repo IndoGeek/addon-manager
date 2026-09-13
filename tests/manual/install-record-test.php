@@ -19,6 +19,7 @@ $record = new InstallRecord(
     version: '1.0.0',
     minecraftVersion: '1.20.1',
     loader: 'fabric',
+    iconUrl: 'https://cdn.modrinth.com/pack-a.png',
     installedAt: '2026-01-01T00:00:00+00:00',
     updatedAt: '2026-01-01T00:00:00+00:00',
     status: InstallRecord::STATUS_INSTALLED,
@@ -36,6 +37,7 @@ if (
     || $roundTripped->version !== $record->version
     || $roundTripped->minecraftVersion !== $record->minecraftVersion
     || $roundTripped->loader !== $record->loader
+    || $roundTripped->iconUrl !== $record->iconUrl
 ) {
     throw new RuntimeException('Record did not round trip.');
 }
@@ -89,6 +91,12 @@ if ($unpinned->versionId !== null || $unpinned->version !== '') {
 
 echo "PASS: unpinned record hydrates with null version id.\n";
 
+if ($unpinned->iconUrl !== null) {
+    throw new RuntimeException('Legacy records must hydrate with a null icon url.');
+}
+
+echo "PASS: legacy records hydrate with a null icon url.\n";
+
 $hostile = InstallRecord::fromArray([
     'id' => str_repeat('c', 32),
     'server_uuid' => 'server-aaa',
@@ -131,6 +139,7 @@ try {
         version: '1.0.0',
         minecraftVersion: null,
         loader: null,
+        iconUrl: null,
         installedAt: '2026-01-01T00:00:00+00:00',
         updatedAt: '2026-01-01T00:00:00+00:00',
         status: InstallRecord::STATUS_INSTALLED,
