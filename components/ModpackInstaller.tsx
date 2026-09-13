@@ -2603,7 +2603,7 @@ export default () => {
                                 <button
                                     type="button"
                                     onClick={installManualSource}
-                                    disabled={installLoading}
+                                    disabled={installLoading || result !== null}
                                 >
                                     {installLoading
                                         ? 'Installing ...'
@@ -3187,14 +3187,15 @@ export default () => {
                                     />
                                 ) : (
                                     <div className="modpackinstaller-modal-actions">
-                                        <button
-                                            type="button"
-                                            onClick={installModalModpack}
-                                            disabled={
-                                                !modalVersionSource
-                                                || modalInstallLoading
-                                            }
-                                        >
+<button
+                                    type="button"
+                                    onClick={installModalModpack}
+                                    disabled={
+                                        !modalVersionSource
+                                        || modalInstallLoading
+                                        || modalResult !== null
+                                    }
+                                >
                                             {modalInstallLoading
                                                 ? 'Installing ...'
                                                 : 'Install Modpack'}

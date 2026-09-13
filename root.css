@@ -1110,8 +1110,10 @@
 }
 
 .modpackinstaller-modal-actions button:disabled {
-    cursor: wait;
-    opacity: 0.6;
+    cursor: not-allowed;
+    background: #9ca3af;
+    color: #e5e7eb;
+    opacity: 1;
 }
 
 .modpackinstaller-modal-result {
