@@ -19,8 +19,6 @@ $record = new InstallRecord(
     version: '1.0.0',
     minecraftVersion: '1.20.1',
     loader: 'fabric',
-    layout: 'direct',
-    policy: 'overwrite',
     installedAt: '2026-01-01T00:00:00+00:00',
     updatedAt: '2026-01-01T00:00:00+00:00',
     status: InstallRecord::STATUS_INSTALLED,
@@ -38,8 +36,6 @@ if (
     || $roundTripped->version !== $record->version
     || $roundTripped->minecraftVersion !== $record->minecraftVersion
     || $roundTripped->loader !== $record->loader
-    || $roundTripped->layout !== $record->layout
-    || $roundTripped->policy !== $record->policy
 ) {
     throw new RuntimeException('Record did not round trip.');
 }
@@ -135,8 +131,6 @@ try {
         version: '1.0.0',
         minecraftVersion: null,
         loader: null,
-        layout: 'direct',
-        policy: 'overwrite',
         installedAt: '2026-01-01T00:00:00+00:00',
         updatedAt: '2026-01-01T00:00:00+00:00',
         status: InstallRecord::STATUS_INSTALLED,

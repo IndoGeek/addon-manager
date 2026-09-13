@@ -8,7 +8,7 @@ final class DeploymentOperation
         public readonly string $relativePath,
         public readonly string $source,
         public readonly string $destination,
-        public readonly DeploymentPolicy $policy,
+        public readonly bool $overwrite,
     ) {
     }
 }

@@ -2,7 +2,6 @@
 
 require __DIR__ . '/../../app/Services/Server/ServerFileTarget.php';
 require __DIR__ . '/../../app/Services/Server/LocalFilesystemServerFileTarget.php';
-require __DIR__ . '/../../app/Services/Deployment/DeploymentPolicy.php';
 require __DIR__ . '/../../app/Services/Deployment/DeploymentOperation.php';
 require __DIR__ . '/../../app/Services/Deployment/DeploymentPlan.php';
 require __DIR__ . '/../../app/Services/Deployment/DeploymentException.php';
@@ -12,7 +11,6 @@ use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployme
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentExecutor;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentOperation;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentPlan;
-use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentPolicy;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Server\LocalFilesystemServerFileTarget;
 
 $root = sys_get_temp_dir() . '/modpack-executor-test-' . bin2hex(random_bytes(8));
@@ -48,21 +46,21 @@ $plan = new DeploymentPlan([
         relativePath: 'config/example.json',
         source: $workspace . '/config/example.json',
         destination: '',
-        policy: DeploymentPolicy::CREATE_ONLY,
+        overwrite: false,
     ),
 
     new DeploymentOperation(
         relativePath: 'mods/new-mod.jar',
         source: $workspace . '/mods/new-mod.jar',
         destination: '',
-        policy: DeploymentPolicy::CREATE_ONLY,
+        overwrite: false,
     ),
 
     new DeploymentOperation(
         relativePath: 'mods/existing-mod.jar',
         source: $workspace . '/mods/existing-mod.jar',
         destination: '',
-        policy: DeploymentPolicy::OVERWRITE,
+        overwrite: true,
     ),
 ]);
 
@@ -141,7 +139,7 @@ try {
                         relativePath: $unsafePath,
                         source: $unsafeSource,
                         destination: '',
-                        policy: DeploymentPolicy::CREATE_ONLY,
+                        overwrite: false,
                     ),
                 ]),
             );

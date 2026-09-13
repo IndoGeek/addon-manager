@@ -1,25 +1,23 @@
 <?php
 
-require __DIR__ . '/../../app/Services/Deployment/DeploymentPolicy.php';
 require __DIR__ . '/../../app/Services/Deployment/DeploymentOperation.php';
 require __DIR__ . '/../../app/Services/Deployment/DeploymentPlan.php';
 
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentOperation;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentPlan;
-use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentPolicy;
 
 $operations = [
     new DeploymentOperation(
         relativePath: 'mods/new.jar',
         source: '/tmp/workspace/mods/new.jar',
         destination: '/tmp/server/mods/new.jar',
-        policy: DeploymentPolicy::CREATE_ONLY,
+        overwrite: false,
     ),
     new DeploymentOperation(
         relativePath: 'config/old.json',
         source: '/tmp/workspace/config/old.json',
         destination: '/tmp/server/config/old.json',
-        policy: DeploymentPolicy::OVERWRITE,
+        overwrite: true,
     ),
 ];
 

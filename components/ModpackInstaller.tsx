@@ -49,8 +49,6 @@ interface InstallRecordData {
     version: string;
     minecraft_version: string | null;
     loader: string | null;
-    layout: string;
-    policy: string;
     installed_at: string;
     updated_at: string;
     status: string;

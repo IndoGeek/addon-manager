@@ -1094,6 +1094,19 @@
     border: 0;
     border-radius: 6px;
     cursor: pointer;
+    background: #2563eb;
+    color: #fff;
+    font-weight: 600;
+    transition: background 0.2s ease;
+}
+
+.modpackinstaller-modal-actions button:hover:not(:disabled) {
+    background: #1d4ed8;
+}
+
+.modpackinstaller-modal-actions button:focus-visible {
+    outline: 2px solid rgba(37, 99, 235, 0.6);
+    outline-offset: 2px;
 }
 
 .modpackinstaller-modal-actions button:disabled {

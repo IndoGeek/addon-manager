@@ -1,16 +1,14 @@
 <?php
 
-require __DIR__ . '/../../app/Services/Deployment/DeploymentPolicy.php';
 require __DIR__ . '/../../app/Services/Deployment/DeploymentOperation.php';
 
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentOperation;
-use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentPolicy;
 
 $operation = new DeploymentOperation(
     relativePath: 'mods/example.jar',
     source: '/tmp/workspace/mods/example.jar',
     destination: '/tmp/server/mods/example.jar',
-    policy: DeploymentPolicy::OVERWRITE,
+    overwrite: true,
 );
 
 if ($operation->relativePath !== 'mods/example.jar') {
@@ -31,10 +29,10 @@ if ($operation->destination !== '/tmp/server/mods/example.jar') {
 
 echo "PASS: destination path stored\n";
 
-if ($operation->policy !== DeploymentPolicy::OVERWRITE) {
-    throw new RuntimeException('Deployment policy is incorrect.');
+if ($operation->overwrite !== true) {
+    throw new RuntimeException('Overwrite flag is incorrect.');
 }
 
-echo "PASS: deployment policy stored\n";
+echo "PASS: overwrite flag stored\n";
 
 echo "4/4 deployment operation tests passed.\n";

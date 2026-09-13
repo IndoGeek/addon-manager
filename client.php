@@ -39,11 +39,6 @@ Route::group([
         ResourceBelongsToServer::class,
     ],
 ], function () {
-    Route::post('/preview', [
-        ModpackController::class,
-        'preview',
-    ]);
-
     Route::post('/install', [
         ModpackController::class,
         'install',

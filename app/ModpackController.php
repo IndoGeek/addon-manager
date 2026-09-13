@@ -29,15 +29,12 @@ use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\BackupManager;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentExecutor;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentPlanner;
-use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentPolicy;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Download\DownloadManager;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\InstallationLock;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\InstallationLockedException;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\InstallationOrchestrator;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\InstallationResult;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\InstallationWorkspace;
-use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\PackageLayout;
-use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\PackageRootResolver;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Management\InstallRecord;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Management\InstallRecordStore;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Management\OwnershipRemover;
@@ -246,77 +243,6 @@ final class ModpackController extends Controller
         }
     }
 
-    public function preview(
-        Request $request,
-        Server $server,
-    ): JsonResponse {
-        $provider = null;
-        $package = null;
-
-        try {
-            [$source, $policy, $layout] =
-                $this->installationOptions($request);
-
-            $provider = $this->providerRegistry()->resolve($source);
-
-            $package = $provider->getPackage($source);
-
-            $target = $this->serverTarget($server);
-
-            $orchestrator = $this->orchestrator($target);
-
-            $preview = $orchestrator->preview(
-                archivePath: $package->archivePath,
-                policy: $policy,
-                layout: $layout,
-            );
-
-            $operations = [];
-
-            foreach ($preview->plan->operations as $operation) {
-                $operations[] = [
-                    'path' => $operation->relativePath,
-                    'action' => $operation->policy->value,
-                ];
-            }
-
-            return response()->json([
-                'data' => [
-                    'total_files' => $preview->totalFiles(),
-                    'create_count' => $preview->createdCount(),
-                    'overwrite_count' => $preview->overwrittenCount(),
-                    'operations' => $operations,
-                ],
-            ]);
-        } catch (InvalidArgumentException $exception) {
-            return response()->json([
-                'error' => $exception->getMessage(),
-            ], 422);
-        } catch (UnsupportedModpackPackageException $exception) {
-            return response()->json([
-                'error' => $exception->getMessage(),
-            ], 422);
-        } catch (WingsConnectionException $exception) {
-            return response()->json([
-                'error' => 'Unable to reach the server node. Please try again later.',
-            ], 503);
-        } catch (WingsHttpException $exception) {
-            return response()->json([
-                'error' => 'The server node could not complete the operation. Please try again later.',
-            ], 503);
-        } catch (Throwable $exception) {
-            report($exception);
-
-            return response()->json([
-                'error' => 'Unable to preview the modpack installation.',
-            ], 500);
-        } finally {
-            if ($provider !== null && $package !== null) {
-                $provider->cleanup($package);
-            }
-        }
-    }
-
     public function install(
         Request $request,
         Server $server,
@@ -332,8 +258,7 @@ final class ModpackController extends Controller
                 $token,
             );
 
-            [$source, $policy, $layout] =
-                $this->installationOptions($request);
+            $source = $this->installationSource($request);
 
             $provider = $this->providerRegistry()->resolve($source);
 
@@ -345,8 +270,6 @@ final class ModpackController extends Controller
 
             $result = $orchestrator->install(
                 archivePath: $package->archivePath,
-                policy: $policy,
-                layout: $layout,
             );
 
             $metadata = $this->installMetadata(
@@ -359,8 +282,6 @@ final class ModpackController extends Controller
                 installedSource: $package->source,
                 metadata: $metadata,
                 result: $result,
-                layout: $layout,
-                policy: $policy,
             );
 
             $this->store()->save($record);
@@ -619,20 +540,12 @@ final class ModpackController extends Controller
                 ], 409);
             }
 
-            $layout = PackageLayout::tryFrom($record->layout)
-                ?? PackageLayout::DIRECT;
-
-            $policy = DeploymentPolicy::tryFrom($record->policy)
-                ?? DeploymentPolicy::OVERWRITE;
-
             $target = $this->serverTarget($server);
 
             $orchestrator = $this->orchestrator($target);
 
             $result = $orchestrator->install(
                 archivePath: $package->archivePath,
-                policy: $policy,
-                layout: $layout,
             );
 
             $updated = $this->buildInstallRecord(
@@ -640,8 +553,6 @@ final class ModpackController extends Controller
                 installedSource: $package->source,
                 metadata: $metadata,
                 result: $result,
-                layout: $layout,
-                policy: $policy,
                 existingRecord: $record,
             );
 
@@ -716,9 +627,9 @@ final class ModpackController extends Controller
         }
     }
 
-    private function installationOptions(
+    private function installationSource(
         Request $request,
-    ): array {
+    ): string {
         $sourceValue = $request->input('source');
 
         if (!is_string($sourceValue) || trim($sourceValue) === '') {
@@ -735,49 +646,7 @@ final class ModpackController extends Controller
             );
         }
 
-        $policyValue = $request->input(
-            'policy',
-            DeploymentPolicy::OVERWRITE->value,
-        );
-
-        if (!is_string($policyValue)) {
-            throw new InvalidArgumentException(
-                'Invalid installation policy.',
-            );
-        }
-
-        $policy = DeploymentPolicy::tryFrom($policyValue);
-
-        if ($policy === null) {
-            throw new InvalidArgumentException(
-                'Invalid installation policy.',
-            );
-        }
-
-        $layoutValue = $request->input(
-            'layout',
-            PackageLayout::DIRECT->value,
-        );
-
-        if (!is_string($layoutValue)) {
-            throw new InvalidArgumentException(
-                'Invalid package layout.',
-            );
-        }
-
-        $layout = PackageLayout::tryFrom($layoutValue);
-
-        if ($layout === null) {
-            throw new InvalidArgumentException(
-                'Invalid package layout.',
-            );
-        }
-
-        return [
-            $source,
-            $policy,
-            $layout,
-        ];
+        return $source;
     }
 
     private function catalogQuery(
@@ -1213,7 +1082,6 @@ final class ModpackController extends Controller
             backupManager: new BackupManager($target),
             executor: new DeploymentExecutor($target),
             temporaryRoot: self::TEMPORARY_ROOT,
-            packageRootResolver: new PackageRootResolver(),
             serverFileTarget: $target,
         );
     }
@@ -1241,8 +1109,6 @@ final class ModpackController extends Controller
         string $installedSource,
         ?ModpackMetadata $metadata,
         InstallationResult $result,
-        PackageLayout $layout,
-        DeploymentPolicy $policy,
         ?InstallRecord $existingRecord = null,
     ): InstallRecord {
         [$provider, $projectId, $versionId] = $this->sourceParts(
@@ -1270,8 +1136,6 @@ final class ModpackController extends Controller
             version: $version,
             minecraftVersion: $metadata?->minecraftVersion,
             loader: $metadata?->loader,
-            layout: $layout->value,
-            policy: $policy->value,
             installedAt: $existingRecord?->installedAt ?? gmdate('c'),
             updatedAt: gmdate('c'),
             status: InstallRecord::STATUS_INSTALLED,

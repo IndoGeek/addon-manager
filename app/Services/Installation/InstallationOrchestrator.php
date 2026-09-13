@@ -7,7 +7,6 @@ use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployme
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentExecutor;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Server\ServerFileTarget;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentPlanner;
-use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentPolicy;
 use RuntimeException;
 use Throwable;
 
@@ -19,43 +18,12 @@ final class InstallationOrchestrator
         private readonly BackupManager $backupManager,
         private readonly DeploymentExecutor $executor,
         private readonly string $temporaryRoot,
-        private readonly PackageRootResolver $packageRootResolver,
         private readonly ServerFileTarget $serverFileTarget,
     ) {
     }
 
-    public function preview(
-        string $archivePath,
-        DeploymentPolicy $policy = DeploymentPolicy::OVERWRITE,
-        PackageLayout $layout = PackageLayout::DIRECT,
-    ): InstallationPreview {
-        $workspace = null;
-
-        try {
-            $workspace = $this->workspaceManager->prepare($archivePath);
-
-            $packageRoot = $this->packageRootResolver->resolve(
-                $workspace,
-                $layout,
-            );
-
-            $plan = $this->planner->plan(
-                $packageRoot,
-                $policy,
-            );
-
-            return new InstallationPreview($plan);
-        } finally {
-            if ($workspace !== null) {
-                $this->workspaceManager->cleanup($workspace);
-            }
-        }
-    }
-
     public function install(
         string $archivePath,
-        DeploymentPolicy $policy = DeploymentPolicy::OVERWRITE,
-        PackageLayout $layout = PackageLayout::DIRECT,
     ): InstallationResult {
         $workspace = null;
         $backupDirectory = null;
@@ -65,20 +33,12 @@ final class InstallationOrchestrator
         try {
             $workspace = $this->workspaceManager->prepare($archivePath);
 
-            $packageRoot = $this->packageRootResolver->resolve(
-                $workspace,
-                $layout,
-            );
-
-            $plan = $this->planner->plan(
-                $packageRoot,
-                $policy,
-            );
+            $plan = $this->planner->plan($workspace);
 
             $backupDirectory = $this->createBackupDirectory();
 
             foreach ($plan->operations as $operation) {
-                if ($operation->policy !== DeploymentPolicy::OVERWRITE) {
+                if (!$operation->overwrite) {
                     continue;
                 }
 
@@ -94,14 +54,12 @@ final class InstallationOrchestrator
             $overwrittenPaths = [];
 
             foreach ($plan->operations as $operation) {
-                if ($operation->policy === DeploymentPolicy::CREATE_ONLY) {
-                    $createdPaths[] = $operation->relativePath;
+                if ($operation->overwrite) {
+                    $overwrittenPaths[] = $operation->relativePath;
                     continue;
                 }
 
-                if ($operation->policy === DeploymentPolicy::OVERWRITE) {
-                    $overwrittenPaths[] = $operation->relativePath;
-                }
+                $createdPaths[] = $operation->relativePath;
             }
 
             return new InstallationResult(

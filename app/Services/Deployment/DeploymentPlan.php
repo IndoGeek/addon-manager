@@ -23,7 +23,7 @@ final class DeploymentPlan
             array_filter(
                 $this->operations,
                 static fn (DeploymentOperation $operation): bool =>
-                    $operation->policy === DeploymentPolicy::CREATE_ONLY,
+                    !$operation->overwrite,
             ),
         );
     }
@@ -34,7 +34,7 @@ final class DeploymentPlan
             array_filter(
                 $this->operations,
                 static fn (DeploymentOperation $operation): bool =>
-                    $operation->policy === DeploymentPolicy::OVERWRITE,
+                    $operation->overwrite,
             ),
         );
     }

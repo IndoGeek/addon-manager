@@ -78,17 +78,16 @@ uninstall installed modpacks without trusting the client:
   mutating requests and crashed writers never yield a torn file. Records are
   hydrated with strict validation; corrupt or hostile entries are ignored.
 - **Record content.** Normalized source (pinned to the actually-resolved
-  version), display name, version, Minecraft version/loader, layout, policy,
-  timestamps, and an ownership manifest of the server-relative paths the engine
-  created/overwrote. Ownership paths are re-validated with `ServerRelativePath`
+  version), display name, version, Minecraft version/loader, timestamps, and an
+  ownership manifest of the server-relative paths the engine created/overwrote.
+  Ownership paths are re-validated with `ServerRelativePath`
   both when written and when read back.
 - **Update.** The base source (unpinned project) is re-resolved by the provider
   to the latest version and deployed through the full installation engine
-  (backup/rollback) using the recorded layout/policy — never a delete-then-write
-  step. If the resolved version equals the recorded version the request returns
-  a controlled `409`. The record (including ownership) is swapped only after the
-  engine reports success; files orphaned by the previous layout are left in
-  place and simply drop off the manifest.
+  (backup/rollback). If the resolved version equals the recorded version the
+  request returns a controlled `409`. The record (including ownership) is
+  swapped only after the engine reports success; files orphaned by the previous
+  version are left in place and simply drop off the manifest.
 - **Uninstall.** `OwnershipRemover` deletes exactly the owned relative paths,
   skipping missing entries deterministically and never touching directories or
   unrelated files. The record is deleted only when the entire removal succeeds;
@@ -171,7 +170,7 @@ Installation must validate paths, archives and provider responses.
 
 Every input boundary treats its data as untrusted and is validated:
 
-- **Request input.** Modpack sources, policies and layouts are scalar-typed
+- **Request input.** Modpack sources are scalar-typed
   and length-capped in the controller before they reach a provider or the
   installation engine. Rejections are `422 Bad Request` with static messages.
 - **Provider payloads.** Structured (JSON) provider responses are type-checked

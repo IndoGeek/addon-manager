@@ -1,6 +1,5 @@
 <?php
 
-require __DIR__ . '/../../app/Services/Deployment/DeploymentPolicy.php';
 require __DIR__ . '/../../app/Services/Deployment/DeploymentOperation.php';
 require __DIR__ . '/../../app/Services/Deployment/DeploymentPlan.php';
 require __DIR__ . '/../../app/Services/Deployment/DeploymentPlanner.php';
@@ -8,7 +7,6 @@ require __DIR__ . '/../../app/Services/Server/ServerFileTarget.php';
 require __DIR__ . '/../../app/Services/Server/LocalFilesystemServerFileTarget.php';
 
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentPlanner;
-use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentPolicy;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Server\LocalFilesystemServerFileTarget;
 
 $root = sys_get_temp_dir()
@@ -46,52 +44,29 @@ $target = new LocalFilesystemServerFileTarget($server);
 $planner = new DeploymentPlanner($target);
 
 try {
-    $createOnly = $planner->plan(
-        $workspace,
-        DeploymentPolicy::CREATE_ONLY,
-    );
+    $plan = $planner->plan($workspace);
 
-    if ($createOnly->totalFiles() !== 2) {
+    if ($plan->totalFiles() !== 3) {
         throw new RuntimeException(
-            'CREATE_ONLY should plan only new files.'
+            'The plan should include all files.'
         );
     }
 
-    echo "PASS: CREATE_ONLY prevents overwrites\n";
-
-    $skipExisting = $planner->plan(
-        $workspace,
-        DeploymentPolicy::SKIP_EXISTING,
-    );
-
-    if ($skipExisting->totalFiles() !== 2) {
+    if ($plan->createCount() !== 2) {
         throw new RuntimeException(
-            'SKIP_EXISTING should skip existing files.'
+            'The plan should identify newly created files.'
         );
     }
 
-    echo "PASS: SKIP_EXISTING prevents overwrites\n";
-
-    $overwrite = $planner->plan(
-        $workspace,
-        DeploymentPolicy::OVERWRITE,
-    );
-
-    if ($overwrite->totalFiles() !== 3) {
+    if ($plan->overwriteCount() !== 1) {
         throw new RuntimeException(
-            'OVERWRITE should include all files.'
+            'The plan should identify the existing file for replacement.'
         );
     }
 
-    if ($overwrite->overwriteCount() !== 1) {
-        throw new RuntimeException(
-            'OVERWRITE should identify the existing file.'
-        );
-    }
+    echo "PASS: existing files are replaced by default\n";
 
-    echo "PASS: OVERWRITE identifies files for replacement\n";
-
-    foreach ($overwrite->operations as $operation) {
+    foreach ($plan->operations as $operation) {
         if ($operation->destination !== $operation->relativePath) {
             throw new RuntimeException(
                 'Deployment destination must remain relative.'
@@ -115,10 +90,7 @@ try {
     );
 
     try {
-        $planner->plan(
-            $directoryWorkspace,
-            DeploymentPolicy::OVERWRITE,
-        );
+        $planner->plan($directoryWorkspace);
 
         throw new RuntimeException(
             'Planner should reject a target directory.'

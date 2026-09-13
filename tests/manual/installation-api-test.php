@@ -25,11 +25,8 @@ use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Providers\MockMod
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\BackupManager;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentExecutor;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentPlanner;
-use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentPolicy;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\InstallationOrchestrator;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\InstallationWorkspace;
-use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\PackageLayout;
-use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\PackageRootResolver;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Server\ServerFileTargetFactory;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Server\ServerIdentity;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Server\ServerTargetResolver;
@@ -82,80 +79,22 @@ $orchestrator = new InstallationOrchestrator(
     backupManager: new BackupManager($target),
     executor: new DeploymentExecutor($target),
     temporaryRoot: $temporaryRoot,
-    packageRootResolver: new PackageRootResolver(),
     serverFileTarget: $target,
 );
 
-$preview = $orchestrator->preview(
-    archivePath: $package->archivePath,
-    policy: DeploymentPolicy::OVERWRITE,
-    layout: PackageLayout::DIRECT,
-);
-
-if ($preview->totalFiles() !== 2) {
-    throw new RuntimeException(
-        'Expected 2 files in installation preview.',
-    );
-}
-
-echo "PASS: preview returned 2 files\n";
-
-if ($preview->createdCount() !== 2) {
-    throw new RuntimeException(
-        'Expected 2 new files in fresh preview.',
-    );
-}
-
-echo "PASS: preview reports 2 new files\n";
-
-if (is_file($serverRoot . '/config.txt')) {
-    throw new RuntimeException(
-        'Preview modified the server filesystem.',
-    );
-}
-
-echo "PASS: preview does not modify server\n";
-
-file_put_contents(
-    $serverRoot . '/config.txt',
-    'original-content',
-);
-
-$overwritePreview = $orchestrator->preview(
-    archivePath: $package->archivePath,
-    policy: DeploymentPolicy::OVERWRITE,
-    layout: PackageLayout::DIRECT,
-);
-
-if ($overwritePreview->totalFiles() !== 2) {
-    throw new RuntimeException(
-        'Expected 2 files in overwrite preview.',
-    );
-}
-
-if ($overwritePreview->createdCount() !== 1) {
-    throw new RuntimeException(
-        'Expected 1 new file in overwrite preview.',
-    );
-}
-
-if ($overwritePreview->overwrittenCount() !== 1) {
-    throw new RuntimeException(
-        'Expected 1 overwritten file in overwrite preview.',
-    );
-}
-
-echo "PASS: overwrite preview counts are correct\n";
-
 $result = $orchestrator->install(
     archivePath: $package->archivePath,
-    policy: DeploymentPolicy::OVERWRITE,
-    layout: PackageLayout::DIRECT,
 );
 
 if ($result->totalFiles() !== 2) {
     throw new RuntimeException(
         'Expected 2 installed files.',
+    );
+}
+
+if ($result->createdCount() !== 2) {
+    throw new RuntimeException(
+        'Expected 2 new files in fresh install.',
     );
 }
 
@@ -169,9 +108,46 @@ if (!is_file($serverRoot . '/mods/example-mod.jar')) {
 
 echo "PASS: mod file installed\n";
 
+if (!is_file($serverRoot . '/config.txt')) {
+    throw new RuntimeException(
+        'Config file was not installed.',
+    );
+}
+
+echo "PASS: config file installed\n";
+
+file_put_contents(
+    $serverRoot . '/config.txt',
+    'preserve-this-content',
+);
+
+$reinstall = $orchestrator->install(
+    archivePath: $package->archivePath,
+);
+
+if ($reinstall->totalFiles() !== 2) {
+    throw new RuntimeException(
+        'Expected 2 files on reinstall.',
+    );
+}
+
+if ($reinstall->createdCount() !== 0) {
+    throw new RuntimeException(
+        'Reinstall should not create new files.',
+    );
+}
+
+if ($reinstall->overwrittenCount() !== 2) {
+    throw new RuntimeException(
+        'Expected 2 overwritten files on reinstall.',
+    );
+}
+
+echo "PASS: reinstall overwrites existing files by default\n";
+
 if (
     file_get_contents($serverRoot . '/config.txt')
-    === 'original-content'
+    === 'preserve-this-content'
 ) {
     throw new RuntimeException(
         'Existing config was not overwritten.',
@@ -179,78 +155,6 @@ if (
 }
 
 echo "PASS: existing config was overwritten\n";
-
-file_put_contents(
-    $serverRoot . '/config.txt',
-    'preserve-this-content',
-);
-
-$skipPreview = $orchestrator->preview(
-    archivePath: $package->archivePath,
-    policy: DeploymentPolicy::SKIP_EXISTING,
-    layout: PackageLayout::DIRECT,
-);
-
-if ($skipPreview->totalFiles() !== 0) {
-    throw new RuntimeException(
-        'Expected no files in skip-existing preview when all exist.',
-    );
-}
-
-echo "PASS: skip-existing preview is correct\n";
-
-$orchestrator->install(
-    archivePath: $package->archivePath,
-    policy: DeploymentPolicy::SKIP_EXISTING,
-    layout: PackageLayout::DIRECT,
-);
-
-if (
-    file_get_contents($serverRoot . '/config.txt')
-    !== 'preserve-this-content'
-) {
-    throw new RuntimeException(
-        'Skip-existing modified an existing file.',
-    );
-}
-
-echo "PASS: skip-existing preserved file\n";
-
-file_put_contents(
-    $serverRoot . '/config.txt',
-    'create-only-content',
-);
-
-$createOnlyPreview = $orchestrator->preview(
-    archivePath: $package->archivePath,
-    policy: DeploymentPolicy::CREATE_ONLY,
-    layout: PackageLayout::DIRECT,
-);
-
-if ($createOnlyPreview->totalFiles() !== 0) {
-    throw new RuntimeException(
-        'Expected no files in create-only preview when all exist.',
-    );
-}
-
-echo "PASS: create-only preview is correct\n";
-
-$orchestrator->install(
-    archivePath: $package->archivePath,
-    policy: DeploymentPolicy::CREATE_ONLY,
-    layout: PackageLayout::DIRECT,
-);
-
-if (
-    file_get_contents($serverRoot . '/config.txt')
-    !== 'create-only-content'
-) {
-    throw new RuntimeException(
-        'Create-only modified an existing file.',
-    );
-}
-
-echo "PASS: create-only preserved file\n";
 
 $iterator = new RecursiveIteratorIterator(
     new RecursiveDirectoryIterator(
@@ -270,4 +174,4 @@ foreach ($iterator as $item) {
 
 rmdir($root);
 
-echo "11/11 installation API tests passed.\n";
+echo "6/6 installation API tests passed.\n";

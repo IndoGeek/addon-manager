@@ -4,9 +4,6 @@ require __DIR__ . '/../../app/Services/Archive/ArchiveValidator.php';
 require __DIR__ . '/../../app/Services/Archive/ArchiveExtractor.php';
 require __DIR__ . '/../../app/Services/Installation/InstallationWorkspace.php';
 require __DIR__ . '/../../app/Services/Installation/InstallationResult.php';
-require __DIR__ . '/../../app/Services/Installation/PackageLayout.php';
-require __DIR__ . '/../../app/Services/Installation/PackageRootResolver.php';
-require __DIR__ . '/../../app/Services/Deployment/DeploymentPolicy.php';
 require __DIR__ . '/../../app/Services/Deployment/DeploymentOperation.php';
 require __DIR__ . '/../../app/Services/Deployment/DeploymentPlan.php';
 require __DIR__ . '/../../app/Services/Deployment/DeploymentPlanner.php';
@@ -19,10 +16,8 @@ require __DIR__ . '/../../app/Services/Installation/InstallationOrchestrator.php
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\BackupManager;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentExecutor;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentPlanner;
-use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentPolicy;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\InstallationOrchestrator;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\InstallationWorkspace;
-use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\PackageRootResolver;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Server\LocalFilesystemServerFileTarget;
 
 $root = sys_get_temp_dir()
@@ -65,11 +60,9 @@ $backupManager = new BackupManager(
 $executor = new DeploymentExecutor(
     $serverFileTarget,
 );
-$packageRootResolver = new PackageRootResolver();
 
 $orchestrator = new InstallationOrchestrator(
     workspaceManager: $workspaceManager,
-    packageRootResolver: $packageRootResolver,
     planner: $planner,
     backupManager: $backupManager,
     executor: $executor,

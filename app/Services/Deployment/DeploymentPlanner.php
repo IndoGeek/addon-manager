@@ -14,7 +14,6 @@ final class DeploymentPlanner
 
     public function plan(
         string $workspace,
-        DeploymentPolicy $policy = DeploymentPolicy::CREATE_ONLY,
     ): DeploymentPlan {
         $workspace = $this->normalizeWorkspace($workspace);
 
@@ -65,15 +64,11 @@ final class DeploymentPlanner
                     );
                 }
 
-                if ($policy !== DeploymentPolicy::OVERWRITE) {
-                    continue;
-                }
-
                 $operations[] = new DeploymentOperation(
                     relativePath: $relativePath,
                     source: $sourcePath,
                     destination: $relativePath,
-                    policy: DeploymentPolicy::OVERWRITE,
+                    overwrite: true,
                 );
 
                 continue;
@@ -83,7 +78,7 @@ final class DeploymentPlanner
                 relativePath: $relativePath,
                 source: $sourcePath,
                 destination: $relativePath,
-                policy: DeploymentPolicy::CREATE_ONLY,
+                overwrite: false,
             );
         }
 

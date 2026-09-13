@@ -71,7 +71,7 @@ Get an API key at <https://console.curseforge.com/>.
   - `server-overrides/` files win over `overrides/` on conflicts;
   - `client-overrides/` and the `modrinth.index.json` manifest are skipped.
 - The normalized archive is deployed by the existing installation engine and
-  cleaned up after preview/install.
+  cleaned up after install.
 - `getPackage` pins the actually-resolved version id in the returned source
   (`modrinth://<slug-or-id>@<version-id>`) even for unpinned requests, so an
   installed pack records exactly what is deployed and can be diffed against
