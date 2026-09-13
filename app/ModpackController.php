@@ -18,6 +18,7 @@ use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Providers\Modrint
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Providers\ModpackProvider;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Providers\UnsupportedModpackPackageException;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Models\ModpackMetadata;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogProjectQuery;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogProviderException;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogProviderRegistry;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogSearchQuery;
@@ -138,9 +139,80 @@ final class ModpackController extends Controller
 
     public function catalogProviders(): JsonResponse
     {
+        $service = $this->catalogService();
+
         return response()->json([
-            'data' => $this->catalogService()->providers(),
+            'data' => [
+                'providers' => $service->providers(),
+                'default_provider' => $service->defaultProvider(),
+                'pagination' => [
+                    'default_page' => CatalogSearchQuery::DEFAULT_PAGE,
+                    'default_limit' => CatalogSearchQuery::DEFAULT_LIMIT,
+                ],
+            ],
         ]);
+    }
+
+    public function catalogProject(Request $request): JsonResponse
+    {
+        try {
+            $provider = $this->paramString(
+                $request,
+                'provider',
+                CatalogProjectQuery::DEFAULT_PROVIDER,
+                32,
+                '/^[a-z0-9-]{1,32}$/',
+            );
+
+            $projectValue = $request->query('project');
+
+            if (!is_string($projectValue) || trim($projectValue) === '') {
+                throw new InvalidArgumentException(
+                    'The project parameter is required.',
+                );
+            }
+
+            $project = trim($projectValue);
+
+            if (
+                strlen($project) > 64
+                || preg_match(
+                    CatalogProjectQuery::PROJECT_PATTERN,
+                    $project,
+                ) !== 1
+            ) {
+                throw new InvalidArgumentException(
+                    'Invalid project parameter.',
+                );
+            }
+
+            $item = $this->catalogService()->project(new CatalogProjectQuery(
+                provider: $provider,
+                project: $project,
+            ));
+
+            return response()->json([
+                'data' => $item->toArray(),
+            ]);
+        } catch (InvalidArgumentException $exception) {
+            return response()->json([
+                'error' => $exception->getMessage(),
+            ], 422);
+        } catch (CatalogUnavailableException $exception) {
+            return response()->json([
+                'error' => $exception->getMessage(),
+            ], 503);
+        } catch (CatalogProviderException $exception) {
+            return response()->json([
+                'error' => $exception->getMessage(),
+            ], 502);
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return response()->json([
+                'error' => 'Unable to load the modpack project details.',
+            ], 500);
+        }
     }
 
     public function catalogVersions(Request $request): JsonResponse
@@ -726,27 +798,27 @@ final class ModpackController extends Controller
             CatalogSearchQuery::MAX_QUERY_LENGTH,
         );
 
-        $gameVersion = $this->paramString(
+        $gameVersions = $this->paramList(
             $request,
-            'game_version',
-            null,
-            32,
+            'game_versions',
             CatalogSearchQuery::VERSION_PATTERN,
         );
 
-        $loader = $this->paramString(
+        $loaders = $this->paramList(
             $request,
-            'loader',
-            null,
-            32,
+            'loaders',
             CatalogSearchQuery::SLUG_PATTERN,
         );
 
-        $category = $this->paramString(
+        $categories = $this->paramList(
             $request,
-            'category',
-            null,
-            32,
+            'categories',
+            CatalogSearchQuery::SLUG_PATTERN,
+        );
+
+        $environments = $this->paramList(
+            $request,
+            'environments',
             CatalogSearchQuery::SLUG_PATTERN,
         );
 
@@ -784,9 +856,10 @@ final class ModpackController extends Controller
         return new CatalogSearchQuery(
             provider: $provider,
             query: $query,
-            gameVersion: $gameVersion,
-            loader: $loader,
-            category: $category,
+            gameVersion: $gameVersions,
+            loader: $loaders,
+            category: $categories,
+            environments: $environments,
             sort: $sort,
             page: $page,
             limit: $limit,
@@ -826,27 +899,23 @@ final class ModpackController extends Controller
             );
         }
 
-        $gameVersion = $this->paramString(
+        $gameVersions = $this->paramList(
             $request,
-            'game_version',
-            null,
-            32,
-            CatalogSearchQuery::VERSION_PATTERN,
+            'game_versions',
+            CatalogVersionQuery::VERSION_PATTERN,
         );
 
-        $loader = $this->paramString(
+        $loaders = $this->paramList(
             $request,
-            'loader',
-            null,
-            32,
-            CatalogSearchQuery::SLUG_PATTERN,
+            'loaders',
+            CatalogVersionQuery::SLUG_PATTERN,
         );
 
         return new CatalogVersionQuery(
             provider: $provider,
             project: $project,
-            gameVersion: $gameVersion,
-            loader: $loader,
+            gameVersion: $gameVersions,
+            loader: $loaders,
         );
     }
 
@@ -937,6 +1006,66 @@ final class ModpackController extends Controller
     private function invalidParameterMessage(string $key): string
     {
         return 'Invalid ' . $this->parameterLabel($key) . ' parameter.';
+    }
+
+    /**
+     * Parses a comma-separated multi-value query parameter. Repeats the
+     * CatalogSearchQuery/Controller validation rules per entry: each value is
+     * trimmed, lowercased for slug groups, pattern-validated, bounded, and
+     * deduplicated.
+     *
+     * @return array<string>
+     */
+    private function paramList(
+        Request $request,
+        string $key,
+        string $pattern,
+        int $maxValues = CatalogSearchQuery::MAX_FILTER_VALUES,
+    ): array {
+        $value = $request->query($key);
+
+        if ($value === null) {
+            return [];
+        }
+
+        if (!is_string($value) || trim($value) === '') {
+            if ($value === '') {
+                return [];
+            }
+
+            throw new InvalidArgumentException(
+                $this->invalidParameterMessage($key),
+            );
+        }
+
+        $items = explode(',', $value);
+
+        if (count($items) > $maxValues) {
+            throw new InvalidArgumentException(
+                'Too many ' . $this->parameterLabel($key)
+                    . ' values were provided.',
+            );
+        }
+
+        $normalized = [];
+
+        foreach ($items as $item) {
+            $item = trim($item);
+
+            if ($item === '') {
+                continue;
+            }
+
+            if (strlen($item) > 32 || preg_match($pattern, $item) !== 1) {
+                throw new InvalidArgumentException(
+                    $this->invalidParameterMessage($key),
+                );
+            }
+
+            $normalized[$item] = true;
+        }
+
+        return array_keys($normalized);
     }
 
     private function parameterLabel(string $key): string

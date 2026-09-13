@@ -15,11 +15,13 @@ Blueprint.
 
 ## Status
 
-Functional: catalog browsing, exact-version selection, install preview,
-network-hardened installation, and an installed-modpack lifecycle
-(update to latest / uninstall). Providers: Modrinth (live search + install)
-and CurseForge (metadata/install with manual-download guidance for packs
-without a public download URL).
+Functional: catalog browsing with multi-value filters, exact-version
+selection, network-hardened installation, and an installed-modpack lifecycle
+(update to latest / uninstall). Providers: Modrinth (live search + install),
+CurseForge (catalog search when configured, metadata/install with
+manual-download guidance for packs without a public download URL), and a
+development-only Mock provider that is always hidden from the production
+dashboard.
 
 ## Development
 
@@ -48,15 +50,29 @@ read-only and never asks a provider to download or install anything. Selecting a
 modpack opens a details dialog that lists its published versions
 (`/catalog/versions`), resolves the chosen version to an exact pinned source
 (`modrinth://<project>@<version-id>`), and feeds that source into the existing
-metadata/preview/install pipeline.
+metadata/install pipeline.
 
-- Real Modrinth catalog search is served directly from `api.modrinth.com`.
-- CurseForge exposes a catalog provider contract but is listed as unavailable
-  until search support is implemented; it never claims live results.
+- Catalog searches accept multi-value filters (`game_versions`, `loaders`,
+  `categories`, `environments` as comma-separated arrays): OR within a group,
+  AND across groups. Providers advertise their supported facets and
+  capabilities through `/catalog/providers`, and the dashboard renders the
+  filter panel from that data instead of hard-coding options.
+- Real Modrinth catalog search is served directly from `api.modrinth.com`,
+  including environment filtering.
+- CurseForge catalog search is implemented and live once `CURSEFORGE_API_KEY`
+  is configured. Since the CurseForge search API takes a single value per
+  facet, multi-value selections are applied honestly as an upstream first
+  value plus a provider-side post-filter; totals are conservative when
+  post-filtering occurs, and environment filtering is unsupported (an honest
+  empty result).
+- Development-only providers are never shown to users; the `default_provider`
+  advertised by `/catalog/providers` is always a real, available provider.
 - Searches are **not cached**: every request is answered live by the selected
   provider, and upstream calls go through the same pinned HTTP client as the
   rest of the extension. See [ARCHITECTURE.md](ARCHITECTURE.md) for the
   filter/sort mapping and error handling.
+- Project details can also be fetched directly via `GET /catalog/project`
+  (`provider` + `project`).
 
 ## Installed modpacks lifecycle
 

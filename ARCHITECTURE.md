@@ -63,7 +63,7 @@ name. **Manual download** (`ManualDownloadProvider`) is one such capability:
 providers that can resolve a project/file but whose installable archive has no
 public download URL return normalized guidance (never keys, paths, or raw API
 bodies), which the metadata endpoint exposes as a nullable `manual_download`
-field and the dashboard renders instead of Install/Preview.
+field and the dashboard renders instead of installing.
 
 ### Managed installations
 
@@ -102,32 +102,59 @@ uninstall installed modpacks without trusting the client:
 
 Browsing and search is a read-only contract (`CatalogProvider`) separate from
 project metadata and package download, so no catalog path ever downloads or
-deploys anything. The UI only loads the provider list and calls
-`/catalog`; it never embeds provider-specific API logic.
+deploys anything. The UI loads the provider list, search results, version
+listings, and project details as plain JSON; it never embeds
+provider-specific API logic.
 
-- **Request input.** `query`, `game_version`, `loader`, `category`, `sort`,
-  `page`, and `limit` are scalar-typed, length-capped, and enum/pattern-checked
-  (slugs, MC-version patterns, bounded pages/pages sizes) before they reach a
-  provider. Rejections are `422` with static messages.
+- **Provider discovery.** `GET /catalog/providers` advertises every provider
+  with an availability flag, a machine-readable `state` (`available`,
+  `not_configured`, ...), whether it is `development_only`, a human
+  `unavailable_reason`, its filter `capabilities` (which groups the
+  `query`/`game_versions`/`loaders`/`categories`/`environment`/`sort` input
+  pipeline supports), and its `facets` (the exact option lists for each
+  group). It also returns a `default_provider` that the controller picks as
+  the first available **non-development-only** provider. The dashboard hides
+  development-only providers and renders its toolbar, filter panel, and sort
+  controls from these payloads rather than hard-coding provider behavior.
+- **Request input.** `query`, `sort`, `page`, and `limit` stay scalar-typed,
+  length-capped, and enum/pattern-checked the moment they enter the
+  controller. The filter groups are **multi-value**:
+  `game_versions`, `loaders`, `categories`, and `environments` are sent as
+  comma-separated values and parsed into bounded string arrays
+  (≤ 32 values each, strict slugs/versions). Semantics are OR within a group
+  and AND across groups. Rejections are `422` with static messages.
 - **Upstream.** The only upstream hosts are constants (`api.modrinth.com` for
   search, the existing provider API bases). Client-supplied values travel only
-  inside query facets, never in request URLs. Responses are type-checked
-  before mapping: malformed hits lists, bad totals, and invalid item shapes
-  become controlled `502` errors. Rate limits, upstream 5xx, and timeouts map
-  to retryable `503` errors. The CurseForge catalog stub is always marked
-  unavailable, makes no upstream request, and never sends the API key.
+  inside query parameters/facets, never in request URLs. Responses are
+  type-checked before mapping: malformed hits lists, bad totals, and invalid
+  item shapes become controlled `502` errors. Rate limits, upstream 5xx, and
+  timeouts map to retryable `503` errors.
+- **Per-provider filter honesty.** Modrinth maps each filter group to a
+  separate search facet, so multi-value groups are applied upstream as-is.
+  CurseForge's search API accepts a single value per facet, so the provider
+  sends one (stable) value upstream and applies the remaining values of each
+  group as a **provider-side post-filter** — never the frontend. When
+  post-filtering occurs the reported total is conservative
+  (`offset + count(filtered)`), so a later page never fabricates results.
+  CurseForge has no environment concept and returns an honest empty result
+  when `environments` is requested. Missing CurseForge configuration marks
+  the provider `not_configured`, refuses search with a static message, and
+  never sends the API key.
 - **Version listings.** `GET /catalog/versions` is a separate read-only
-  endpoint (`provider` + required `project` + optional `game_version` /
-  `loader` filters, all strict slugs/versions) that lists a project's versions.
-  Upstream versions are filtered to public statuses and mapped to
-  `CatalogVersion` value objects whose `source` is **pinned** to the exact
-  version (`modrinth://<project>@<version-id>`). The Modrinth catalog provider
-  encodes the filter arrays as JSON for the `game_versions`/`loaders` query
-  parameters; non-array entries are rejected as `502`.
+  endpoint (`provider` + required `project` + optional multi-value
+  `game_versions` / `loaders` filters, all strict slugs/versions) that lists a
+  project's versions. Upstream versions are filtered to public statuses and
+  mapped to `CatalogVersion` value objects whose `source` is **pinned** to the
+  exact version (`modrinth://<project>@<version-id>`). The Modrinth catalog
+  provider encodes the filter arrays as JSON for the `game_versions`/`loaders`
+  query parameters; non-array entries are rejected as `502`.
+- **Project details.** `GET /catalog/project` (`provider` + `project`) maps a
+  single project/project-id to the same normalized `CatalogItem` shape as
+  search results, so the dashboard can reference a pack without re-searching.
 - **Source resolution.** The installation engine's `ModrinthProvider` parses the
   pin, fetches the exact version, and asserts it belongs to the requested
   project before use. The dashboard therefore resolves a chosen version to a
-  normalized pinned source that the existing metadata/preview/install pipeline
+  normalized pinned source that the existing metadata/install pipeline
   consumes unchanged.
 - **No caching.** Catalog responses are not cached; every request is answered
   live by the selected provider to avoid serving stale or cross-tenant data.
@@ -196,8 +223,13 @@ Every input boundary treats its data as untrusted and is validated:
   public API host and is verified during deployment; the hermetic suite covers
   request construction, facet mapping, normalization, and error mapping with
   fake responses.
-- CurseForge catalog search is not implemented; it is architecture-only and
-  never claims live results.
+- CurseForge catalog search sends a single value per facet upstream; any
+  additional values in the same group are applied with a provider-side
+  post-filter and the total is reported conservatively. Environment filtering
+  is not supported by CurseForge and yields an honest empty result.
+- The development-only Mock catalog provider is intentionally hidden from the
+  production dashboard; `/catalog/providers` still advertises it so the
+  hermetic suite and local setups can exercise it.
 - Panel log lines from `report()` are only as sanitized as their inputs;
   provider HTTP failure details are mapped to static messages before
   bubbling up. (CurseForge authorization headers are never logged.)

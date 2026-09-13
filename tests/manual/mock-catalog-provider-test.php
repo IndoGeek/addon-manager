@@ -37,6 +37,33 @@ if ($provider->name() !== 'mock') {
 if (!$provider->available()) {
     throw new RuntimeException('Mock catalog should be available.');
 }
+if ($provider->state() !== 'available') {
+    throw new RuntimeException('Unexpected mock provider state.');
+}
+if (!$provider->developmentOnly()) {
+    throw new RuntimeException('Mock catalog must be flagged development-only.');
+}
+
+$mockFacets = $provider->facets();
+
+if (!in_array('fabric', $mockFacets['loaders'], true)) {
+    throw new RuntimeException('Mock facets missing loader options.');
+}
+if (!in_array('adventure', $mockFacets['categories'], true)) {
+    throw new RuntimeException('Mock facets missing category options.');
+}
+if (!in_array('1.19.2', $mockFacets['game_versions'], true)) {
+    throw new RuntimeException('Mock facets missing game version options.');
+}
+if ($mockFacets['environments'] === []) {
+    throw new RuntimeException('Mock facets missing environment options.');
+}
+
+$mockCapabilities = $provider->capabilities();
+
+if (($mockCapabilities['environment'] ?? false) !== true) {
+    throw new RuntimeException('Mock must support environment filters.');
+}
 
 pass('mock provider identity reported');
 
@@ -195,10 +222,65 @@ $echo = $provider->search(new CatalogSearchQuery(
     category: 'utility',
 ));
 
-if ($echo->appliedQuery !== 'vanilla' || $echo->appliedCategory !== 'utility') {
+if (
+    $echo->appliedQuery !== 'vanilla'
+    || $echo->appliedCategories !== ['utility']
+    || $echo->appliedGameVersions !== []
+    || $echo->appliedEnvironments !== []
+) {
     throw new RuntimeException('Applied filters not echoed.');
 }
 
 pass('mock result echoes applied filters and sort');
+
+$byEnvironment = $provider->search(new CatalogSearchQuery(
+    provider: 'mock',
+    environments: ['server'],
+));
+
+if (count($byEnvironment->items) !== 3) {
+    throw new RuntimeException('Server environment should match all mock packs.');
+}
+
+$byCombinedEnvironment = $provider->search(new CatalogSearchQuery(
+    provider: 'mock',
+    environments: ['client-and-server'],
+));
+
+if (count($byCombinedEnvironment->items) !== 2) {
+    throw new RuntimeException(
+        'Client-and-server should only match dual-environment packs.',
+    );
+}
+
+pass('environment filters applied realistically');
+
+$multiCategory = $provider->search(new CatalogSearchQuery(
+    provider: 'mock',
+    category: ['adventure', 'utility'],
+));
+
+if (count($multiCategory->items) !== 3) {
+    throw new RuntimeException(
+        'Multi-category (OR) should match all tagged packs.',
+    );
+}
+
+pass('multi-value category filters compose with OR semantics');
+
+$project = $provider->project(new \Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogProjectQuery(
+    provider: 'mock',
+    project: 'barebones-progression',
+));
+
+if (($project->name ?? '') !== 'Barebones Progression') {
+    throw new RuntimeException('Mock project lookup mismatch.');
+}
+
+if (($project->source ?? '') !== 'mock://barebones-progression') {
+    throw new RuntimeException('Mock project source mismatch.');
+}
+
+pass('mock project lookup returns normalized details');
 
 echo "All mock catalog provider tests passed.\n";

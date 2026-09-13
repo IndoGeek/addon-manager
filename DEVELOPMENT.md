@@ -55,6 +55,7 @@ php tests/manual/modrinth-catalog-versions-test.php
 php tests/manual/mock-catalog-versions-test.php
 php tests/manual/catalog-service-test.php
 php tests/manual/catalog-versions-service-test.php
+php tests/manual/curseforge-catalog-provider-test.php
 ```
 
 Exact-version (pinned source) resolution is covered hermetically:
@@ -91,5 +92,18 @@ Run every meaningful change against:
 1. All manual tests (`tests/manual/*-test.php`).
 2. `php -l` on every tracked `.php` file.
 3. `git diff --check` (whitespace hygiene).
-4. `./sync.sh` and `blueprint -build` (deployment compatibility), then lint
-   the deployed controller under `/var/www/pterodactyl/.blueprint/dev`.
+4. If the frontend changed: a strict TypeScript check of
+   `components/ModpackInstaller.tsx` (e.g. `tsc --noEmit` with
+   `jsx: react-jsx` and `@types/react`), since the panel build is deferred to
+   deployment.
+5. Deployment compatibility, then lint the deployed controller under
+   `/var/www/pterodactyl/.blueprint/dev`:
+   ```bash
+   ./sync.sh
+   npm ci
+   NODE_OPTIONS=--openssl-legacy-provider yarn run build:production
+   ```
+   `blueprint -build` is not used because `sudo` is unavailable on the panel;
+   assets are built directly and the extension files, controller, and routes
+   are synced into the running tree manually (see the deploy notes in the
+   project history).

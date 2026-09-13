@@ -9,7 +9,11 @@ namespace Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Ca
 final readonly class CatalogResult
 {
     /**
-     * @param array<int, CatalogItem> $items
+     * @param array<int, CatalogItem>          $items
+     * @param array<string>                    $appliedGameVersions
+     * @param array<string>                    $appliedLoaders
+     * @param array<string>                    $appliedCategories
+     * @param array<string>                    $appliedEnvironments
      */
     public function __construct(
         public array $items,
@@ -17,9 +21,10 @@ final readonly class CatalogResult
         public string $provider,
         public string $sort,
         public ?string $appliedQuery,
-        public ?string $appliedGameVersion,
-        public ?string $appliedLoader,
-        public ?string $appliedCategory,
+        public array $appliedGameVersions = [],
+        public array $appliedLoaders = [],
+        public array $appliedCategories = [],
+        public array $appliedEnvironments = [],
     ) {
     }
 
@@ -37,9 +42,10 @@ final readonly class CatalogResult
             'provider' => $this->provider,
             'filters' => [
                 'query' => $this->appliedQuery,
-                'game_version' => $this->appliedGameVersion,
-                'loader' => $this->appliedLoader,
-                'category' => $this->appliedCategory,
+                'game_versions' => $this->appliedGameVersions,
+                'loaders' => $this->appliedLoaders,
+                'categories' => $this->appliedCategories,
+                'environments' => $this->appliedEnvironments,
             ],
             'sort' => $this->sort,
         ];

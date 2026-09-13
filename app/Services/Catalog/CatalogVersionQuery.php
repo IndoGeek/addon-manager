@@ -19,19 +19,27 @@ final readonly class CatalogVersionQuery
 
     public const SLUG_PATTERN = '/^[a-z0-9-]{1,32}$/';
 
+    public const MAX_FILTER_VALUES = 16;
+
     public string $provider;
 
     public string $project;
 
-    public ?string $gameVersion;
+    /** @var array<string> */
+    public array $gameVersions;
 
-    public ?string $loader;
+    /** @var array<string> */
+    public array $loaders;
 
+    /**
+     * @param array|string|null $gameVersion Compatible with scalar callers.
+     * @param array|string|null $loader      Compatible with scalar callers.
+     */
     public function __construct(
         string $provider = self::DEFAULT_PROVIDER,
         ?string $project = null,
-        ?string $gameVersion = null,
-        ?string $loader = null,
+        array|string|null $gameVersion = null,
+        array|string|null $loader = null,
     ) {
         $this->provider = trim($provider);
 
@@ -57,14 +65,14 @@ final readonly class CatalogVersionQuery
 
         $this->project = $project;
 
-        $this->gameVersion = $this->validateOptional(
+        $this->gameVersions = $this->normalizeFilterValues(
             $gameVersion,
             self::VERSION_PATTERN,
             'Invalid catalog game version.',
             false,
         );
 
-        $this->loader = $this->validateOptional(
+        $this->loaders = $this->normalizeFilterValues(
             $loader,
             self::SLUG_PATTERN,
             'Invalid catalog loader.',
@@ -72,30 +80,58 @@ final readonly class CatalogVersionQuery
         );
     }
 
-    private function validateOptional(
-        ?string $value,
+    /**
+     * @param array|string|null $value
+     *
+     * @return array<string>
+     */
+    private function normalizeFilterValues(
+        array|string|null $value,
         string $pattern,
         string $message,
         bool $toLower,
-    ): ?string {
+    ): array {
         if ($value === null) {
-            return null;
+            return [];
         }
 
-        $value = trim($value);
+        $values = is_array($value) ? $value : [$value];
 
-        if ($value === '') {
-            return null;
+        $normalized = [];
+
+        foreach ($values as $entry) {
+            if (!is_string($entry)) {
+                throw new InvalidArgumentException($message);
+            }
+
+            $entry = trim($entry);
+
+            if ($entry === '') {
+                continue;
+            }
+
+            if ($toLower) {
+                $entry = strtolower($entry);
+            }
+
+            if (
+                strlen($entry) > 32
+                || preg_match($pattern, $entry) !== 1
+            ) {
+                throw new InvalidArgumentException($message);
+            }
+
+            $normalized[$entry] = true;
         }
 
-        if ($toLower) {
-            $value = strtolower($value);
+        $normalized = array_keys($normalized);
+
+        if (count($normalized) > self::MAX_FILTER_VALUES) {
+            throw new InvalidArgumentException(
+                'Too many catalog filter values.',
+            );
         }
 
-        if (strlen($value) > 32 || preg_match($pattern, $value) !== 1) {
-            throw new InvalidArgumentException($message);
-        }
-
-        return $value;
+        return $normalized;
     }
 }

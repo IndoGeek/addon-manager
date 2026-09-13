@@ -27,11 +27,43 @@ interface CatalogProvider
     public function available(): bool;
 
     /**
+     * The current state of the provider: "available", "unavailable", or
+     * "not_configured". Lets the UI distinguish a missing API key from a hard
+     * outage without leaking internals.
+     */
+    public function state(): string;
+
+    /**
+     * Whether this provider is only meant for development/internal use and must
+     * not be offered as a normal browsing source. Development providers keep
+     * working through the API so automated tests can exercise them.
+     */
+    public function developmentOnly(): bool;
+
+    /**
      * A short, static reason the provider is currently unavailable, or null
      * when it is available. Shown to the user so they can react (for example
      * configuring a missing API key). Must never leak secrets or internals.
      */
     public function unavailableReason(): ?string;
+
+    /**
+     * Which catalog filters/sorts this provider genuinely supports. The UI
+     * only offers controls whose capability is true, so users are never shown
+     * fake filters that would silently do nothing.
+     *
+     * @return array{query: bool, game_versions: bool, loaders: bool, categories: bool, environment: bool, sort: bool}
+     */
+    public function capabilities(): array;
+
+    /**
+     * The option values the provider exposes for each filter group. These are
+     * static capability metadata (the values a provider can express), never
+     * search results.
+     *
+     * @return array{game_versions: array<int, string>, loaders: array<int, string>, categories: array<int, string>, environments: array<int, string>}
+     */
+    public function facets(): array;
 
     /**
      * @throws CatalogUnavailableException When the provider is unreachable,
@@ -56,4 +88,17 @@ interface CatalogProvider
      * @throws InvalidArgumentException    When the query itself is invalid.
      */
     public function versions(CatalogVersionQuery $query): array;
+
+    /**
+     * Returns the normalized details for a single project, including data that
+     * a compact search hit might omit. The returned item carries the same
+     * contract as a search result so the details UI can reuse one renderer.
+     *
+     * @throws CatalogUnavailableException When the provider is unreachable,
+     *                                     timing out, rate limited, or disabled.
+     * @throws CatalogProviderException    When the provider responds with a
+     *                                     payload this provider cannot validate.
+     * @throws InvalidArgumentException    When the query itself is invalid.
+     */
+    public function project(CatalogProjectQuery $query): CatalogItem;
 }

@@ -74,7 +74,7 @@ if ($result->provider !== 'mock') {
     throw new RuntimeException('Active provider not echoed.');
 }
 
-if ($result->appliedGameVersion !== '1.21.1' || $result->appliedLoader !== 'fabric') {
+if ($result->appliedGameVersions !== ['1.21.1'] || $result->appliedLoaders !== ['fabric']) {
     throw new RuntimeException('Applied filters not echoed.');
 }
 
@@ -100,10 +100,10 @@ $data = $result->toArray();
 if ($data['provider'] !== 'mock') {
     throw new RuntimeException('toArray provider mismatch.');
 }
-if (($data['filters']['game_version'] ?? null) !== '1.21.1') {
+if (($data['filters']['game_versions'] ?? null) !== ['1.21.1']) {
     throw new RuntimeException('toArray filter echo mismatch.');
 }
-if (($data['filters']['loader'] ?? null) !== 'fabric') {
+if (($data['filters']['loaders'] ?? null) !== ['fabric']) {
     throw new RuntimeException('toArray loader echo mismatch.');
 }
 if (!is_array($data['versions']) || count($data['versions']) !== 2) {

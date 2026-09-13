@@ -34,78 +34,74 @@ final class CurlProviderHttpClient implements ProviderHttpClient
             );
         }
 
-        try {
-            curl_setopt_array($curl, [
-                CURLOPT_URL => $target,
-                CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_FOLLOWLOCATION => false,
-                CURLOPT_CONNECTTIMEOUT => self::CONNECT_TIMEOUT,
-                CURLOPT_TIMEOUT => self::REQUEST_TIMEOUT,
-                CURLOPT_PROTOCOLS => CURLPROTO_HTTP | CURLPROTO_HTTPS,
-                CURLOPT_REDIR_PROTOCOLS => CURLPROTO_HTTP | CURLPROTO_HTTPS,
-                CURLOPT_SSL_VERIFYPEER => true,
-                CURLOPT_SSL_VERIFYHOST => 2,
-                CURLOPT_USERAGENT => 'ModpackInstaller/1.0',
-                CURLOPT_HTTPHEADER => $headers,
-                CURLOPT_NOPROGRESS => false,
-                CURLOPT_XFERINFOFUNCTION => function (
-                    $curl,
-                    float $downloadSize,
-                    float $downloaded,
-                    float $uploadSize,
-                    float $uploaded,
-                ): int {
-                    return $downloaded > $this->maxResponseBytes ? 1 : 0;
-                },
-            ]);
-
-            $raw = curl_exec($curl);
-
-            if ($raw === false) {
-                if (curl_errno($curl) === CURLE_ABORTED_BY_CALLBACK) {
-                    throw new ProviderHttpException(
-                        'The provider response was too large.',
-                    );
-                }
-
-                throw new ProviderHttpException(
-                    'Unable to reach the provider.',
-                );
-            }
-
-            $status = (int) curl_getinfo(
+        curl_setopt_array($curl, [
+            CURLOPT_URL => $target,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_FOLLOWLOCATION => false,
+            CURLOPT_CONNECTTIMEOUT => self::CONNECT_TIMEOUT,
+            CURLOPT_TIMEOUT => self::REQUEST_TIMEOUT,
+            CURLOPT_PROTOCOLS => CURLPROTO_HTTP | CURLPROTO_HTTPS,
+            CURLOPT_REDIR_PROTOCOLS => CURLPROTO_HTTP | CURLPROTO_HTTPS,
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYHOST => 2,
+            CURLOPT_USERAGENT => 'ModpackInstaller/1.0',
+            CURLOPT_HTTPHEADER => $headers,
+            CURLOPT_NOPROGRESS => false,
+            CURLOPT_XFERINFOFUNCTION => function (
                 $curl,
-                CURLINFO_RESPONSE_CODE,
+                float $downloadSize,
+                float $downloaded,
+                float $uploadSize,
+                float $uploaded,
+            ): int {
+                return $downloaded > $this->maxResponseBytes ? 1 : 0;
+            },
+        ]);
+
+        $raw = curl_exec($curl);
+
+        if ($raw === false) {
+            if (curl_errno($curl) === CURLE_ABORTED_BY_CALLBACK) {
+                throw new ProviderHttpException(
+                    'The provider response was too large.',
+                );
+            }
+
+            throw new ProviderHttpException(
+                'Unable to reach the provider.',
             );
-
-            if ($status < 200 || $status > 299) {
-                throw new ProviderHttpException(
-                    "The provider returned an HTTP {$status} response.",
-                    $status,
-                );
-            }
-
-            $payload = json_decode($raw, true);
-
-            if (json_last_error() !== JSON_ERROR_NONE) {
-                throw new ProviderHttpException(
-                    'The provider returned a malformed JSON response.',
-                    $status,
-                );
-            }
-
-            if (!is_array($payload)) {
-                throw new ProviderHttpException(
-                    'The provider returned an unexpected response format.',
-                    $status,
-                );
-            }
-
-            return new ProviderHttpResponse($status, $payload);
-        } finally {
-            curl_close($curl);
         }
-    }
+
+        $status = (int) curl_getinfo(
+            $curl,
+            CURLINFO_RESPONSE_CODE,
+        );
+
+        if ($status < 200 || $status > 299) {
+            throw new ProviderHttpException(
+                "The provider returned an HTTP {$status} response.",
+                $status,
+            );
+        }
+
+        $payload = json_decode($raw, true);
+
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            throw new ProviderHttpException(
+                'The provider returned a malformed JSON response.',
+                $status,
+            );
+        }
+
+        if (!is_array($payload)) {
+            throw new ProviderHttpException(
+                'The provider returned an unexpected response format.',
+                $status,
+            );
+        }
+
+        return new ProviderHttpResponse($status, $payload);
+}
 
     private function assertHttpUrl(string $url): void
     {

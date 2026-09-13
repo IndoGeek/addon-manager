@@ -110,6 +110,43 @@ if ($provider->name() !== 'modrinth') {
 if (!$provider->available()) {
     throw new RuntimeException('Modrinth catalog should be available.');
 }
+if ($provider->state() !== 'available') {
+    throw new RuntimeException('Unexpected Modrinth provider state.');
+}
+if ($provider->developmentOnly()) {
+    throw new RuntimeException('Modrinth must not be development-only.');
+}
+
+$capabilities = $provider->capabilities();
+$requiredCapabilities = [
+    'query',
+    'game_versions',
+    'loaders',
+    'categories',
+    'environment',
+    'sort',
+];
+
+foreach ($requiredCapabilities as $capability) {
+    if ($capabilities[$capability] !== true) {
+        throw new RuntimeException("Modrinth should support {$capability}.");
+    }
+}
+
+$facets = $provider->facets();
+
+if (!in_array('1.20.1', $facets['game_versions'], true)) {
+    throw new RuntimeException('Modrinth facets missing common game version.');
+}
+if (!in_array('fabric', $facets['loaders'], true)) {
+    throw new RuntimeException('Modrinth facets missing fabric loader.');
+}
+if (!in_array('client-and-server', $facets['environments'], true)) {
+    throw new RuntimeException('Modrinth facets missing environment values.');
+}
+if ($facets['categories'] === []) {
+    throw new RuntimeException('Modrinth facets missing categories.');
+}
 
 pass('provider identity reported');
 
@@ -145,7 +182,8 @@ if ($request['url'] !== 'https://api.modrinth.com/v2/search') {
 $expectedFacets = json_encode([
     ['project_type:modpack'],
     ['versions:1.21.1'],
-    ['categories:fabric', 'categories:adventure'],
+    ['categories:fabric'],
+    ['categories:adventure'],
 ]);
 
 if (($request['query']['facets'] ?? null) !== $expectedFacets) {
@@ -171,6 +209,42 @@ if ((int) ($request['query']['offset'] ?? -1) !== 25) {
 }
 
 pass('search request builders correct facets/sort/offset');
+
+$http = new FakeProviderHttpClient([
+    new ProviderHttpResponse(200, [
+        'hits' => [],
+        'total_hits' => 0,
+    ]),
+]);
+$multiProvider = new ModrinthCatalogProvider($http);
+
+$multiProvider->search(new CatalogSearchQuery(
+    provider: 'modrinth',
+    gameVersion: ['1.21.1', '1.20.1'],
+    loader: ['fabric', 'neoforge'],
+    category: ['adventure', 'technology'],
+    environments: ['client', 'server'],
+));
+
+$multiRequest = $http->requests[0] ?? null;
+
+if ($multiRequest === null) {
+    throw new RuntimeException('No multi-value HTTP request was made.');
+}
+
+if (($multiRequest['query']['facets'] ?? null) !== json_encode([
+    ['project_type:modpack'],
+    ['versions:1.21.1', 'versions:1.20.1'],
+    ['categories:fabric', 'categories:neoforge'],
+    ['categories:adventure', 'categories:technology'],
+    ['categories:client', 'categories:server'],
+])) {
+    throw new RuntimeException(
+        'Multi-value facets did not map to separate ANDed groups.',
+    );
+}
+
+pass('multi-value filters map to separate ANDed facet groups');
 
 $items = $result->items;
 
@@ -260,11 +334,17 @@ if ($result->provider !== 'modrinth') {
 if ($result->appliedQuery !== 'prominence') {
     throw new RuntimeException('Applied query not echoed.');
 }
-if ($result->appliedGameVersion !== '1.21.1') {
-    throw new RuntimeException('Applied game version not echoed.');
+if ($result->appliedGameVersions !== ['1.21.1']) {
+    throw new RuntimeException('Applied game versions not echoed.');
 }
-if ($result->appliedLoader !== 'fabric' || $result->appliedCategory !== 'adventure') {
+if (
+    $result->appliedLoaders !== ['fabric']
+    || $result->appliedCategories !== ['adventure']
+) {
     throw new RuntimeException('Applied filters not echoed.');
+}
+if ($result->appliedEnvironments !== []) {
+    throw new RuntimeException('Applied environments should be empty.');
 }
 if ($result->sort !== 'downloads') {
     throw new RuntimeException('Applied sort not echoed.');
@@ -290,8 +370,12 @@ if ($data['pagination']['total'] !== 137) {
     throw new RuntimeException('toArray pagination mismatch.');
 }
 
-if (!isset($data['filters']['game_version'])) {
+if (!isset($data['filters']['game_versions'])) {
     throw new RuntimeException('toArray missing filter echo.');
+}
+
+if ($data['filters']['loaders'] !== ['fabric']) {
+    throw new RuntimeException('toArray loader echo mismatch.');
 }
 
 pass('normalized contract serializes with pagination + filters');
@@ -315,6 +399,61 @@ if ($empty->pagination->totalPages !== 0 || $empty->pagination->hasNext) {
 }
 
 pass('empty result is a valid response, not an error');
+
+$http = new FakeProviderHttpClient([
+    new ProviderHttpResponse(200, [
+        'id' => 'AANobbMI',
+        'slug' => 'prominence-2-rpg',
+        'title' => 'Prominence 2 RPG',
+        'description' => 'A dark fantasy modpack.',
+        'icon_url' => 'https://cdn.example/icon.png',
+        'downloads' => 120000,
+        'followers' => 8500,
+        'categories' => ['fabric', 'adventure', 'combat'],
+        'loaders' => ['fabric'],
+        'game_versions' => ['1.21.1', '1.20'],
+    ]),
+]);
+$provider = new ModrinthCatalogProvider($http);
+
+$details = $provider->project(new \Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogProjectQuery(
+    provider: 'modrinth',
+    project: 'prominence-2-rpg',
+));
+
+if ($request = ($http->requests[0] ?? null)) {
+    if (
+        $request['url'] !== 'https://api.modrinth.com/v2/project/prominence-2-rpg'
+    ) {
+        throw new RuntimeException('Unexpected project URL.');
+    }
+}
+
+if (($details->name ?? '') !== 'Prominence 2 RPG') {
+    throw new RuntimeException('Project name mismatch.');
+}
+
+if (($details->follows ?? 0) !== 8500) {
+    throw new RuntimeException('Project followers should map to follows.');
+}
+
+if ($details->loaders !== ['fabric']) {
+    throw new RuntimeException('Project loaders mismatch.');
+}
+
+if (in_array('fabric', $details->categories, true)) {
+    throw new RuntimeException('Loader leaked into project categories.');
+}
+
+if (($details->source ?? '') !== 'modrinth://prominence-2-rpg') {
+    throw new RuntimeException('Project source mismatch.');
+}
+
+if (($details->projectUrl ?? '') !== 'https://modrinth.com/modpack/prominence-2-rpg') {
+    throw new RuntimeException('Project URL mismatch.');
+}
+
+pass('project details mapped to a normalized catalog item');
 
 $invalidBodies = [
     [

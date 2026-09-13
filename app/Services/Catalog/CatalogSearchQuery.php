@@ -8,6 +8,12 @@ use InvalidArgumentException;
  * A validated, provider-agnostic catalog search request. Every field is
  * normalized and bounded here so providers never receive hostile input and
  * the API layer can build it from scalar request parameters safely.
+ *
+ * Filters are multi-value: each group is OR'ed internally and the groups are
+ * AND'ed together, mirroring how the upstream providers express facets. A
+ * provider that cannot express multiple values applies the first value to the
+ * request and the remaining values as a provider-side filter (kept inside the
+ * provider so the frontend never post-filters arbitrary rows).
  */
 final readonly class CatalogSearchQuery
 {
@@ -25,19 +31,40 @@ final readonly class CatalogSearchQuery
 
     public const MAX_QUERY_LENGTH = 128;
 
+    public const MAX_FILTER_VALUES = 32;
+
     public const SLUG_PATTERN = '/^[a-z0-9-]{1,32}$/';
 
     public const VERSION_PATTERN = '/^[0-9A-Za-z._-]{1,32}$/';
+
+    /**
+     * Supported environment values. Mirrors the tags the upstream providers
+     * accept (for example Modrinth's `client`, `server` and `client-and-server`
+     * categories) so the UI only ever offers real filters.
+     *
+     * @var array<string>
+     */
+    public const ENVIRONMENT_VALUES = [
+        'client',
+        'server',
+        'client-and-server',
+    ];
 
     public string $provider;
 
     public ?string $query;
 
-    public ?string $gameVersion;
+    /** @var array<string> */
+    public array $gameVersions;
 
-    public ?string $loader;
+    /** @var array<string> */
+    public array $loaders;
 
-    public ?string $category;
+    /** @var array<string> */
+    public array $categories;
+
+    /** @var array<string> */
+    public array $environments;
 
     public CatalogSort $sort;
 
@@ -45,12 +72,19 @@ final readonly class CatalogSearchQuery
 
     public int $limit;
 
+    /**
+     * @param array|string|null $gameVersion Compatible with scalar callers.
+     * @param array|string|null $loader      Compatible with scalar callers.
+     * @param array|string|null $category    Compatible with scalar callers.
+     * @param array|string|null $environments
+     */
     public function __construct(
         string $provider = self::DEFAULT_PROVIDER,
         ?string $query = null,
-        ?string $gameVersion = null,
-        ?string $loader = null,
-        ?string $category = null,
+        array|string|null $gameVersion = null,
+        array|string|null $loader = null,
+        array|string|null $category = null,
+        array|string|null $environments = null,
         CatalogSort $sort = CatalogSort::RELEVANCE,
         int $page = self::DEFAULT_PAGE,
         int $limit = self::DEFAULT_LIMIT,
@@ -68,26 +102,41 @@ final readonly class CatalogSearchQuery
             self::MAX_QUERY_LENGTH,
         );
 
-        $this->gameVersion = $this->validateOptional(
+        $this->gameVersions = $this->normalizeFilterValues(
             $gameVersion,
             self::VERSION_PATTERN,
             'Invalid catalog game version.',
             false,
         );
 
-        $this->loader = $this->validateOptional(
+        $this->loaders = $this->normalizeFilterValues(
             $loader,
             self::SLUG_PATTERN,
             'Invalid catalog loader.',
             true,
         );
 
-        $this->category = $this->validateOptional(
+        $this->categories = $this->normalizeFilterValues(
             $category,
             self::SLUG_PATTERN,
             'Invalid catalog category.',
             true,
         );
+
+        $this->environments = $this->normalizeFilterValues(
+            $environments,
+            self::SLUG_PATTERN,
+            'Invalid catalog environment.',
+            true,
+        );
+
+        foreach ($this->environments as $environment) {
+            if (!in_array($environment, self::ENVIRONMENT_VALUES, true)) {
+                throw new InvalidArgumentException(
+                    'Invalid catalog environment.',
+                );
+            }
+        }
 
         $this->sort = $sort;
 
@@ -116,6 +165,85 @@ final readonly class CatalogSearchQuery
         return ($this->page - 1) * $this->limit;
     }
 
+    /**
+     * Whether any non-default filter besides the query text is active.
+     */
+    public function hasActiveFilters(): bool
+    {
+        return $this->gameVersions !== []
+            || $this->loaders !== []
+            || $this->categories !== []
+            || $this->environments !== [];
+    }
+
+    /**
+     * @return array<string, array<int, string>>
+     */
+    public function appliedFilters(): array
+    {
+        return [
+            'game_versions' => $this->gameVersions,
+            'loaders' => $this->loaders,
+            'categories' => $this->categories,
+            'environments' => $this->environments,
+        ];
+    }
+
+    /**
+     * @param array|string|null $value
+     *
+     * @return array<string>
+     */
+    private function normalizeFilterValues(
+        array|string|null $value,
+        string $pattern,
+        string $message,
+        bool $toLower,
+    ): array {
+        if ($value === null) {
+            return [];
+        }
+
+        $values = is_array($value) ? $value : [$value];
+
+        $normalized = [];
+
+        foreach ($values as $entry) {
+            if (!is_string($entry)) {
+                throw new InvalidArgumentException($message);
+            }
+
+            $entry = trim($entry);
+
+            if ($entry === '') {
+                continue;
+            }
+
+            if ($toLower) {
+                $entry = strtolower($entry);
+            }
+
+            if (
+                strlen($entry) > 32
+                || preg_match($pattern, $entry) !== 1
+            ) {
+                throw new InvalidArgumentException($message);
+            }
+
+            $normalized[$entry] = true;
+        }
+
+        $normalized = array_keys($normalized);
+
+        if (count($normalized) > self::MAX_FILTER_VALUES) {
+            throw new InvalidArgumentException(
+                'Too many catalog filter values.',
+            );
+        }
+
+        return $normalized;
+    }
+
     private function normalizeOptionalText(
         ?string $value,
         int $maxLength,
@@ -134,33 +262,6 @@ final readonly class CatalogSearchQuery
             throw new InvalidArgumentException(
                 'The catalog query is too long.',
             );
-        }
-
-        return $value;
-    }
-
-    private function validateOptional(
-        ?string $value,
-        string $pattern,
-        string $message,
-        bool $toLower,
-    ): ?string {
-        if ($value === null) {
-            return null;
-        }
-
-        $value = trim($value);
-
-        if ($value === '') {
-            return null;
-        }
-
-        if ($toLower) {
-            $value = strtolower($value);
-        }
-
-        if (strlen($value) > 32 || preg_match($pattern, $value) !== 1) {
-            throw new InvalidArgumentException($message);
         }
 
         return $value;

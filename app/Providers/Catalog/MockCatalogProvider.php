@@ -5,15 +5,18 @@ namespace Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Providers\C
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogItem;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogPagination;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogProvider;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogProjectQuery;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogResult;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogSearchQuery;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogUnavailableException;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogVersion;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogVersionQuery;
 
 /**
  * Deterministic in-memory catalog used for development and the manual test
- * suite. Results are synthetic and clearly labeled; the UI never presents
- * them as live upstream data.
+ * suite. Results are synthetic and clearly labeled; the production UI never
+ * presents them as live upstream data (this provider is flagged development
+ * only and filtered out of the provider selector).
  */
 final class MockCatalogProvider implements CatalogProvider
 {
@@ -30,6 +33,7 @@ final class MockCatalogProvider implements CatalogProvider
             'categories' => ['adventure'],
             'loaders' => ['fabric'],
             'game_versions' => ['1.21.1'],
+            'environments' => ['client', 'server'],
         ],
         [
             'provider_project_id' => 'vanilla-tweaks',
@@ -40,6 +44,7 @@ final class MockCatalogProvider implements CatalogProvider
             'categories' => ['utility'],
             'loaders' => ['fabric'],
             'game_versions' => ['1.21.1', '1.20.1'],
+            'environments' => ['client', 'server'],
         ],
         [
             'provider_project_id' => 'barebones-progression',
@@ -50,6 +55,7 @@ final class MockCatalogProvider implements CatalogProvider
             'categories' => ['adventure', 'technology'],
             'loaders' => ['forge'],
             'game_versions' => ['1.19.2'],
+            'environments' => ['server'],
         ],
     ];
 
@@ -146,9 +152,47 @@ final class MockCatalogProvider implements CatalogProvider
         return true;
     }
 
+    public function state(): string
+    {
+        return 'available';
+    }
+
+    public function developmentOnly(): bool
+    {
+        return true;
+    }
+
     public function unavailableReason(): ?string
     {
         return null;
+    }
+
+    /**
+     * @return array{query: bool, game_versions: bool, loaders: bool, categories: bool, environment: bool, sort: bool}
+     */
+    public function capabilities(): array
+    {
+        return [
+            'query' => true,
+            'game_versions' => true,
+            'loaders' => true,
+            'categories' => true,
+            'environment' => true,
+            'sort' => true,
+        ];
+    }
+
+    /**
+     * @return array{game_versions: array<int, string>, loaders: array<int, string>, categories: array<int, string>, environments: array<int, string>}
+     */
+    public function facets(): array
+    {
+        return [
+            'game_versions' => self::collectValues(['game_versions']),
+            'loaders' => self::collectValues(['loaders']),
+            'categories' => self::collectValues(['categories']),
+            'environments' => CatalogSearchQuery::ENVIRONMENT_VALUES,
+        ];
     }
 
     public function search(CatalogSearchQuery $query): CatalogResult
@@ -167,22 +211,7 @@ final class MockCatalogProvider implements CatalogProvider
         );
 
         $catalogItems = array_map(
-            fn (array $modpack): CatalogItem => new CatalogItem(
-                provider: $this->name(),
-                providerProjectId: (string) $modpack['provider_project_id'],
-                slug: self::optionalString($modpack['slug'] ?? null),
-                name: (string) $modpack['name'],
-                summary: self::optionalString($modpack['summary'] ?? null),
-                iconUrl: null,
-                projectUrl: null,
-                downloads: null,
-                follows: null,
-                categories: self::stringList($modpack['categories'] ?? []),
-                gameVersions: self::stringList($modpack['game_versions'] ?? []),
-                loaders: self::stringList($modpack['loaders'] ?? []),
-                latestVersion: self::optionalString($modpack['latest_version'] ?? null),
-                source: 'mock://' . $modpack['slug'],
-            ),
+            fn (array $modpack): CatalogItem => $this->buildItem($modpack),
             $pageItems,
         );
 
@@ -196,9 +225,10 @@ final class MockCatalogProvider implements CatalogProvider
             provider: $this->name(),
             sort: $query->sort->value,
             appliedQuery: $query->query,
-            appliedGameVersion: $query->gameVersion,
-            appliedLoader: $query->loader,
-            appliedCategory: $query->category,
+            appliedGameVersions: $query->gameVersions,
+            appliedLoaders: $query->loaders,
+            appliedCategories: $query->categories,
+            appliedEnvironments: $query->environments,
         );
     }
 
@@ -243,6 +273,62 @@ final class MockCatalogProvider implements CatalogProvider
         );
     }
 
+    public function project(CatalogProjectQuery $query): CatalogItem
+    {
+        $modpack = $this->findModpack($query->project);
+
+        if ($modpack === null) {
+            throw new CatalogUnavailableException(
+                'The requested modpack was not found.',
+            );
+        }
+
+        return $this->buildItem($modpack);
+    }
+
+    /**
+     * @param array<string, mixed> $modpack
+     */
+    private function buildItem(array $modpack): CatalogItem
+    {
+        return new CatalogItem(
+            provider: $this->name(),
+            providerProjectId: (string) $modpack['provider_project_id'],
+            slug: self::optionalString($modpack['slug'] ?? null),
+            name: (string) $modpack['name'],
+            summary: self::optionalString($modpack['summary'] ?? null),
+            iconUrl: null,
+            projectUrl: null,
+            downloads: null,
+            follows: null,
+            categories: self::stringList($modpack['categories'] ?? []),
+            gameVersions: self::stringList($modpack['game_versions'] ?? []),
+            loaders: self::stringList($modpack['loaders'] ?? []),
+            latestVersion: self::optionalString($modpack['latest_version'] ?? null),
+            source: 'mock://' . $modpack['slug'],
+        );
+    }
+
+    /**
+     * @param array<string, array<int, string>> $keys
+     *
+     * @return array<int, string>
+     */
+    private static function collectValues(array $keys): array
+    {
+        $values = [];
+
+        foreach (self::MODPACKS as $modpack) {
+            foreach ($keys as $key) {
+                foreach (self::stringList($modpack[$key] ?? []) as $value) {
+                    $values[$value] = true;
+                }
+            }
+        }
+
+        return array_keys($values);
+    }
+
     /**
      * @return array<string, mixed>|null
      */
@@ -267,25 +353,17 @@ final class MockCatalogProvider implements CatalogProvider
         array $version,
         CatalogVersionQuery $query,
     ): bool {
-        if (
-            $query->gameVersion !== null
-            && !in_array(
-                $query->gameVersion,
-                self::stringList($version['game_versions'] ?? []),
-                true,
-            )
-        ) {
+        if (!self::anyIntersect(
+            $query->gameVersions,
+            self::stringList($version['game_versions'] ?? []),
+        )) {
             return false;
         }
 
-        if (
-            $query->loader !== null
-            && !in_array(
-                $query->loader,
-                self::stringList($version['loaders'] ?? []),
-                true,
-            )
-        ) {
+        if (!self::anyIntersect(
+            $query->loaders,
+            self::stringList($version['loaders'] ?? []),
+        )) {
             return false;
         }
 
@@ -311,40 +389,87 @@ final class MockCatalogProvider implements CatalogProvider
             return false;
         }
 
-        if (
-            $query->gameVersion !== null
-            && !in_array(
-                $query->gameVersion,
-                self::stringList($modpack['game_versions'] ?? []),
-                true,
-            )
-        ) {
+        if (!self::anyIntersect(
+            $query->gameVersions,
+            self::stringList($modpack['game_versions'] ?? []),
+        )) {
+            return false;
+        }
+
+        if (!self::anyIntersect(
+            $query->loaders,
+            self::stringList($modpack['loaders'] ?? []),
+        )) {
+            return false;
+        }
+
+        if (!self::anyIntersect(
+            $query->categories,
+            self::stringList($modpack['categories'] ?? []),
+        )) {
             return false;
         }
 
         if (
-            $query->loader !== null
-            && !in_array(
-                $query->loader,
-                self::stringList($modpack['loaders'] ?? []),
-                true,
-            )
-        ) {
-            return false;
-        }
-
-        if (
-            $query->category !== null
-            && !in_array(
-                $query->category,
-                self::stringList($modpack['categories'] ?? []),
-                true,
+            $query->environments !== []
+            && !self::matchesEnvironment(
+                self::stringList($modpack['environments'] ?? []),
+                $query->environments,
             )
         ) {
             return false;
         }
 
         return true;
+    }
+
+    /**
+     * @param array<string> $filterValues
+     * @param array<string> $candidateValues
+     */
+    private static function anyIntersect(
+        array $filterValues,
+        array $candidateValues,
+    ): bool {
+        if ($filterValues === []) {
+            return true;
+        }
+
+        return array_intersect($filterValues, $candidateValues) !== [];
+    }
+
+    /**
+     * A pack matches an environment selection when any of the selected
+     * environments is satisfied by its own tags. The combined tag is treated
+     * as both sides present (mirroring the upstream providers).
+     *
+     * @param array<string> $packEnvironments
+     * @param array<string> $selected
+     */
+    private static function matchesEnvironment(
+        array $packEnvironments,
+        array $selected,
+    ): bool {
+        $hasClient = in_array('client', $packEnvironments, true)
+            || in_array('client-and-server', $packEnvironments, true);
+        $hasServer = in_array('server', $packEnvironments, true)
+            || in_array('client-and-server', $packEnvironments, true);
+
+        foreach ($selected as $environment) {
+            if ($environment === 'client' && $hasClient) {
+                return true;
+            }
+
+            if ($environment === 'server' && $hasServer) {
+                return true;
+            }
+
+            if ($environment === 'client-and-server' && $hasClient && $hasServer) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

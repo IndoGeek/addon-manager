@@ -7,6 +7,7 @@ use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogPagination;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogProvider;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogProviderException;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogProjectQuery;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogResult;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogSearchQuery;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogUnavailableException;
@@ -20,6 +21,11 @@ use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Provider
  * client-supplied values are pre-validated slugs/versions embedded in query
  * facets, never in the request path, and every payload is type-checked before
  * it leaves this provider.
+ *
+ * Facet groups map 1:1 onto Modrinth semantics: every filter group becomes one
+ * facet group (OR within a group, AND across groups). Multiple game versions,
+ * loaders, categories and environments are therefore all genuine upstream
+ * filters.
  */
 final class ModrinthCatalogProvider implements CatalogProvider
 {
@@ -30,6 +36,58 @@ final class ModrinthCatalogProvider implements CatalogProvider
     private const MAX_UPSTREAM_LIMIT = 100;
 
     private const URL_SLUG_PATTERN = '/^[A-Za-z0-9_-]{1,64}$/';
+
+    /**
+     * Curated common game versions offered as facet options. Modrinth accepts
+     * any release version in its "versions" facet; this list is static
+     * capability metadata, never a search result.
+     *
+     * @var array<string>
+     */
+    private const COMMON_GAME_VERSIONS = [
+        '1.21.9',
+        '1.21.8',
+        '1.21.7',
+        '1.21.6',
+        '1.21.5',
+        '1.21.4',
+        '1.21.3',
+        '1.21.2',
+        '1.21.1',
+        '1.21',
+        '1.20.6',
+        '1.20.4',
+        '1.20.2',
+        '1.20.1',
+        '1.20',
+        '1.19.4',
+        '1.19.2',
+        '1.18.2',
+        '1.17.1',
+        '1.16.5',
+    ];
+
+    /**
+     * Modrinth categories that apply to modpacks. Loader and environment tags
+     * are handled by their own facet groups, so categories are the content
+     * tags only.
+     *
+     * @var array<string>
+     */
+    private const MODPACK_CATEGORIES = [
+        'adventure',
+        'combat',
+        'creation',
+        'decoration',
+        'food',
+        'magic',
+        'optimization',
+        'storage',
+        'technology',
+        'transportation',
+        'utility',
+        'misc',
+    ];
 
     /**
      * @var array<string, true>
@@ -64,9 +122,47 @@ final class ModrinthCatalogProvider implements CatalogProvider
         return true;
     }
 
+    public function state(): string
+    {
+        return 'available';
+    }
+
+    public function developmentOnly(): bool
+    {
+        return false;
+    }
+
     public function unavailableReason(): ?string
     {
         return null;
+    }
+
+    /**
+     * @return array{query: bool, game_versions: bool, loaders: bool, categories: bool, environment: bool, sort: bool}
+     */
+    public function capabilities(): array
+    {
+        return [
+            'query' => true,
+            'game_versions' => true,
+            'loaders' => true,
+            'categories' => true,
+            'environment' => true,
+            'sort' => true,
+        ];
+    }
+
+    /**
+     * @return array{game_versions: array<int, string>, loaders: array<int, string>, categories: array<int, string>, environments: array<int, string>}
+     */
+    public function facets(): array
+    {
+        return [
+            'game_versions' => self::COMMON_GAME_VERSIONS,
+            'loaders' => array_keys(self::KNOWN_LOADERS),
+            'categories' => self::MODPACK_CATEGORIES,
+            'environments' => CatalogSearchQuery::ENVIRONMENT_VALUES,
+        ];
     }
 
     public function search(CatalogSearchQuery $query): CatalogResult
@@ -102,6 +198,31 @@ final class ModrinthCatalogProvider implements CatalogProvider
         return $versions;
     }
 
+    public function project(CatalogProjectQuery $query): CatalogItem
+    {
+        try {
+            $response = $this->http->get(
+                self::API_BASE
+                    . '/project/'
+                    . rawurlencode($query->project),
+            );
+
+            if (!is_array($response->body)) {
+                throw new CatalogProviderException(
+                    'The modpack catalog provider returned an invalid response.',
+                );
+            }
+
+            return $this->mapProject($response->body);
+        } catch (InvalidArgumentException $exception) {
+            throw $exception;
+        } catch (CatalogProviderException $exception) {
+            throw $exception;
+        } catch (ProviderHttpException $exception) {
+            throw $this->requestFailure($exception);
+        }
+    }
+
     /**
      * @return array<int, array<string, mixed>>
      */
@@ -109,14 +230,12 @@ final class ModrinthCatalogProvider implements CatalogProvider
     {
         $parameters = [];
 
-        if ($query->gameVersion !== null) {
-            $parameters['game_versions'] = json_encode([
-                $query->gameVersion,
-            ]);
+        if ($query->gameVersions !== []) {
+            $parameters['game_versions'] = json_encode($query->gameVersions);
         }
 
-        if ($query->loader !== null) {
-            $parameters['loaders'] = json_encode([$query->loader]);
+        if ($query->loaders !== []) {
+            $parameters['loaders'] = json_encode($query->loaders);
         }
 
         try {
@@ -205,7 +324,7 @@ final class ModrinthCatalogProvider implements CatalogProvider
         );
 
         $parameters = [
-            'facets' => $this->facets($query),
+            'facets' => $this->buildFacets($query),
             'index' => $query->sort->value,
             'limit' => $limit,
             'offset' => $query->offset(),
@@ -238,32 +357,46 @@ final class ModrinthCatalogProvider implements CatalogProvider
     }
 
     /**
-     * Serializes the validated filters into Modrinth facet groups.
+     * Serializes the validated filters into Modrinth facet groups. Each filter
+     * group becomes its own facet group: values within a group are OR'ed by
+     * Modrinth, groups are AND'ed together. Empty groups are omitted.
      */
-    private function facets(CatalogSearchQuery $query): string
+    private function buildFacets(CatalogSearchQuery $query): string
     {
         $facets = [
             ['project_type:modpack'],
         ];
 
-        if ($query->gameVersion !== null) {
-            $facets[] = [
-                'versions:' . $query->gameVersion,
-            ];
+        if ($query->gameVersions !== []) {
+            $facets[] = array_map(
+                static fn (string $version): string =>
+                    'versions:' . $version,
+                $query->gameVersions,
+            );
         }
 
-        $categories = [];
-
-        if ($query->loader !== null) {
-            $categories[] = 'categories:' . $query->loader;
+        if ($query->loaders !== []) {
+            $facets[] = array_map(
+                static fn (string $loader): string =>
+                    'categories:' . $loader,
+                $query->loaders,
+            );
         }
 
-        if ($query->category !== null) {
-            $categories[] = 'categories:' . $query->category;
+        if ($query->categories !== []) {
+            $facets[] = array_map(
+                static fn (string $category): string =>
+                    'categories:' . $category,
+                $query->categories,
+            );
         }
 
-        if ($categories !== []) {
-            $facets[] = $categories;
+        if ($query->environments !== []) {
+            $facets[] = array_map(
+                static fn (string $environment): string =>
+                    'categories:' . $environment,
+                $query->environments,
+            );
         }
 
         return json_encode($facets);
@@ -308,9 +441,10 @@ final class ModrinthCatalogProvider implements CatalogProvider
             provider: $this->name(),
             sort: $query->sort->value,
             appliedQuery: $query->query,
-            appliedGameVersion: $query->gameVersion,
-            appliedLoader: $query->loader,
-            appliedCategory: $query->category,
+            appliedGameVersions: $query->gameVersions,
+            appliedLoaders: $query->loaders,
+            appliedCategories: $query->categories,
+            appliedEnvironments: $query->environments,
         );
     }
 
@@ -359,6 +493,53 @@ final class ModrinthCatalogProvider implements CatalogProvider
             gameVersions: $this->stringList($hit['versions'] ?? []),
             loaders: $loaders,
             latestVersion: $this->stringOrNull($hit['latest_version'] ?? null),
+            source: 'modrinth://' . $sourceId,
+        );
+    }
+
+    /**
+     * @param array<string, mixed> $project
+     */
+    private function mapProject(array $project): CatalogItem
+    {
+        $projectId = $this->stringOrNull($project['id'] ?? null) ?? '';
+
+        $slug = $this->validSlug($project['slug'] ?? null);
+
+        $categories = $this->stringList($project['categories'] ?? []);
+
+        $loaders = $this->stringList($project['loaders'] ?? []);
+
+        if ($loaders === []) {
+            $loaders = array_values(array_filter(
+                $categories,
+                static fn (string $category): bool =>
+                    isset(self::KNOWN_LOADERS[$category]),
+            ));
+        }
+
+        $tags = array_values(array_diff($categories, $loaders));
+
+        $sourceId = $slug ?? ($this->validSlug($projectId) ?? '');
+
+        return new CatalogItem(
+            provider: $this->name(),
+            providerProjectId: $projectId,
+            slug: $slug,
+            name: $this->stringOrNull($project['title'] ?? null) ?? '',
+            summary: $this->stringOrNull($project['description'] ?? null),
+            iconUrl: $this->validImageUrl(
+                $this->stringOrNull($project['icon_url'] ?? null),
+            ),
+            projectUrl: $sourceId === ''
+                ? null
+                : 'https://modrinth.com/modpack/' . $sourceId,
+            downloads: $this->intOrNull($project['downloads'] ?? null),
+            follows: $this->intOrNull($project['followers'] ?? null),
+            categories: $tags,
+            gameVersions: $this->stringList($project['game_versions'] ?? []),
+            loaders: $loaders,
+            latestVersion: null,
             source: 'modrinth://' . $sourceId,
         );
     }

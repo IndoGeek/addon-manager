@@ -27,22 +27,6 @@ interface MetadataResponse {
     data: ModpackMetadata;
 }
 
-interface PreviewOperation {
-    path: string;
-    action: string;
-}
-
-interface InstallationPreview {
-    total_files: number;
-    create_count: number;
-    overwrite_count: number;
-    operations: PreviewOperation[];
-}
-
-interface PreviewResponse {
-    data: InstallationPreview;
-}
-
 interface InstallationResult {
     total_files: number;
     created: number;
@@ -78,10 +62,6 @@ interface InstallRecordData {
 
 interface InstalledModpacksResponse {
     data: InstallRecordData[];
-}
-
-interface InstalledModpackResponse {
-    data: InstallRecordData;
 }
 
 interface UninstallResponse {
@@ -154,17 +134,15 @@ interface CatalogVersion {
     source: string;
 }
 
-interface CatalogVersionsResponseData {
-    provider: string;
-    filters: {
-        game_version: string | null;
-        loader: string | null;
-    };
-    versions: CatalogVersion[];
-}
-
 interface CatalogVersionsResponse {
-    data: CatalogVersionsResponseData;
+    data: {
+        provider: string;
+        filters: {
+            game_versions: string[];
+            loaders: string[];
+        };
+        versions: CatalogVersion[];
+    };
 }
 
 interface CatalogResponseData {
@@ -173,9 +151,10 @@ interface CatalogResponseData {
     provider: string;
     filters: {
         query: string | null;
-        game_version: string | null;
-        loader: string | null;
-        category: string | null;
+        game_versions: string[];
+        loaders: string[];
+        categories: string[];
+        environments: string[];
     };
     sort: string;
 }
@@ -184,26 +163,57 @@ interface CatalogResponse {
     data: CatalogResponseData;
 }
 
+interface ProviderCapabilities {
+    query: boolean;
+    game_versions: boolean;
+    loaders: boolean;
+    categories: boolean;
+    environment: boolean;
+    sort: boolean;
+}
+
+interface ProviderFacets {
+    game_versions: string[];
+    loaders: string[];
+    categories: string[];
+    environments: string[];
+}
+
 interface CatalogProviderOption {
     name: string;
     label: string;
     available: boolean;
+    state: string;
+    development_only: boolean;
+    development: boolean;
     unavailable_reason: string | null;
+    capabilities: ProviderCapabilities;
+    facets: ProviderFacets;
 }
 
 interface ProvidersResponse {
-    data: CatalogProviderOption[];
+    data: {
+        providers: CatalogProviderOption[];
+        default_provider: string;
+        pagination: {
+            default_page: number;
+            default_limit: number;
+        };
+    };
 }
 
 interface CatalogFilters {
     provider: string;
     query: string;
-    gameVersion: string;
-    loader: string;
-    category: string;
+    gameVersions: string[];
+    loaders: string[];
+    categories: string[];
+    environment: string;
     sort: string;
     page: number;
 }
+
+type MultiFilterKey = 'gameVersions' | 'loaders' | 'categories';
 
 const API_BASE =
     '/api/client/extensions/modpackinstaller';
@@ -212,35 +222,7 @@ const DEFAULT_PROVIDER = 'modrinth';
 
 const PAGE_LIMIT = 20;
 
-const GAME_VERSIONS = [
-    '1.21.4',
-    '1.21.1',
-    '1.20.1',
-    '1.20',
-    '1.19.4',
-    '1.19.2',
-    '1.18.2',
-];
-
-const LOADERS = [
-    'fabric',
-    'forge',
-    'quilt',
-    'neoforge',
-    'liteloader',
-];
-
-const CATEGORIES = [
-    'adventure',
-    'building',
-    'combat',
-    'decoration',
-    'magic',
-    'optimization',
-    'storage',
-    'technology',
-    'utility',
-];
+const VIEW_STORAGE_KEY = 'modpackinstaller-view';
 
 const SORT_OPTIONS: Array<{ value: string; label: string }> = [
     { value: 'relevance', label: 'Relevance' },
@@ -248,6 +230,15 @@ const SORT_OPTIONS: Array<{ value: string; label: string }> = [
     { value: 'follows', label: 'Most follows' },
     { value: 'newest', label: 'Newest' },
     { value: 'updated', label: 'Recently updated' },
+];
+
+const ENVIRONMENT_OPTIONS: Array<{
+    value: string;
+    label: string;
+}> = [
+    { value: 'client', label: 'Client' },
+    { value: 'server', label: 'Server' },
+    { value: 'client-and-server', label: 'Client + Server' },
 ];
 
 const getServerIdentifier = (): string | null => {
@@ -319,6 +310,357 @@ const uniqueSorted = (
     return Array.from(seen);
 };
 
+interface DropdownOption {
+    value: string;
+    label: string;
+    detail?: string;
+    disabled?: boolean;
+}
+
+const Dropdown = ({
+    id,
+    label,
+    value,
+    onChange,
+    options,
+    disabled,
+}: {
+    id: string;
+    label: string;
+    value: string;
+    onChange: (value: string) => void;
+    options: DropdownOption[];
+    disabled?: boolean;
+}) => {
+    const [open, setOpen] = useState(false);
+
+    const wrapperRef = useRef<HTMLDivElement | null>(null);
+
+    const menuRef = useRef<HTMLDivElement | null>(null);
+
+    const selected = options.find((option) => option.value === value);
+
+    const focusOption = (index: number) => {
+        const menu = menuRef.current;
+
+        if (!menu) {
+            return;
+        }
+
+        const buttons = Array.from(
+            menu.querySelectorAll(
+                'button[role="option"]:not(:disabled)',
+            ),
+        ) as HTMLButtonElement[];
+
+        if (buttons.length === 0) {
+            return;
+        }
+
+        const clamped =
+            ((index % buttons.length) + buttons.length) %
+            buttons.length;
+
+        buttons[clamped].focus();
+    };
+
+    const onTriggerKeyDown = (
+        event: React.KeyboardEvent<HTMLButtonElement>,
+    ) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+            setOpen((current) => !current);
+            event.preventDefault();
+
+            return;
+        }
+
+        if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') {
+            return;
+        }
+
+        event.preventDefault();
+
+        if (!open) {
+            setOpen(true);
+            window.setTimeout(() => {
+                focusOption(
+                    event.key === 'ArrowUp'
+                        ? options.length - 1
+                        : 0,
+                );
+            }, 0);
+
+            return;
+        }
+
+        const menu = menuRef.current;
+
+        if (!menu) {
+            return;
+        }
+
+        const buttons = Array.from(
+            menu.querySelectorAll(
+                'button[role="option"]:not(:disabled)',
+            ),
+        ) as HTMLButtonElement[];
+
+        if (buttons.length === 0) {
+            return;
+        }
+
+        const currentIndex = buttons.findIndex(
+            (button) => button === document.activeElement,
+        );
+
+        focusOption(
+            event.key === 'ArrowDown'
+                ? currentIndex + 1
+                : currentIndex - 1,
+        );
+    };
+
+    const onMenuKeyDown = (event: React.KeyboardEvent) => {
+        if (event.key === 'Home') {
+            event.preventDefault();
+            focusOption(0);
+        } else if (event.key === 'End') {
+            event.preventDefault();
+            focusOption(options.length - 1);
+        }
+    };
+
+    useEffect(() => {
+        if (!open) {
+            return;
+        }
+
+        const onPointerDown = (event: MouseEvent) => {
+            if (
+                wrapperRef.current
+                && !wrapperRef.current.contains(event.target as Node)
+            ) {
+                setOpen(false);
+            }
+        };
+
+        const onKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                setOpen(false);
+            }
+        };
+
+        document.addEventListener('mousedown', onPointerDown);
+        window.addEventListener('keydown', onKeyDown);
+
+        return () => {
+            document.removeEventListener('mousedown', onPointerDown);
+            window.removeEventListener('keydown', onKeyDown);
+        };
+    }, [open]);
+
+    return (
+        <div ref={wrapperRef} className="modpackinstaller-dropdown">
+            <label id={`${id}-label`} htmlFor={id}>
+                {label}
+            </label>
+
+            <button
+                id={id}
+                type="button"
+                className="modpackinstaller-dropdown-trigger"
+                aria-haspopup="listbox"
+                aria-expanded={open}
+                aria-labelledby={`${id}-label ${id}`}
+                disabled={disabled || options.length === 0}
+                onClick={() => setOpen((current) => !current)}
+                onKeyDown={onTriggerKeyDown}
+            >
+                <span className="modpackinstaller-dropdown-value">
+                    {selected ? selected.label : 'Any'}
+                </span>
+
+                <span
+                    className="modpackinstaller-dropdown-caret"
+                    aria-hidden="true"
+                >
+                    ▾
+                </span>
+            </button>
+
+            {open && (
+                <div
+                    ref={menuRef}
+                    className="modpackinstaller-dropdown-menu"
+                    role="listbox"
+                    aria-labelledby={`${id}-label`}
+                    onKeyDown={onMenuKeyDown}
+                >
+                    {options.map((option) => (
+                        <button
+                            type="button"
+                            key={option.value}
+                            role="option"
+                            aria-selected={option.value === value}
+                            className={`modpackinstaller-dropdown-option${
+                                option.value === value
+                                    ? ' modpackinstaller-dropdown-option--active'
+                                    : ''
+                            }`}
+                            disabled={option.disabled}
+                            onClick={() => {
+                                onChange(option.value);
+                                setOpen(false);
+                            }}
+                        >
+                            <span>{option.label}</span>
+
+                            {option.detail && (
+                                <small>{option.detail}</small>
+                            )}
+                        </button>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
+
+const Modal = ({
+    open,
+    labelledBy,
+    title,
+    onClose,
+    headerActions,
+    children,
+    busy,
+}: {
+    open: boolean;
+    labelledBy: string;
+    title: string;
+    onClose: () => void;
+    headerActions?: React.ReactNode;
+    children: React.ReactNode;
+    busy?: boolean;
+}) => {
+    const [shown, setShown] = useState(open);
+
+    const [phase, setPhase] = useState<'in' | 'out'>('in');
+
+    const closeRef = useRef<HTMLButtonElement | null>(null);
+
+    const previousFocus = useRef<HTMLElement | null>(null);
+
+    useEffect(() => {
+        if (open) {
+            setShown(true);
+            setPhase('in');
+        } else if (shown) {
+            setPhase('out');
+
+            const timer = window.setTimeout(() => {
+                setShown(false);
+            }, 200);
+
+            return () => window.clearTimeout(timer);
+        }
+    }, [open, shown]);
+
+    useEffect(() => {
+        if (!shown || phase !== 'in') {
+            return;
+        }
+
+        previousFocus.current =
+            document.activeElement as HTMLElement | null;
+
+        const timer = window.setTimeout(() => {
+            closeRef.current?.focus();
+        }, 30);
+
+        return () => window.clearTimeout(timer);
+    }, [open, shown, phase]);
+
+    useEffect(() => {
+        if (!open) {
+            previousFocus.current?.focus();
+        }
+    }, [open]);
+
+    useEffect(() => {
+        if (!open || !shown) {
+            return;
+        }
+
+        const onKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                onClose();
+            }
+        };
+
+        const prevOverflow = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+
+        window.addEventListener('keydown', onKeyDown);
+
+        return () => {
+            document.body.style.overflow = prevOverflow;
+            window.removeEventListener('keydown', onKeyDown);
+        };
+    }, [open, shown, onClose]);
+
+    if (!shown) {
+        return null;
+    }
+
+    return (
+        <div
+            className={`modpackinstaller-modal-overlay${
+                phase === 'out'
+                    ? ' modpackinstaller-modal-overlay--out'
+                    : ''
+            }`}
+            onMouseDown={(event) => {
+                if (event.target === event.currentTarget) {
+                    onClose();
+                }
+            }}
+        >
+            <div
+                className={`modpackinstaller-modal${
+                    phase === 'out'
+                        ? ' modpackinstaller-modal--out'
+                        : ''
+                }`}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby={labelledBy}
+                aria-busy={busy}
+            >
+                <div className="modpackinstaller-modal-header">
+                    <h3 id={labelledBy}>{title}</h3>
+
+                    <div className="modpackinstaller-modal-header-actions">
+                        {headerActions}
+
+                        <button
+                            type="button"
+                            ref={closeRef}
+                            className="modpackinstaller-modal-close"
+                            aria-label="Close"
+                            onClick={onClose}
+                        >
+                            &times;
+                        </button>
+                    </div>
+                </div>
+
+                {children}
+            </div>
+        </div>
+    );
+};
+
 const ManualDownloadNotice = ({
     manual,
 }: {
@@ -382,7 +724,13 @@ const ManualDownloadNotice = ({
     );
 };
 
-const ModpackIcon = ({ item }: { item: CatalogItem }) => {
+const ModpackIcon = ({
+    item,
+    compact,
+}: {
+    item: CatalogItem;
+    compact?: boolean;
+}) => {
     const mounted = useRef(true);
 
     const [failed, setFailed] = useState(false);
@@ -403,7 +751,11 @@ const ModpackIcon = ({ item }: { item: CatalogItem }) => {
 
         return (
             <div
-                className="modpackinstaller-card-image modpackinstaller-card-image--fallback"
+                className={`modpackinstaller-card-image modpackinstaller-card-image--fallback${
+                    compact
+                        ? ' modpackinstaller-card-image--compact'
+                        : ''
+                }`}
                 aria-hidden="true"
             >
                 {initial}
@@ -415,7 +767,11 @@ const ModpackIcon = ({ item }: { item: CatalogItem }) => {
         <img
             src={item.icon_url}
             alt=""
-            className="modpackinstaller-card-image"
+            className={`modpackinstaller-card-image${
+                compact
+                    ? ' modpackinstaller-card-image--compact'
+                    : ''
+            }`}
             loading="lazy"
             referrerPolicy="no-referrer"
             onError={() => {
@@ -424,6 +780,165 @@ const ModpackIcon = ({ item }: { item: CatalogItem }) => {
                 }
             }}
         />
+    );
+};
+
+const PaginationBar = ({
+    pagination,
+    searching,
+    onPage,
+    variant,
+}: {
+    pagination: CatalogPagination | null;
+    searching: boolean;
+    onPage: (page: number) => void;
+    variant: 'top' | 'bottom';
+}) => {
+    if (!pagination) {
+        return null;
+    }
+
+    const page = pagination.page;
+
+    return (
+        <nav
+            className={`modpackinstaller-pagination modpackinstaller-pagination--${variant}`}
+            aria-label="Catalog pages"
+            aria-busy={searching}
+        >
+            <span className="modpackinstaller-pagination-info">
+                {pagination.total}{' '}
+                {pagination.total === 1 ? 'result' : 'results'} · Page{' '}
+                {page} of {pagination.total_pages}
+            </span>
+
+            <div className="modpackinstaller-pagination-actions">
+                <button
+                    type="button"
+                    onClick={() => onPage(page - 1)}
+                    disabled={!pagination.has_previous || searching}
+                >
+                    Previous
+                </button>
+
+                <button
+                    type="button"
+                    onClick={() => onPage(page + 1)}
+                    disabled={!pagination.has_next || searching}
+                >
+                    Next
+                </button>
+            </div>
+        </nav>
+    );
+};
+
+const CatalogCard = ({
+    item,
+    view,
+    onOpen,
+    disabled,
+}: {
+    item: CatalogItem;
+    view: 'grid' | 'list';
+    onOpen: (item: CatalogItem) => void;
+    disabled: boolean;
+}) => {
+    return (
+        <article
+            className={`modpackinstaller-catalog-card modpackinstaller-catalog-card--${view}`}
+        >
+            <ModpackIcon item={item} compact={view === 'list'} />
+
+            <div className="modpackinstaller-catalog-card-content">
+                <div className="modpackinstaller-catalog-card-header">
+                    <span className="modpackinstaller-catalog-card-badge">
+                        {item.provider}
+                    </span>
+
+                    <h4>{item.name}</h4>
+                </div>
+
+                <p className="modpackinstaller-catalog-card-summary">
+                    {item.summary || 'No description available.'}
+                </p>
+
+                <dl className="modpackinstaller-catalog-card-meta">
+                    {item.categories.length > 0 && (
+                        <div>
+                            <dt>Category</dt>
+                            <dd>
+                                {item.categories
+                                    .slice(0, 3)
+                                    .join(' · ')}
+                            </dd>
+                        </div>
+                    )}
+
+                    {item.loaders.length > 0 && (
+                        <div>
+                            <dt>Loader</dt>
+                            <dd>{item.loaders.join(' · ')}</dd>
+                        </div>
+                    )}
+
+                    {item.game_versions.length > 0 && (
+                        <div>
+                            <dt>Minecraft</dt>
+                            <dd>
+                                {item.game_versions.length > 2
+                                    ? `${item.game_versions
+                                          .slice(0, 2)
+                                          .join(', ')} +`
+                                    : item.game_versions.join(', ')}
+                            </dd>
+                        </div>
+                    )}
+
+                    {item.downloads !== null && (
+                        <div>
+                            <dt>Downloads</dt>
+                            <dd>{formatCount(item.downloads)}</dd>
+                        </div>
+                    )}
+
+                    {item.follows !== null && (
+                        <div>
+                            <dt>Follows</dt>
+                            <dd>{formatCount(item.follows)}</dd>
+                        </div>
+                    )}
+
+                    {item.latest_version && (
+                        <div>
+                            <dt>Latest</dt>
+                            <dd>{item.latest_version}</dd>
+                        </div>
+                    )}
+                </dl>
+
+                <div className="modpackinstaller-catalog-card-actions">
+                    <button
+                        type="button"
+                        onClick={() => onOpen(item)}
+                        disabled={disabled}
+                    >
+                        View details
+                    </button>
+
+                    {item.project_url && (
+                        <a
+                            href={item.project_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            referrerPolicy="no-referrer"
+                        >
+                            Open page
+                        </a>
+                    )}
+                </div>
+            </div>
+        </article>
     );
 };
 
@@ -448,49 +963,70 @@ export default () => {
         };
     }, []);
 
-    const [source, setSource] =
-        useState('mock://example-pack');
+    const [providers, setProviders] =
+        useState<CatalogProviderOption[] | null>(null);
 
-    const [metadata, setMetadata] =
-        useState<ModpackMetadata | null>(null);
-
-    const [selectedSource, setSelectedSource] =
+    const [providersError, setProvidersError] =
         useState<string | null>(null);
 
-    const [policy, setPolicy] =
-        useState('overwrite');
+    const [filters, setFilters] = useState<CatalogFilters>({
+        provider: DEFAULT_PROVIDER,
+        query: '',
+        gameVersions: [],
+        loaders: [],
+        categories: [],
+        environment: '',
+        sort: 'relevance',
+        page: 1,
+    });
 
-    const [layout, setLayout] =
-        useState('direct');
+    const filtersRef = useRef(filters);
 
-    const [preview, setPreview] =
-        useState<InstallationPreview | null>(null);
+    filtersRef.current = filters;
 
-    const [result, setResult] =
-        useState<InstallationResult | null>(null);
+    const [items, setItems] = useState<CatalogItem[] | null>(null);
 
-    const [loading, setLoading] =
-        useState(false);
+    const [pagination, setPagination] =
+        useState<CatalogPagination | null>(null);
 
-    const [previewLoading, setPreviewLoading] =
-        useState(false);
+    const [searching, setSearching] = useState(false);
 
-    const [installLoading, setInstallLoading] =
-        useState(false);
+    const [catalogError, setCatalogError] =
+        useState<string | null>(null);
 
-    const [status, setStatus] =
+    const [view, setView] = useState<'grid' | 'list'>(() => {
+        return window.localStorage.getItem(VIEW_STORAGE_KEY) === 'list'
+            ? 'list'
+            : 'grid';
+    });
+
+    const [filtersOpen, setFiltersOpen] = useState(false);
+
+    const [installed, setInstalled] =
+        useState<InstallRecordData[] | null>(null);
+
+    const [installedLoading, setInstalledLoading] = useState(false);
+
+    const [installedError, setInstalledError] =
+        useState<string | null>(null);
+
+    const [installedStatus, setInstalledStatus] =
         useState<StatusMessage | null>(null);
 
-    const busy = loading || previewLoading || installLoading;
+    const [lifecycleRecordId, setLifecycleRecordId] =
+        useState<string | null>(null);
 
-    const [modalItem, setModalItem] =
+    const [armedUninstall, setArmedUninstall] =
+        useState<string | null>(null);
+
+    const [installedOpen, setInstalledOpen] = useState(false);
+
+    const [detailsItem, setDetailsItem] =
         useState<CatalogItem | null>(null);
 
-    const [modalGameVersion, setModalGameVersion] =
-        useState('');
+    const [modalGameVersion, setModalGameVersion] = useState('');
 
-    const [modalLoader, setModalLoader] =
-        useState('');
+    const [modalLoader, setModalLoader] = useState('');
 
     const [modalVersions, setModalVersions] =
         useState<CatalogVersion[] | null>(null);
@@ -501,20 +1037,8 @@ export default () => {
     const [modalVersionsError, setModalVersionsError] =
         useState<string | null>(null);
 
-    const [modalPreview, setModalPreview] =
-        useState<InstallationPreview | null>(null);
-
-    const [modalResult, setModalResult] =
-        useState<InstallationResult | null>(null);
-
-    const [modalPreviewLoading, setModalPreviewLoading] =
-        useState(false);
-
-    const [modalInstallLoading, setModalInstallLoading] =
-        useState(false);
-
-    const [modalStatus, setModalStatus] =
-        useState<StatusMessage | null>(null);
+    const [modalVersionSource, setModalVersionSource] =
+        useState<string | null>(null);
 
     const [modalMetadata, setModalMetadata] =
         useState<ModpackMetadata | null>(null);
@@ -525,67 +1049,82 @@ export default () => {
     const [modalMetadataError, setModalMetadataError] =
         useState<string | null>(null);
 
-    const [modalVersionSource, setModalVersionSource] =
-        useState<string | null>(null);
+    const [modalStatus, setModalStatus] =
+        useState<StatusMessage | null>(null);
 
-    const modalBusy =
-        modalVersionsLoading ||
-        modalMetadataLoading ||
-        modalPreviewLoading ||
-        modalInstallLoading;
+    const [modalResult, setModalResult] =
+        useState<InstallationResult | null>(null);
+
+    const [modalInstallLoading, setModalInstallLoading] =
+        useState(false);
 
     const versionsRequestId = useRef(0);
 
     const metadataRequestId = useRef(0);
 
-    const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+    const [source, setSource] = useState('mock://example-pack');
 
-    const [providers, setProviders] =
-        useState<CatalogProviderOption[] | null>(null);
+    const [metadata, setMetadata] =
+        useState<ModpackMetadata | null>(null);
 
-    const [providersError, setProvidersError] =
+    const [selectedSource, setSelectedSource] =
         useState<string | null>(null);
 
-    const [installed, setInstalled] =
-        useState<InstallRecordData[] | null>(null);
+    const [loading, setLoading] = useState(false);
 
-    const [installedLoading, setInstalledLoading] =
-        useState(false);
+    const [installLoading, setInstallLoading] = useState(false);
 
-    const [installedError, setInstalledError] =
-        useState<string | null>(null);
+    const [result, setResult] =
+        useState<InstallationResult | null>(null);
 
-    const [lifecycleRecordId, setLifecycleRecordId] =
-        useState<string | null>(null);
+    const [status, setStatus] =
+        useState<StatusMessage | null>(null);
 
-    const [armedUninstall, setArmedUninstall] =
-        useState<string | null>(null);
+    const processing =
+        loading || installLoading || modalInstallLoading;
 
-    const [filters, setFilters] = useState<CatalogFilters>({
-        provider: DEFAULT_PROVIDER,
-        query: '',
-        gameVersion: '',
-        loader: '',
-        category: '',
-        sort: 'relevance',
-        page: 1,
-    });
+    const modalBusy =
+        modalVersionsLoading ||
+        modalMetadataLoading ||
+        modalInstallLoading;
 
-    const [items, setItems] =
-        useState<CatalogItem[] | null>(null);
+    const visibleProviders = (providers ?? []).filter(
+        (provider) => !provider.development_only,
+    );
 
-    const [pagination, setPagination] =
-        useState<CatalogPagination | null>(null);
+    const activeProvider =
+        providers?.find(
+            (provider) => provider.name === filters.provider,
+        ) ?? null;
 
-    const [searching, setSearching] =
-        useState(false);
+    const facets = activeProvider?.facets ?? {
+        game_versions: [] as string[],
+        loaders: [] as string[],
+        categories: [] as string[],
+        environments: [] as string[],
+    };
 
-    const [catalogError, setCatalogError] =
-        useState<string | null>(null);
+    const capabilities = activeProvider?.capabilities ?? null;
 
-    const filtersRef = useRef(filters);
+    const providerOptions = visibleProviders.map((provider) => ({
+        value: provider.name,
+        label: provider.available
+            ? provider.label
+            : `${provider.label} (not available)`,
+        detail: provider.available
+            ? undefined
+            : provider.unavailable_reason ?? undefined,
+        disabled: !provider.available,
+    }));
 
-    filtersRef.current = filters;
+    const catalogBusy =
+        searching || visibleProviders.length === 0;
+
+    const activeFilterCount =
+        filters.gameVersions.length +
+        filters.loaders.length +
+        filters.categories.length +
+        (filters.environment !== '' ? 1 : 0);
 
     const runSearch = async (next: CatalogFilters) => {
         const id = ++requestId.current;
@@ -604,16 +1143,20 @@ export default () => {
             params.query = next.query.trim();
         }
 
-        if (next.gameVersion !== '') {
-            params.game_version = next.gameVersion;
+        if (next.gameVersions.length > 0) {
+            params.game_versions = next.gameVersions.join(',');
         }
 
-        if (next.loader !== '') {
-            params.loader = next.loader;
+        if (next.loaders.length > 0) {
+            params.loaders = next.loaders.join(',');
         }
 
-        if (next.category !== '') {
-            params.category = next.category;
+        if (next.categories.length > 0) {
+            params.categories = next.categories.join(',');
+        }
+
+        if (next.environment !== '') {
+            params.environments = next.environment;
         }
 
         try {
@@ -627,10 +1170,8 @@ export default () => {
                 return;
             }
 
-            const data = response.data.data;
-
-            setItems(data.items);
-            setPagination(data.pagination);
+            setItems(response.data.data.items);
+            setPagination(response.data.data.pagination);
         } catch (requestError: any) {
             if (!alive.current || id !== requestId.current) {
                 return;
@@ -664,26 +1205,31 @@ export default () => {
                     return;
                 }
 
-                setProviders(response.data.data);
+                setProviders(response.data.data.providers);
 
-                const available = response.data.data.filter(
-                    (provider) => provider.available,
+                const available = response.data.data.providers.filter(
+                    (provider) =>
+                        provider.available
+                        && !provider.development_only,
                 );
 
-                if (
-                    available.length > 0
-                    && !available.some(
-                        (provider) =>
-                            provider.name === DEFAULT_PROVIDER,
-                    )
-                ) {
-                    chosenProvider = available[0].name;
+                const defaultAvailable = available.some(
+                    (provider) =>
+                        provider.name
+                        === response.data.data.default_provider,
+                );
 
-                    setFilters((current) => ({
-                        ...current,
-                        provider: chosenProvider,
-                    }));
+                if (defaultAvailable) {
+                    chosenProvider =
+                        response.data.data.default_provider;
+                } else if (available.length > 0) {
+                    chosenProvider = available[0].name;
                 }
+
+                setFilters((current) => ({
+                    ...current,
+                    provider: chosenProvider,
+                }));
             } catch {
                 if (cancelled || !alive.current) {
                     return;
@@ -763,12 +1309,18 @@ export default () => {
         setArmedUninstall(null);
     };
 
-    const updateInstalledModpack = async (record: InstallRecordData) => {
+    const openInstalledModal = () => {
+        setInstalledOpen(true);
+        loadInstalled();
+    };
+
+    const updateInstalledModpack = async (
+        record: InstallRecordData,
+    ) => {
         if (!server) {
-            setStatus({
+            setInstalledStatus({
                 kind: 'error',
-                message:
-                    'Unable to determine the current server.',
+                message: 'Unable to determine the current server.',
             });
             return;
         }
@@ -778,7 +1330,7 @@ export default () => {
         }
 
         setLifecycleRecordId(record.id);
-        setStatus(null);
+        setInstalledStatus(null);
 
         try {
             const response =
@@ -790,7 +1342,7 @@ export default () => {
                 return;
             }
 
-            setStatus({
+            setInstalledStatus({
                 kind: 'success',
                 message: `Updated ${response.data.data.display_name} from ${response.data.data.previous_version} to ${response.data.data.version}.`,
             });
@@ -804,18 +1356,13 @@ export default () => {
                 requestError.response?.data?.error ||
                 'Unable to update the modpack.';
 
-            setStatus({
+            setInstalledStatus({
                 kind: 'error',
-                message,
+                message:
+                    requestError.response?.data?.manual_download
+                        ? 'This modpack requires a manual download to update.'
+                        : message,
             });
-
-            if (requestError.response?.data?.manual_download) {
-                setStatus({
-                    kind: 'error',
-                    message:
-                        'This modpack requires a manual download to update.',
-                });
-            }
         } finally {
             if (alive.current) {
                 setLifecycleRecordId(null);
@@ -823,12 +1370,13 @@ export default () => {
         }
     };
 
-    const uninstallInstalledModpack = async (record: InstallRecordData) => {
+    const uninstallInstalledModpack = async (
+        record: InstallRecordData,
+    ) => {
         if (!server) {
-            setStatus({
+            setInstalledStatus({
                 kind: 'error',
-                message:
-                    'Unable to determine the current server.',
+                message: 'Unable to determine the current server.',
             });
             return;
         }
@@ -838,7 +1386,7 @@ export default () => {
         }
 
         setLifecycleRecordId(record.id);
-        setStatus(null);
+        setInstalledStatus(null);
 
         try {
             const response =
@@ -850,7 +1398,7 @@ export default () => {
                 return;
             }
 
-            setStatus({
+            setInstalledStatus({
                 kind: 'success',
                 message: `Uninstalled ${response.data.data.display_name} (${response.data.data.removed} files removed).`,
             });
@@ -860,19 +1408,33 @@ export default () => {
                 return;
             }
 
-            const message =
-                requestError.response?.data?.error ||
-                'Unable to uninstall the modpack.';
-
-            setStatus({
+            setInstalledStatus({
                 kind: 'error',
-                message,
+                message:
+                    requestError.response?.data?.error ||
+                    'Unable to uninstall the modpack.',
             });
         } finally {
             if (alive.current) {
                 setLifecycleRecordId(null);
             }
         }
+    };
+
+    const applyFilters = (patch: Partial<CatalogFilters>) => {
+        if (debounceTimer.current !== null) {
+            window.clearTimeout(debounceTimer.current);
+            debounceTimer.current = null;
+        }
+
+        const next = {
+            ...filtersRef.current,
+            ...patch,
+            page: 1,
+        };
+
+        setFilters(next);
+        runSearch(next);
     };
 
     const onQueryChange = (value: string) => {
@@ -904,17 +1466,60 @@ export default () => {
         runSearch({ ...filtersRef.current, page: 1 });
     };
 
-    const applyFilter = (patch: Partial<CatalogFilters>) => {
-        setFilters((current) => ({
-            ...current,
-            ...patch,
-            page: 1,
-        }));
+    const clearQuery = () => {
+        if (debounceTimer.current !== null) {
+            window.clearTimeout(debounceTimer.current);
+            debounceTimer.current = null;
+        }
 
-        runSearch({
-            ...filtersRef.current,
-            ...patch,
-            page: 1,
+        setFilters((current) => ({ ...current, query: '' }));
+        runSearch({ ...filtersRef.current, query: '', page: 1 });
+    };
+
+    const changeProvider = (provider: string) => {
+        if (provider === filtersRef.current.provider) {
+            return;
+        }
+
+        applyFilters({
+            provider,
+            gameVersions: [],
+            loaders: [],
+            categories: [],
+            environment: '',
+        });
+    };
+
+    const changeSort = (sort: string) => {
+        applyFilters({ sort });
+    };
+
+    const toggleListValue = (
+        key: MultiFilterKey,
+        value: string,
+    ) => {
+        const current = filtersRef.current[key];
+
+        const next = current.includes(value)
+            ? current.filter((item) => item !== value)
+            : [...current, value];
+
+        applyFilters({ [key]: next } as Partial<CatalogFilters>);
+    };
+
+    const toggleEnvironment = (value: string) => {
+        const next =
+            filtersRef.current.environment === value ? '' : value;
+
+        applyFilters({ environment: next });
+    };
+
+    const resetFilters = () => {
+        applyFilters({
+            gameVersions: [],
+            loaders: [],
+            categories: [],
+            environment: '',
         });
     };
 
@@ -923,12 +1528,349 @@ export default () => {
             return;
         }
 
-        applyFilter({ page });
+        const next = {
+            ...filtersRef.current,
+            page,
+        };
+
+        setFilters(next);
+        runSearch(next);
     };
+
+    const changeView = (next: 'grid' | 'list') => {
+        setView(next);
+
+        try {
+            window.localStorage.setItem(VIEW_STORAGE_KEY, next);
+        } catch {
+            // storage unavailable; the in-memory view still applies
+        }
+    };
+
+    const openDetailsModal = (item: CatalogItem) => {
+        if (processing) {
+            return;
+        }
+
+        versionsRequestId.current++;
+        metadataRequestId.current++;
+
+        setDetailsItem(item);
+        setModalGameVersion('');
+        setModalLoader('');
+        setModalVersions(null);
+        setModalVersionsError(null);
+        setModalVersionsLoading(false);
+        setModalVersionSource(null);
+        setModalMetadata(null);
+        setModalMetadataLoading(false);
+        setModalMetadataError(null);
+        setModalStatus(null);
+        setModalResult(null);
+        setModalInstallLoading(false);
+    };
+
+    const closeDetailsModal = () => {
+        versionsRequestId.current++;
+        metadataRequestId.current++;
+
+        setDetailsItem(null);
+        setModalVersions(null);
+        setModalVersionsError(null);
+        setModalVersionsLoading(false);
+        setModalGameVersion('');
+        setModalLoader('');
+        setModalMetadata(null);
+        setModalMetadataLoading(false);
+        setModalMetadataError(null);
+        setModalVersionSource(null);
+        setModalResult(null);
+        setModalInstallLoading(false);
+        setModalStatus(null);
+    };
+
+    const loadVersions = async (
+        gameVersion: string,
+        loader: string,
+    ) => {
+        const item = detailsItem;
+
+        if (!item) {
+            return;
+        }
+
+        const id = ++versionsRequestId.current;
+
+        setModalVersionsLoading(true);
+        setModalVersions(null);
+        setModalVersionsError(null);
+
+        const params: Record<string, string> = {
+            provider: item.provider,
+            project: item.provider_project_id,
+        };
+
+        if (gameVersion !== '') {
+            params.game_versions = gameVersion;
+        }
+
+        if (loader !== '') {
+            params.loaders = loader;
+        }
+
+        try {
+            const response =
+                await axios.get<CatalogVersionsResponse>(
+                    `${API_BASE}/catalog/versions`,
+                    { params },
+                );
+
+            if (
+                !alive.current
+                || id !== versionsRequestId.current
+                || detailsItem === null
+            ) {
+                return;
+            }
+
+            const versions = response.data.data.versions;
+
+            setModalVersions(versions);
+
+            if (versions.length === 1) {
+                selectModalVersion(versions[0].source);
+            } else if (
+                modalVersionSource
+                && versions.some(
+                    (version) =>
+                        version.source === modalVersionSource,
+                )
+            ) {
+                // keep the current selection
+            } else {
+                clearModalSelection();
+            }
+        } catch (requestError: any) {
+            if (
+                !alive.current
+                || id !== versionsRequestId.current
+                || detailsItem === null
+            ) {
+                return;
+            }
+
+            setModalVersionsError(
+                requestError.response?.data?.error ||
+                'Unable to load the modpack versions.',
+            );
+
+            clearModalSelection();
+        } finally {
+            if (
+                alive.current
+                && id === versionsRequestId.current
+                && detailsItem !== null
+            ) {
+                setModalVersionsLoading(false);
+            }
+        }
+    };
+
+    const changeModalGameVersion = (value: string) => {
+        setModalGameVersion(value);
+        clearModalSelection();
+        loadVersions(value, modalLoader);
+    };
+
+    const changeModalLoader = (value: string) => {
+        setModalLoader(value);
+        clearModalSelection();
+        loadVersions(modalGameVersion, value);
+    };
+
+    const clearModalSelection = () => {
+        setModalVersionSource(null);
+        setModalMetadata(null);
+        setModalMetadataError(null);
+        setModalStatus(null);
+        setModalResult(null);
+    };
+
+    const retryModalVersions = () => {
+        loadVersions(modalGameVersion, modalLoader);
+    };
+
+    const selectModalVersion = (sourceValue: string) => {
+        setModalVersionSource(sourceValue);
+        setModalMetadata(null);
+        setModalMetadataError(null);
+        setModalStatus(null);
+        setModalResult(null);
+
+        fetchModalMetadata(sourceValue);
+    };
+
+    const fetchModalMetadata = async (
+        targetSource: string,
+    ) => {
+        const trimmedSource = targetSource.trim();
+
+        if (!trimmedSource) {
+            setModalStatus({
+                kind: 'error',
+                message: 'The selected version has no installable source.',
+            });
+            return;
+        }
+
+        const id = ++metadataRequestId.current;
+
+        setModalMetadataLoading(true);
+        setModalMetadataError(null);
+        setModalStatus(null);
+
+        try {
+            const response =
+                await axios.get<MetadataResponse>(
+                    `${API_BASE}/metadata`,
+                    {
+                        params: {
+                            source: trimmedSource,
+                        },
+                    },
+                );
+
+            if (
+                !alive.current
+                || id !== metadataRequestId.current
+                || detailsItem === null
+            ) {
+                return;
+            }
+
+            setModalMetadata(response.data.data);
+            setModalStatus({
+                kind: 'info',
+                message: `Resolved ${response.data.data.name} ${response.data.data.version}.`,
+            });
+        } catch (requestError: any) {
+            if (
+                !alive.current
+                || id !== metadataRequestId.current
+                || detailsItem === null
+            ) {
+                return;
+            }
+
+            const message =
+                requestError.response?.data?.error ||
+                'Unable to resolve the selected modpack version.';
+
+            setModalMetadataError(message);
+            setModalStatus({
+                kind: 'error',
+                message,
+            });
+        } finally {
+            if (
+                alive.current
+                && id === metadataRequestId.current
+                && detailsItem !== null
+            ) {
+                setModalMetadataLoading(false);
+            }
+        }
+    };
+
+    const retryModalMetadata = () => {
+        if (modalVersionSource) {
+            fetchModalMetadata(modalVersionSource);
+        }
+    };
+
+    const installModalModpack = async () => {
+        if (!server) {
+            setModalStatus({
+                kind: 'error',
+                message: 'Unable to determine the current server.',
+            });
+            return;
+        }
+
+        if (!modalVersionSource) {
+            setModalStatus({
+                kind: 'error',
+                message: 'Select a modpack version before installing.',
+            });
+            return;
+        }
+
+        if (!modalMetadata) {
+            setModalStatus({
+                kind: 'error',
+                message: 'Resolve the modpack version before installing.',
+            });
+            return;
+        }
+
+        if (modalInstallLoading) {
+            return;
+        }
+
+        setModalInstallLoading(true);
+        setModalStatus(null);
+        setModalResult(null);
+
+        try {
+            const response =
+                await axios.post<InstallResponse>(
+                    `${API_BASE}/servers/${server}/install`,
+                    {
+                        source: modalVersionSource,
+                    },
+                );
+
+            if (!alive.current || detailsItem === null) {
+                return;
+            }
+
+            setModalResult(response.data.data);
+            setModalStatus({
+                kind: 'success',
+                message: 'Installation complete.',
+            });
+            loadInstalled();
+        } catch (requestError: any) {
+            if (!alive.current || detailsItem === null) {
+                return;
+            }
+
+            const message =
+                requestError.response?.data?.error ||
+                'Unable to install the modpack.';
+
+            setModalStatus({
+                kind: 'error',
+                message,
+            });
+        } finally {
+            if (alive.current && detailsItem !== null) {
+                setModalInstallLoading(false);
+            }
+        }
+    };
+
+    useEffect(() => {
+        if (detailsItem === null) {
+            return;
+        }
+
+        loadVersions('', '');
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [detailsItem]);
 
     const updateSource = (value: string) => {
         setSource(value);
-        setPreview(null);
         setResult(null);
         setStatus(null);
 
@@ -938,42 +1880,8 @@ export default () => {
         }
     };
 
-    const clearModalSelection = () => {
-        setModalVersionSource(null);
-        setModalMetadata(null);
-        setModalMetadataError(null);
-        setModalPreview(null);
-        setModalResult(null);
-        setModalStatus(null);
-    };
-
-    const openCatalogModal = (item: CatalogItem) => {
-        if (busy) {
-            return;
-        }
-
-        versionsRequestId.current++;
-        metadataRequestId.current++;
-
-        setModalItem(item);
-        setModalGameVersion('');
-        setModalLoader('');
-        setModalVersions(null);
-        setModalVersionsError(null);
-        setModalVersionsLoading(false);
-        setModalMetadata(null);
-        setModalMetadataLoading(false);
-        setModalMetadataError(null);
-        setModalVersionSource(null);
-        setModalPreview(null);
-        setModalResult(null);
-        setModalPreviewLoading(false);
-        setModalInstallLoading(false);
-        setModalStatus(null);
-    };
-
-    const fetchMetadata = async (targetSource: string) => {
-        const trimmedSource = targetSource.trim();
+    const loadManualSource = async () => {
+        const trimmedSource = source.trim();
 
         if (!trimmedSource) {
             setStatus({
@@ -982,7 +1890,6 @@ export default () => {
             });
             setMetadata(null);
             setSelectedSource(null);
-            setPreview(null);
             setResult(null);
             return;
         }
@@ -995,7 +1902,6 @@ export default () => {
         setStatus(null);
         setMetadata(null);
         setSelectedSource(null);
-        setPreview(null);
         setResult(null);
 
         try {
@@ -1039,413 +1945,11 @@ export default () => {
         }
     };
 
-    const loadManualSource = () => {
-        fetchMetadata(source);
-    };
-
-    const loadVersions = async (
-        gameVersion: string,
-        loader: string,
-    ) => {
-        const item = modalItem;
-
-        if (!item) {
-            return;
-        }
-
-        const id = ++versionsRequestId.current;
-
-        setModalVersionsLoading(true);
-        setModalVersions(null);
-        setModalVersionsError(null);
-
-        const params: Record<string, string> = {
-            provider: item.provider,
-            project: item.provider_project_id,
-        };
-
-        if (gameVersion !== '') {
-            params.game_version = gameVersion;
-        }
-
-        if (loader !== '') {
-            params.loader = loader;
-        }
-
-        try {
-            const response =
-                await axios.get<CatalogVersionsResponse>(
-                    `${API_BASE}/catalog/versions`,
-                    { params },
-                );
-
-            if (
-                !alive.current
-                || id !== versionsRequestId.current
-                || modalItem === null
-            ) {
-                return;
-            }
-
-            const versions = response.data.data.versions;
-
-            setModalVersions(versions);
-
-            if (versions.length === 1) {
-                selectModalVersion(versions[0].source);
-            } else if (
-                modalVersionSource
-                && versions.some(
-                    (version) =>
-                        version.source === modalVersionSource,
-                )
-            ) {
-                // keep the current selection
-            } else {
-                clearModalSelection();
-            }
-        } catch (requestError: any) {
-            if (
-                !alive.current
-                || id !== versionsRequestId.current
-                || modalItem === null
-            ) {
-                return;
-            }
-
-            setModalVersionsError(
-                requestError.response?.data?.error ||
-                'Unable to load the modpack versions.',
-            );
-
-            clearModalSelection();
-        } finally {
-            if (
-                alive.current
-                && id === versionsRequestId.current
-                && modalItem !== null
-            ) {
-                setModalVersionsLoading(false);
-            }
-        }
-    };
-
-    const changeModalGameVersion = (value: string) => {
-        setModalGameVersion(value);
-        clearModalSelection();
-        loadVersions(value, modalLoader);
-    };
-
-    const changeModalLoader = (value: string) => {
-        setModalLoader(value);
-        clearModalSelection();
-        loadVersions(modalGameVersion, value);
-    };
-
-    const selectModalVersion = (source: string) => {
-        setModalVersionSource(source);
-        setModalMetadata(null);
-        setModalMetadataError(null);
-        setModalPreview(null);
-        setModalResult(null);
-        setModalStatus(null);
-
-        fetchModalMetadata(source);
-    };
-
-    const retryModalVersions = () => {
-        loadVersions(modalGameVersion, modalLoader);
-    };
-
-    const fetchModalMetadata = async (targetSource: string) => {
-        const trimmedSource = targetSource.trim();
-
-        if (!trimmedSource) {
-            setModalStatus({
-                kind: 'error',
-                message: 'The selected version has no installable source.',
-            });
-            return;
-        }
-
-        const id = ++metadataRequestId.current;
-
-        setModalMetadataLoading(true);
-        setModalMetadataError(null);
-        setModalStatus(null);
-
-        try {
-            const response =
-                await axios.get<MetadataResponse>(
-                    `${API_BASE}/metadata`,
-                    {
-                        params: {
-                            source: trimmedSource,
-                        },
-                    },
-                );
-
-            if (
-                !alive.current
-                || id !== metadataRequestId.current
-                || modalItem === null
-            ) {
-                return;
-            }
-
-            setModalMetadata(response.data.data);
-            setModalStatus({
-                kind: 'info',
-                message: `Resolved ${response.data.data.name} ${response.data.data.version}.`,
-            });
-        } catch (requestError: any) {
-            if (
-                !alive.current
-                || id !== metadataRequestId.current
-                || modalItem === null
-            ) {
-                return;
-            }
-
-            const message =
-                requestError.response?.data?.error ||
-                'Unable to resolve the selected modpack version.';
-
-            setModalMetadataError(message);
-            setModalStatus({
-                kind: 'error',
-                message,
-            });
-        } finally {
-            if (
-                alive.current
-                && id === metadataRequestId.current
-                && modalItem !== null
-            ) {
-                setModalMetadataLoading(false);
-            }
-        }
-    };
-
-    const modalPreviewInstallation = async () => {
-        if (!server) {
-            setModalStatus({
-                kind: 'error',
-                message:
-                    'Unable to determine the current server.',
-            });
-            return;
-        }
-
-        if (!modalVersionSource) {
-            setModalStatus({
-                kind: 'error',
-                message:
-                    'Select a modpack version before previewing installation.',
-            });
-            return;
-        }
-
-        if (!modalMetadata) {
-            setModalStatus({
-                kind: 'error',
-                message:
-                    'Resolve the modpack version before previewing installation.',
-            });
-            return;
-        }
-
-        if (modalPreviewLoading || modalInstallLoading) {
-            return;
-        }
-
-        setModalPreviewLoading(true);
-        setModalStatus(null);
-        setModalPreview(null);
-        setModalResult(null);
-
-        try {
-            const response =
-                await axios.post<PreviewResponse>(
-                    `${API_BASE}/servers/${server}/preview`,
-                    {
-                        source: modalVersionSource,
-                        policy,
-                        layout,
-                    },
-                );
-
-            if (!alive.current || modalItem === null) {
-                return;
-            }
-
-            setModalPreview(response.data.data);
-            setModalStatus({
-                kind: 'info',
-                message:
-                    'Installation preview is ready. Review the operations below.',
-            });
-        } catch (requestError: any) {
-            if (!alive.current || modalItem === null) {
-                return;
-            }
-
-            const message =
-                requestError.response?.data?.error ||
-                'Unable to preview the modpack installation.';
-
-            setModalStatus({
-                kind: 'error',
-                message,
-            });
-        } finally {
-            if (alive.current && modalItem !== null) {
-                setModalPreviewLoading(false);
-            }
-        }
-    };
-
-    const modalInstallModpack = async () => {
-        if (!server) {
-            setModalStatus({
-                kind: 'error',
-                message:
-                    'Unable to determine the current server.',
-            });
-            return;
-        }
-
-        if (!modalVersionSource) {
-            setModalStatus({
-                kind: 'error',
-                message:
-                    'Select a modpack version before installing.',
-            });
-            return;
-        }
-
-        if (!modalPreview) {
-            setModalStatus({
-                kind: 'error',
-                message:
-                    'Preview the installation before installing.',
-            });
-            return;
-        }
-
-        if (modalInstallLoading || modalPreviewLoading) {
-            return;
-        }
-
-        setModalInstallLoading(true);
-        setModalStatus(null);
-        setModalResult(null);
-
-        try {
-            const response =
-                await axios.post<InstallResponse>(
-                    `${API_BASE}/servers/${server}/install`,
-                    {
-                        source: modalVersionSource,
-                        policy,
-                        layout,
-                    },
-                );
-
-            if (!alive.current || modalItem === null) {
-                return;
-            }
-
-            setModalResult(response.data.data);
-            setModalStatus({
-                kind: 'success',
-                message: 'Installation complete.',
-            });
-            refreshInstalled();
-        } catch (requestError: any) {
-            if (!alive.current || modalItem === null) {
-                return;
-            }
-
-            const message =
-                requestError.response?.data?.error ||
-                'Unable to install the modpack.';
-
-            setModalStatus({
-                kind: 'error',
-                message,
-            });
-        } finally {
-            if (alive.current && modalItem !== null) {
-                setModalInstallLoading(false);
-            }
-        }
-    };
-
-    const modalSelectLayout = (value: string) => {
-        setLayout(value);
-        setModalPreview(null);
-        setModalResult(null);
-        setModalStatus(null);
-    };
-
-    const modalSelectPolicy = (value: string) => {
-        setPolicy(value);
-        setModalPreview(null);
-        setModalResult(null);
-        setModalStatus(null);
-    };
-
-    const closeCatalogModal = () => {
-        versionsRequestId.current++;
-        metadataRequestId.current++;
-
-        setModalItem(null);
-        setModalVersions(null);
-        setModalVersionsError(null);
-        setModalVersionsLoading(false);
-        setModalGameVersion('');
-        setModalLoader('');
-        setModalMetadata(null);
-        setModalMetadataLoading(false);
-        setModalMetadataError(null);
-        setModalVersionSource(null);
-        setModalPreview(null);
-        setModalResult(null);
-        setModalPreviewLoading(false);
-        setModalInstallLoading(false);
-        setModalStatus(null);
-    };
-
-    useEffect(() => {
-        if (modalItem === null) {
-            return;
-        }
-
-        closeButtonRef.current?.focus();
-
-        const onKeyDown = (event: KeyboardEvent) => {
-            if (event.key === 'Escape') {
-                closeCatalogModal();
-            }
-        };
-
-        window.addEventListener('keydown', onKeyDown);
-
-        loadVersions('', '');
-
-        return () => {
-            window.removeEventListener('keydown', onKeyDown);
-        };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [modalItem]);
-
-    const previewInstallation = async () => {
+    const installManualSource = async () => {
         if (!server) {
             setStatus({
                 kind: 'error',
-                message:
-                    'Unable to determine the current server.',
+                message: 'Unable to determine the current server.',
             });
             return;
         }
@@ -1453,86 +1957,7 @@ export default () => {
         if (!selectedSource) {
             setStatus({
                 kind: 'error',
-                message:
-                    'Load a modpack before previewing installation.',
-            });
-            return;
-        }
-
-        if (previewLoading || installLoading) {
-            return;
-        }
-
-        setPreviewLoading(true);
-        setStatus(null);
-        setPreview(null);
-        setResult(null);
-
-        try {
-            const response =
-                await axios.post<PreviewResponse>(
-                    `${API_BASE}/servers/${server}/preview`,
-                    {
-                        source: selectedSource,
-                        policy,
-                        layout,
-                    },
-                );
-
-            if (!alive.current) {
-                return;
-            }
-
-            setPreview(response.data.data);
-            setStatus({
-                kind: 'info',
-                message:
-                    'Installation preview is ready. Review the operations below.',
-            });
-        } catch (requestError: any) {
-            if (!alive.current) {
-                return;
-            }
-
-            const message =
-                requestError.response?.data?.error ||
-                'Unable to preview the modpack installation.';
-
-            setStatus({
-                kind: 'error',
-                message,
-            });
-        } finally {
-            if (alive.current) {
-                setPreviewLoading(false);
-            }
-        }
-    };
-
-    const installModpack = async () => {
-        if (!server) {
-            setStatus({
-                kind: 'error',
-                message:
-                    'Unable to determine the current server.',
-            });
-            return;
-        }
-
-        if (!selectedSource) {
-            setStatus({
-                kind: 'error',
-                message:
-                    'Load a modpack before installing.',
-            });
-            return;
-        }
-
-        if (!preview) {
-            setStatus({
-                kind: 'error',
-                message:
-                    'Preview the installation before installing.',
+                message: 'Load a modpack before installing.',
             });
             return;
         }
@@ -1551,8 +1976,6 @@ export default () => {
                     `${API_BASE}/servers/${server}/install`,
                     {
                         source: selectedSource,
-                        policy,
-                        layout,
                     },
                 );
 
@@ -1561,12 +1984,11 @@ export default () => {
             }
 
             setResult(response.data.data);
-            setPreview(null);
             setStatus({
                 kind: 'success',
                 message: 'Installation complete.',
             });
-            refreshInstalled();
+            loadInstalled();
         } catch (requestError: any) {
             if (!alive.current) {
                 return;
@@ -1587,55 +2009,649 @@ export default () => {
         }
     };
 
-    const selectLayout = (value: string) => {
-        setLayout(value);
-        setPreview(null);
-        setResult(null);
-        setStatus(null);
-    };
+    const activeChips: Array<{
+        key: string;
+        label: string;
+        onRemove: () => void;
+    }> = [];
 
-    const selectPolicy = (value: string) => {
-        setPolicy(value);
-        setPreview(null);
-        setResult(null);
-        setStatus(null);
-    };
+    filters.categories.forEach((value) => {
+        if (value.trim() === '') {
+            return;
+        }
 
-    const providerList = providers ?? [];
+        activeChips.push({
+            key: `category:${value}`,
+            label: `Category: ${value}`,
+            onRemove: () => toggleListValue('categories', value),
+        });
+    });
 
-    const providerOptions = providerList.map((provider) => ({
-        name: provider.name,
-        label: provider.available
-            ? provider.label
-            : `${provider.label} (not available)`,
-        available: provider.available,
-        unavailable_reason: provider.unavailable_reason,
-    }));
+    filters.gameVersions.forEach((value) => {
+        if (value.trim() === '') {
+            return;
+        }
 
-    const providerLabels = new Map(
-        providerList.map((p) => [p.name, p.label]),
+        activeChips.push({
+            key: `game_version:${value}`,
+            label: `MC ${value}`,
+            onRemove: () => toggleListValue('gameVersions', value),
+        });
+    });
+
+    filters.loaders.forEach((value) => {
+        if (value.trim() === '') {
+            return;
+        }
+
+        activeChips.push({
+            key: `loader:${value}`,
+            label: `Loader: ${value}`,
+            onRemove: () => toggleListValue('loaders', value),
+        });
+    });
+
+    if (filters.environment !== '') {
+        const environmentLabel =
+            ENVIRONMENT_OPTIONS.find(
+                (option) => option.value === filters.environment,
+            )?.label ?? filters.environment;
+
+        activeChips.push({
+            key: `environment:${filters.environment}`,
+            label: `Environment: ${environmentLabel}`,
+            onRemove: () => toggleEnvironment(filters.environment),
+        });
+    }
+
+    const versionOptions = uniqueSorted(
+        detailsItem?.game_versions ?? [],
+        facets.game_versions,
     );
 
-    const catalogBusy = searching || providerList.length === 0;
+    const modalLoaderOptions = uniqueSorted(
+        detailsItem?.loaders ?? [],
+        facets.loaders,
+    );
 
     return (
         <div
             className="modpackinstaller-root"
-            aria-busy={busy || searching}
+            aria-busy={processing || searching}
         >
-            <div className="modpackinstaller-header">
-                <h2>Modpack Installer</h2>
+            <header className="modpackinstaller-page-header">
+                <div>
+                    <h2>Modpack Installer</h2>
 
-                <p>
-                    Browse, search, and install a modpack directly
-                    onto this server.
-                </p>
-            </div>
+                    <p>
+                        Browse, search, and install a modpack directly
+                        onto this server.
+                    </p>
+                </div>
+
+                <button
+                    type="button"
+                    className="modpackinstaller-installed-button"
+                    onClick={openInstalledModal}
+                >
+                    Installed modpacks
+                    {installed !== null && installed.length > 0
+                        ? ` (${installed.length})`
+                        : ''}
+                </button>
+            </header>
 
             <div className="modpackinstaller-card">
-                <div className="modpackinstaller-card-heading">
-                    <h3>Installed modpacks</h3>
+                <div className="modpackinstaller-browser-toolbar">
+                    <div className="modpackinstaller-search">
+                        <label htmlFor="modpackinstaller-search">
+                            Search
+                        </label>
 
+                        <div className="modpackinstaller-search-row">
+                            <input
+                                id="modpackinstaller-search"
+                                type="search"
+                                value={filters.query}
+                                onChange={(event) =>
+                                    onQueryChange(event.target.value)
+                                }
+                                onKeyDown={(event) => {
+                                    if (event.key === 'Enter') {
+                                        submitQuery();
+                                    }
+                                }}
+                                placeholder="Search modpacks"
+                                disabled={catalogBusy}
+                                aria-label="Search modpacks"
+                            />
+
+                            {filters.query.trim() !== '' && (
+                                <button
+                                    type="button"
+                                    className="modpackinstaller-search-clear"
+                                    onClick={clearQuery}
+                                    aria-label="Clear search"
+                                    disabled={catalogBusy}
+                                >
+                                    &times;
+                                </button>
+                            )}
+
+                            <button
+                                type="button"
+                                onClick={submitQuery}
+                                disabled={catalogBusy}
+                            >
+                                {searching ? 'Searching ...' : 'Search'}
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="modpackinstaller-toolbar-row">
+                        <Dropdown
+                            id="modpackinstaller-provider"
+                            label="Provider"
+                            value={filters.provider}
+                            onChange={changeProvider}
+                            options={providerOptions}
+                            disabled={catalogBusy}
+                        />
+
+                        <Dropdown
+                            id="modpackinstaller-sort"
+                            label="Sort"
+                            value={filters.sort}
+                            onChange={changeSort}
+                            options={SORT_OPTIONS}
+                            disabled={catalogBusy}
+                        />
+
+                        <button
+                            type="button"
+                            className="modpackinstaller-filters-toggle"
+                            aria-expanded={filtersOpen}
+                            onClick={() =>
+                                setFiltersOpen((current) => !current)
+                            }
+                            disabled={catalogBusy}
+                        >
+                            Filters
+                            {activeFilterCount > 0
+                                ? ` (${activeFilterCount})`
+                                : ''}
+                        </button>
+
+                        <div
+                            className="modpackinstaller-view-toggle"
+                            role="group"
+                            aria-label="Result view"
+                        >
+                            <button
+                                type="button"
+                                aria-pressed={view === 'grid'}
+                                className={
+                                    view === 'grid'
+                                        ? 'modpackinstaller-view-toggle--active'
+                                        : undefined
+                                }
+                                onClick={() => changeView('grid')}
+                            >
+                                Grid
+                            </button>
+
+                            <button
+                                type="button"
+                                aria-pressed={view === 'list'}
+                                className={
+                                    view === 'list'
+                                        ? 'modpackinstaller-view-toggle--active'
+                                        : undefined
+                                }
+                                onClick={() => changeView('list')}
+                            >
+                                List
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                {filtersOpen && (
+                    <div className="modpackinstaller-filter-panel">
+                        <div className="modpackinstaller-filter-groups">
+                            {capabilities?.categories !== false
+                                && facets.categories.length > 0 && (
+                                    <fieldset className="modpackinstaller-filter-group">
+                                        <legend>
+                                            Categories
+                                        </legend>
+
+                                        <div className="modpackinstaller-filter-options">
+                                            {facets.categories.map(
+                                                (value) => (
+                                                    <label
+                                                        className="modpackinstaller-filter-option"
+                                                        key={value}
+                                                    >
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={filters.categories.includes(
+                                                                value,
+                                                            )}
+                                                            onChange={() =>
+                                                                toggleListValue(
+                                                                    'categories',
+                                                                    value,
+                                                                )
+                                                            }
+                                                        />
+
+                                                        <span>
+                                                            {value}
+                                                        </span>
+                                                    </label>
+                                                ),
+                                            )}
+                                        </div>
+                                    </fieldset>
+                                )}
+
+                            {capabilities?.game_versions !== false
+                                && facets.game_versions.length > 0 && (
+                                    <fieldset className="modpackinstaller-filter-group">
+                                        <legend>
+                                            Game versions
+                                        </legend>
+
+                                        <div className="modpackinstaller-filter-options">
+                                            {facets.game_versions.map(
+                                                (value) => (
+                                                    <label
+                                                        className="modpackinstaller-filter-option"
+                                                        key={value}
+                                                    >
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={filters.gameVersions.includes(
+                                                                value,
+                                                            )}
+                                                            onChange={() =>
+                                                                toggleListValue(
+                                                                    'gameVersions',
+                                                                    value,
+                                                                )
+                                                            }
+                                                        />
+
+                                                        <span>
+                                                            {value}
+                                                        </span>
+                                                    </label>
+                                                ),
+                                            )}
+                                        </div>
+                                    </fieldset>
+                                )}
+
+                            {capabilities?.loaders !== false
+                                && facets.loaders.length > 0 && (
+                                    <fieldset className="modpackinstaller-filter-group">
+                                        <legend>
+                                            Loaders
+                                        </legend>
+
+                                        <div className="modpackinstaller-filter-options">
+                                            {facets.loaders.map(
+                                                (value) => (
+                                                    <label
+                                                        className="modpackinstaller-filter-option"
+                                                        key={value}
+                                                    >
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={filters.loaders.includes(
+                                                                value,
+                                                            )}
+                                                            onChange={() =>
+                                                                toggleListValue(
+                                                                    'loaders',
+                                                                    value,
+                                                                )
+                                                            }
+                                                        />
+
+                                                        <span>
+                                                            {value}
+                                                        </span>
+                                                    </label>
+                                                ),
+                                            )}
+                                        </div>
+                                    </fieldset>
+                                )}
+
+                            {capabilities?.environment !== false
+                                && facets.environments.length > 0 && (
+                                    <fieldset className="modpackinstaller-filter-group">
+                                        <legend>
+                                            Environment
+                                        </legend>
+
+                                        <div className="modpackinstaller-filter-options">
+                                            {ENVIRONMENT_OPTIONS.map(
+                                                (option) => (
+                                                    <label
+                                                        className="modpackinstaller-filter-option"
+                                                        key={option.value}
+                                                    >
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={
+                                                                filters.environment
+                                                                === option.value
+                                                            }
+                                                            onChange={() =>
+                                                                toggleEnvironment(
+                                                                    option.value,
+                                                                )
+                                                            }
+                                                        />
+
+                                                        <span>
+                                                            {option.label}
+                                                        </span>
+                                                    </label>
+                                                ),
+                                            )}
+                                        </div>
+                                    </fieldset>
+                                )}
+                        </div>
+
+                        <div className="modpackinstaller-filter-actions">
+                            <button
+                                type="button"
+                                onClick={() => setFiltersOpen(false)}
+                            >
+                                Done
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={resetFilters}
+                                disabled={
+                                    activeFilterCount === 0
+                                    || searching
+                                }
+                            >
+                                Clear filters
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {activeFilterCount > 0 && (
+                    <div className="modpackinstaller-active-filters">
+                        {activeChips.map((chip) => (
+                            <span
+                                className="modpackinstaller-chip"
+                                key={chip.key}
+                            >
+                                {chip.label}
+
+                                <button
+                                    type="button"
+                                    aria-label={`Remove ${chip.label}`}
+                                    onClick={chip.onRemove}
+                                    disabled={searching}
+                                >
+                                    &times;
+                                </button>
+                            </span>
+                        ))}
+                    </div>
+                )}
+
+                {providersError && (
+                    <div
+                        className="modpackinstaller-status modpackinstaller-status--error"
+                        role="alert"
+                    >
+                        {providersError}
+                    </div>
+                )}
+
+                {catalogError && (
+                    <div className="modpackinstaller-catalog-state modpackinstaller-catalog-state--error">
+                        <p role="alert">{catalogError}</p>
+
+                        <button
+                            type="button"
+                            onClick={() =>
+                                runSearch({
+                                    ...filtersRef.current,
+                                    page: 1,
+                                })
+                            }
+                        >
+                            Retry
+                        </button>
+                    </div>
+                )}
+
+                {!catalogError && searching && items === null && (
+                    <div
+                        className="modpackinstaller-catalog-state"
+                        role="status"
+                    >
+                        Searching for modpacks ...
+                    </div>
+                )}
+
+                {!catalogError
+                    && items !== null
+                    && items.length === 0
+                    && !searching && (
+                        <div className="modpackinstaller-catalog-state modpackinstaller-catalog-state--empty">
+                            <p>
+                                No modpacks matched your search.
+                                Try broadening the filters.
+                            </p>
+                        </div>
+                    )}
+
+                {!catalogError
+                    && items !== null
+                    && items.length > 0 && (
+                        <>
+                            <PaginationBar
+                                pagination={pagination}
+                                searching={searching}
+                                onPage={goToPage}
+                                variant="top"
+                            />
+
+                            <div
+                                className={`modpackinstaller-catalog-${view}`}
+                                aria-busy={searching}
+                            >
+                                {items.map((item) => (
+                                    <CatalogCard
+                                        key={`${item.provider}:${item.provider_project_id}`}
+                                        item={item}
+                                        view={view}
+                                        onOpen={openDetailsModal}
+                                        disabled={processing || searching}
+                                    />
+                                ))}
+                            </div>
+
+                            <PaginationBar
+                                pagination={pagination}
+                                searching={searching}
+                                onPage={goToPage}
+                                variant="bottom"
+                            />
+                        </>
+                    )}
+
+                <details className="modpackinstaller-catalog-source">
+                    <summary>
+                        Or enter a modpack source manually
+                    </summary>
+
+                    <div className="modpackinstaller-form modpackinstaller-form--inline">
+                        <label htmlFor="modpackinstaller-source">
+                            Modpack source
+                        </label>
+
+                        <input
+                            id="modpackinstaller-source"
+                            type="text"
+                            value={source}
+                            onChange={(event) =>
+                                updateSource(event.target.value)
+                            }
+                            placeholder="mock://example-pack"
+                            disabled={loading}
+                        />
+
+                        <button
+                            type="button"
+                            onClick={loadManualSource}
+                            disabled={loading}
+                        >
+                            {loading ? 'Loading ...' : 'Load'}
+                        </button>
+
+                        <p className="modpackinstaller-source-hint">
+                            Sources: modrinth://project-slug ·
+                            curseforge://project-id · mock://example-pack.
+                            Append @version-id to pin an exact modpack
+                            version.
+                        </p>
+                    </div>
+                </details>
+            </div>
+
+            {status && (
+                <div
+                    className={`modpackinstaller-status modpackinstaller-status--${status.kind}`}
+                    role={
+                        status.kind === 'error' ? 'alert' : 'status'
+                    }
+                >
+                    {status.message}
+                </div>
+            )}
+
+            {metadata && (
+                <div className="modpackinstaller-card">
+                    <h3>Selected modpack</h3>
+
+                    <div className="modpackinstaller-metadata">
+                        <div className="modpackinstaller-metadata-header">
+                            {metadata.icon_url && (
+                                <img
+                                    src={metadata.icon_url}
+                                    alt=""
+                                    className="modpackinstaller-icon"
+                                />
+                            )}
+
+                            <div>
+                                <h4>{metadata.name}</h4>
+
+                                {metadata.description && (
+                                    <p>{metadata.description}</p>
+                                )}
+
+                                <div className="modpackinstaller-selected">
+                                    Selected modpack
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="modpackinstaller-details">
+                            <div>
+                                <span>Version</span>
+                                <strong>{metadata.version}</strong>
+                            </div>
+
+                            <div>
+                                <span>Minecraft</span>
+                                <strong>
+                                    {metadata.minecraft_version}
+                                </strong>
+                            </div>
+
+                            <div>
+                                <span>Loader</span>
+                                <strong>{metadata.loader}</strong>
+                            </div>
+                        </div>
+
+                        <div className="modpackinstaller-source">
+                            <span>Source</span>
+                            <code>{metadata.source}</code>
+                        </div>
+
+                        {metadata.manual_download ? (
+                            <ManualDownloadNotice
+                                manual={metadata.manual_download}
+                            />
+                        ) : (
+                            <div className="modpackinstaller-modal-actions modpackinstaller-install-actions">
+                                <button
+                                    type="button"
+                                    onClick={installManualSource}
+                                    disabled={installLoading}
+                                >
+                                    {installLoading
+                                        ? 'Installing ...'
+                                        : 'Install this modpack'}
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {result && (
+                <div className="modpackinstaller-card">
+                    <h3>Installation complete</h3>
+
+                    <div className="modpackinstaller-result-grid">
+                        <div>
+                            <span>Total files</span>
+                            <strong>{result.total_files}</strong>
+                        </div>
+
+                        <div>
+                            <span>Created</span>
+                            <strong>{result.created}</strong>
+                        </div>
+
+                        <div>
+                            <span>Overwritten</span>
+                            <strong>{result.overwritten}</strong>
+                        </div>
+
+                        <div>
+                            <span>Backups</span>
+                            <strong>{result.backed_up}</strong>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            <Modal
+                open={installedOpen}
+                onClose={() => setInstalledOpen(false)}
+                labelledBy="modpackinstaller-installed-title"
+                title="Installed modpacks"
+                busy={installedLoading}
+                headerActions={
                     <button
                         type="button"
                         onClick={refreshInstalled}
@@ -1645,7 +2661,20 @@ export default () => {
                             ? 'Refreshing ...'
                             : 'Refresh'}
                     </button>
-                </div>
+                }
+            >
+                {installedStatus && (
+                    <div
+                        className={`modpackinstaller-status modpackinstaller-status--${installedStatus.kind}`}
+                        role={
+                            installedStatus.kind === 'error'
+                                ? 'alert'
+                                : 'status'
+                        }
+                    >
+                        {installedStatus.message}
+                    </div>
+                )}
 
                 {installed === null && installedLoading && (
                     <div
@@ -1675,14 +2704,14 @@ export default () => {
                     && !installedLoading && (
                         <div className="modpackinstaller-catalog-state modpackinstaller-catalog-state--empty">
                             <p>
-                                No modpacks are installed on this
-                                server yet.
+                                No modpacks are installed on this server
+                                yet.
                             </p>
                         </div>
                     )}
 
-                {!installedError
-                    && installed !== null
+                {installed !== null
+                    && !installedError
                     && installed.length > 0 && (
                         <div className="modpackinstaller-installed-list">
                             {installed.map((record) => (
@@ -1723,13 +2752,6 @@ export default () => {
                                                 </strong>
                                             </div>
                                         )}
-
-                                        <div>
-                                            <span>Layout</span>
-                                            <strong>
-                                                {record.layout}
-                                            </strong>
-                                        </div>
                                     </div>
 
                                     <div className="modpackinstaller-installed-source">
@@ -1819,1024 +2841,316 @@ export default () => {
                             ))}
                         </div>
                     )}
-            </div>
+            </Modal>
 
-            {status && (
-                <div
-                    className={`modpackinstaller-status modpackinstaller-status--${status.kind}`}
-                    role={
-                        status.kind === 'error'
-                            ? 'alert'
-                            : 'status'
-                    }
-                >
-                    {status.message}
-                </div>
-            )}
+            <Modal
+                open={detailsItem !== null}
+                onClose={closeDetailsModal}
+                labelledBy="modpackinstaller-details-title"
+                title={detailsItem?.name ?? 'Modpack details'}
+                busy={modalBusy}
+            >
+                {modalStatus && (
+                    <div
+                        className={`modpackinstaller-status modpackinstaller-status--${modalStatus.kind}`}
+                        role={
+                            modalStatus.kind === 'error'
+                                ? 'alert'
+                                : 'status'
+                        }
+                    >
+                        {modalStatus.message}
+                    </div>
+                )}
 
-            <div className="modpackinstaller-card">
-                <h3>Browse modpacks</h3>
-
-                <p>
-                    Search and filter modpacks from the available
-                    providers, then use one to install.
-                </p>
-
-                <div className="modpackinstaller-catalog-toolbar">
-                    <div className="modpackinstaller-catalog-search">
-                        <label htmlFor="modpackinstaller-search">
-                            Search
-                        </label>
-
-                        <div className="modpackinstaller-catalog-search-row">
-                            <input
-                                id="modpackinstaller-search"
-                                type="search"
-                                value={filters.query}
-                                onChange={(event) =>
-                                    onQueryChange(
-                                        event.target.value,
-                                    )
-                                }
-                                onKeyDown={(event) => {
-                                    if (event.key === 'Enter') {
-                                        submitQuery();
-                                    }
-                                }}
-                                placeholder="Search modpacks"
-                                disabled={catalogBusy}
+                {detailsItem && (
+                    <div className="modpackinstaller-modal-body">
+                        <div className="modpackinstaller-modal-item">
+                            <ModpackIcon
+                                item={detailsItem}
+                                compact
                             />
 
-                            <button
-                                type="button"
-                                onClick={submitQuery}
-                                disabled={catalogBusy}
-                            >
-                                Search
-                            </button>
-                        </div>
-                    </div>
+                            <div className="modpackinstaller-modal-item-meta">
+                                <p className="modpackinstaller-catalog-card-summary">
+                                    {detailsItem.summary ||
+                                        'No description available.'}
+                                </p>
 
-                    <div className="modpackinstaller-catalog-filters">
-                        <div>
-                            <label htmlFor="modpackinstaller-provider">
-                                Provider
-                            </label>
-
-                            <select
-                                id="modpackinstaller-provider"
-                                value={filters.provider}
-                                onChange={(event) =>
-                                    applyFilter({
-                                        provider: event.target.value,
-                                    })
-                                }
-                                disabled={catalogBusy}
-                            >
-                                {providerOptions.map((provider) => (
-                                    <option
-                                        key={provider.name}
-                                        value={provider.name}
-                                        disabled={!provider.available}
-                                    title={provider.unavailable_reason ?? ''}
-                                    >
-                                    {provider.label}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-
-                        <div>
-                            <label htmlFor="modpackinstaller-game-version">
-                                Game version
-                            </label>
-
-                            <select
-                                id="modpackinstaller-game-version"
-                                value={filters.gameVersion}
-                                onChange={(event) =>
-                                    applyFilter({
-                                        gameVersion:
-                                            event.target.value,
-                                    })
-                                }
-                                disabled={catalogBusy}
-                            >
-                                <option value="">Any</option>
-                                {GAME_VERSIONS.map((mcVersion) => (
-                                    <option
-                                        key={mcVersion}
-                                        value={mcVersion}
-                                    >
-                                        {mcVersion}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-
-                        <div>
-                            <label htmlFor="modpackinstaller-loader">
-                                Loader
-                            </label>
-
-                            <select
-                                id="modpackinstaller-loader"
-                                value={filters.loader}
-                                onChange={(event) =>
-                                    applyFilter({
-                                        loader: event.target.value,
-                                    })
-                                }
-                                disabled={catalogBusy}
-                            >
-                                <option value="">Any</option>
-                                {LOADERS.map((loader) => (
-                                    <option
-                                        key={loader}
-                                        value={loader}
-                                    >
-                                        {loader}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-
-                        <div>
-                            <label htmlFor="modpackinstaller-category">
-                                Category
-                            </label>
-
-                            <select
-                                id="modpackinstaller-category"
-                                value={filters.category}
-                                onChange={(event) =>
-                                    applyFilter({
-                                        category: event.target.value,
-                                    })
-                                }
-                                disabled={catalogBusy}
-                            >
-                                <option value="">Any</option>
-                                {CATEGORIES.map((category) => (
-                                    <option
-                                        key={category}
-                                        value={category}
-                                    >
-                                        {category}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-
-                        <div>
-                            <label htmlFor="modpackinstaller-sort">
-                                Sort
-                            </label>
-
-                            <select
-                                id="modpackinstaller-sort"
-                                value={filters.sort}
-                                onChange={(event) =>
-                                    applyFilter({
-                                        sort: event.target.value,
-                                    })
-                                }
-                                disabled={catalogBusy}
-                            >
-                                {SORT_OPTIONS.map((option) => (
-                                    <option
-                                        key={option.value}
-                                        value={option.value}
-                                    >
-                                        {option.label}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-                    </div>
-                </div>
-
-                {providersError && (
-                    <div
-                        className="modpackinstaller-status modpackinstaller-status--error"
-                        role="alert"
-                    >
-                        {providersError}
-                    </div>
-                )}
-
-                {catalogError && (
-                    <div className="modpackinstaller-catalog-state modpackinstaller-catalog-state--error">
-                        <p role="alert">{catalogError}</p>
-
-                        <button
-                            type="button"
-                            onClick={() =>
-                                runSearch({
-                                    ...filtersRef.current,
-                                    page: 1,
-                                })
-                            }
-                        >
-                            Retry
-                        </button>
-                    </div>
-                )}
-
-                {!catalogError && searching && items === null && (
-                    <div
-                        className="modpackinstaller-catalog-state"
-                        role="status"
-                    >
-                        Searching for modpacks ...
-                    </div>
-                )}
-
-                {!catalogError
-                    && items !== null
-                    && items.length === 0
-                    && !searching && (
-                        <div className="modpackinstaller-catalog-state modpackinstaller-catalog-state--empty">
-                            <p>
-                                No modpacks matched your search.
-                            </p>
-                        </div>
-                    )}
-
-                {!catalogError && items !== null && items.length > 0 && (
-                    <>
-                        <div
-                            className="modpackinstaller-catalog-grid"
-                            aria-busy={searching}
-                        >
-                            {items.map((item) => (
-                                <article
-                                    className="modpackinstaller-catalog-card"
-                                    key={`${item.provider}:${item.provider_project_id}`}
-                                >
-                                    <ModpackIcon item={item} />
-
-                                    <div className="modpackinstaller-catalog-card-content">
-                                        <div className="modpackinstaller-catalog-card-header">
-                                            <span className="modpackinstaller-catalog-card-badge">
-                                                {item.provider}
-                                            </span>
-
-                                            <h4>{item.name}</h4>
-                                        </div>
-
-                                        <p className="modpackinstaller-catalog-card-summary">
-                                            {item.summary ||
-                                                'No description available.'}
-                                        </p>
-
-                                        <dl className="modpackinstaller-catalog-card-meta">
-                                            {item.loaders.length > 0 && (
-                                                <div>
-                                                    <dt>Loader</dt>
-                                                    <dd>
-                                                        {item.loaders.join(' · ')}
-                                                    </dd>
-                                                </div>
-                                            )}
-
-                                            {item.game_versions.length > 0 && (
-                                                <div>
-                                                    <dt>Minecraft</dt>
-                                                    <dd>
-                                                        {item.game_versions.length > 2
-                                                            ? `${item.game_versions
-                                                                .slice(0, 2)
-                                                                .join(', ')} +`
-                                                            : item.game_versions.join(', ')}
-                                                    </dd>
-                                                </div>
-                                            )}
-
-                                            {item.downloads !== null && (
-                                                <div>
-                                                    <dt>Downloads</dt>
-                                                    <dd>
-                                                        {formatCount(item.downloads)}
-                                                    </dd>
-                                                </div>
-                                            )}
-
-                                            {item.follows !== null && (
-                                                <div>
-                                                    <dt>Follows</dt>
-                                                    <dd>
-                                                        {formatCount(item.follows)}
-                                                    </dd>
-                                                </div>
-                                            )}
-                                        </dl>
-
-                                        <div className="modpackinstaller-catalog-card-actions">
-                                            <button
-                                                type="button"
-                                                onClick={() =>
-                                                    openCatalogModal(item)
-                                                }
-                                                disabled={busy || searching}
-                                            >
-                                                Select
-                                            </button>
-
-                                            {item.project_url && (
-                                                <a
-                                                    href={item.project_url}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
+                                {detailsItem.categories.length > 0 && (
+                                    <div className="modpackinstaller-modal-categories">
+                                        {detailsItem.categories.map(
+                                            (category) => (
+                                                <span
+                                                    className="modpackinstaller-chip"
+                                                    key={category}
                                                 >
-                                                    Details
-                                                </a>
-                                            )}
-                                        </div>
+                                                    {category}
+                                                </span>
+                                            ),
+                                        )}
                                     </div>
-                                </article>
-                            ))}
-                        </div>
-
-                        <nav
-                            className="modpackinstaller-catalog-pagination"
-                            aria-label="Catalog pages"
-                            aria-busy={searching}
-                        >
-                            <button
-                                type="button"
-                                onClick={() =>
-                                    goToPage(
-                                        (pagination?.page ?? 1) - 1,
-                                    )
-                                }
-                                disabled={
-                                    !pagination?.has_previous ||
-                                    searching
-                                }
-                            >
-                                Previous
-                            </button>
-
-                            <span className="modpackinstaller-catalog-pagination-label">
-                                Page {pagination?.page ?? 1} of{' '}
-                                {pagination?.total_pages ?? 0}
-                            </span>
-
-                            <button
-                                type="button"
-                                onClick={() =>
-                                    goToPage(
-                                        (pagination?.page ?? 1) + 1,
-                                    )
-                                }
-                                disabled={
-                                    !pagination?.has_next ||
-                                    searching
-                                }
-                            >
-                                Next
-                            </button>
-                        </nav>
-                    </>
-                )}
-
-                <details className="modpackinstaller-catalog-source">
-                    <summary>
-                        Or enter a modpack source manually
-                    </summary>
-
-                    <div className="modpackinstaller-form modpackinstaller-form--inline">
-                        <label htmlFor="modpackinstaller-source">
-                            Modpack source
-                        </label>
-
-                        <input
-                            id="modpackinstaller-source"
-                            type="text"
-                            value={source}
-                            onChange={(event) =>
-                                updateSource(event.target.value)
-                            }
-                            placeholder="mock://example-pack"
-                            disabled={loading}
-                        />
-
-                        <button
-                            type="button"
-                            onClick={loadManualSource}
-                            disabled={busy}
-                        >
-                            Load
-                        </button>
-
-                        <p className="modpackinstaller-source-hint">
-                            Sources: modrinth://project-slug ·
-                            curseforge://project-id · mock://example-pack.
-                            Append @version-id to pin an exact modpack
-                            version.
-                        </p>
-                    </div>
-                </details>
-            </div>
-
-            {metadata && (
-                <div className="modpackinstaller-card">
-                    <h3>Selected modpack</h3>
-
-                    <div className="modpackinstaller-metadata">
-                        <div className="modpackinstaller-metadata-header">
-                            {metadata.icon_url && (
-                                <img
-                                    src={metadata.icon_url}
-                                    alt=""
-                                    className="modpackinstaller-icon"
-                                />
-                            )}
-
-                            <div>
-                                <h4>{metadata.name}</h4>
-
-                                {metadata.description && (
-                                    <p>
-                                        {metadata.description}
-                                    </p>
                                 )}
 
-                                <div className="modpackinstaller-selected">
-                                    Selected modpack
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="modpackinstaller-details">
-                            <div>
-                                <span>Version</span>
-                                <strong>
-                                    {metadata.version}
-                                </strong>
-                            </div>
-
-                            <div>
-                                <span>Minecraft</span>
-                                <strong>
-                                    {metadata.minecraft_version}
-                                </strong>
-                            </div>
-
-                            <div>
-                                <span>Loader</span>
-                                <strong>
-                                    {metadata.loader}
-                                </strong>
-                            </div>
-                        </div>
-
-                        <div className="modpackinstaller-source">
-                            <span>Source</span>
-                            <code>
-                                {metadata.source}
-                            </code>
-                        </div>
-                    </div>
-
-                    {metadata.manual_download && (
-                        <ManualDownloadNotice
-                            manual={metadata.manual_download}
-                        />
-                    )}
-                </div>
-            )}
-
-            {metadata && (
-                <div className="modpackinstaller-card">
-                    <h3>Installation options</h3>
-
-                    <div className="modpackinstaller-options">
-                        <fieldset>
-                            <legend>Package layout</legend>
-
-                            <label>
-                                <input
-                                    type="radio"
-                                    name="modpackinstaller-layout"
-                                    value="direct"
-                                    checked={
-                                        layout === 'direct'
-                                    }
-                                    onChange={() =>
-                                        selectLayout('direct')
-                                    }
-                                />
-
-                                Direct
-                            </label>
-
-                            <label>
-                                <input
-                                    type="radio"
-                                    name="modpackinstaller-layout"
-                                    value="overrides"
-                                    checked={
-                                        layout === 'overrides'
-                                    }
-                                    onChange={() =>
-                                        selectLayout(
-                                            'overrides',
-                                        )
-                                    }
-                                />
-
-                                Overrides
-                            </label>
-                        </fieldset>
-
-                        <fieldset>
-                            <legend>Existing files</legend>
-
-                            <label>
-                                <input
-                                    type="radio"
-                                    name="modpackinstaller-policy"
-                                    value="overwrite"
-                                    checked={
-                                        policy === 'overwrite'
-                                    }
-                                    onChange={() =>
-                                        selectPolicy('overwrite')
-                                    }
-                                />
-
-                                Overwrite
-                            </label>
-
-                            <label>
-                                <input
-                                    type="radio"
-                                    name="modpackinstaller-policy"
-                                    value="skip_existing"
-                                    checked={
-                                        policy === 'skip_existing'
-                                    }
-                                    onChange={() =>
-                                        selectPolicy(
-                                            'skip_existing',
-                                        )
-                                    }
-                                />
-
-                                Skip existing
-                            </label>
-
-                            <label>
-                                <input
-                                    type="radio"
-                                    name="modpackinstaller-policy"
-                                    value="create_only"
-                                    checked={
-                                        policy === 'create_only'
-                                    }
-                                    onChange={() =>
-                                        selectPolicy(
-                                            'create_only',
-                                        )
-                                    }
-                                />
-
-                                Create only
-                            </label>
-                        </fieldset>
-                    </div>
-
-                    <button
-                        type="button"
-                        onClick={previewInstallation}
-                        disabled={
-                            previewLoading ||
-                            installLoading
-                        }
-                    >
-                        {previewLoading
-                            ? 'Preparing Preview ...'
-                            : 'Preview Installation'}
-                    </button>
-                </div>
-            )}
-
-            {preview && (
-                <div className="modpackinstaller-card">
-                    <h3>Installation Preview</h3>
-
-                    <div className="modpackinstaller-details">
-                        <div>
-                            <span>Total files</span>
-                            <strong>
-                                {preview.total_files}
-                            </strong>
-                        </div>
-
-                        <div>
-                            <span>New files</span>
-                            <strong>
-                                {preview.create_count}
-                            </strong>
-                        </div>
-
-                        <div>
-                            <span>Overwrite</span>
-                            <strong>
-                                {preview.overwrite_count}
-                            </strong>
-                        </div>
-                    </div>
-
-                    <div className="modpackinstaller-operation-list">
-                        {preview.operations.map(
-                            (operation) => (
-                                <div
-                                    key={`${operation.action}:${operation.path}`}
-                                >
-                                    <code>
-                                        {operation.path}
-                                    </code>
-
-                                    <span>
-                                        {operation.action}
-                                    </span>
-                                </div>
-                            ),
-                        )}
-                    </div>
-
-                    <button
-                        type="button"
-                        onClick={installModpack}
-                        disabled={
-                            installLoading ||
-                            previewLoading
-                        }
-                    >
-                        {installLoading
-                            ? 'Installing ...'
-                            : 'Install Modpack'}
-                    </button>
-                </div>
-            )}
-
-            {result && (
-                <div className="modpackinstaller-card">
-                    <h3>Installation complete</h3>
-
-                    <div className="modpackinstaller-result-grid">
-                        <div>
-                            <span>Total files</span>
-                            <strong>
-                                {result.total_files}
-                            </strong>
-                        </div>
-
-                        <div>
-                            <span>Created</span>
-                            <strong>
-                                {result.created}
-                            </strong>
-                        </div>
-
-                        <div>
-                            <span>Overwritten</span>
-                            <strong>
-                                {result.overwritten}
-                            </strong>
-                        </div>
-
-                        <div>
-                            <span>Backups</span>
-                            <strong>
-                                {result.backed_up}
-                            </strong>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {modalItem && (
-                <div
-                    className="modpackinstaller-modal-overlay"
-                    onClick={(event) => {
-                        if (event.target === event.currentTarget) {
-                            closeCatalogModal();
-                        }
-                    }}
-                >
-                    <div
-                        className="modpackinstaller-modal"
-                        role="dialog"
-                        aria-modal="true"
-                        aria-labelledby="modpackinstaller-modal-title"
-                        aria-busy={modalBusy}
-                    >
-                        <div className="modpackinstaller-modal-header">
-                            <div className="modpackinstaller-modal-heading">
-                                <span className="modpackinstaller-catalog-card-badge">
-                                    {modalItem.provider}
-                                </span>
-
-                                <h3 id="modpackinstaller-modal-title">
-                                    {modalItem.name}
-                                </h3>
-                            </div>
-
-                            <button
-                                type="button"
-                                ref={closeButtonRef}
-                                className="modpackinstaller-modal-close"
-                                aria-label="Close"
-                                onClick={closeCatalogModal}
-                            >
-                                &times;
-                            </button>
-                        </div>
-
-                        {modalStatus && (
-                            <div
-                                className={`modpackinstaller-status modpackinstaller-status--${modalStatus.kind}`}
-                                role={
-                                    modalStatus.kind === 'error'
-                                        ? 'alert'
-                                        : 'status'
-                                }
-                            >
-                                {modalStatus.message}
-                            </div>
-                        )}
-
-                        <div className="modpackinstaller-modal-body">
-                            <div className="modpackinstaller-modal-item">
-                                <ModpackIcon item={modalItem} />
-
-                                <div className="modpackinstaller-modal-item-meta">
-                                    <p className="modpackinstaller-catalog-card-summary">
-                                        {modalItem.summary ||
-                                            'No description available.'}
-                                    </p>
-
-                                    <dl className="modpackinstaller-catalog-card-meta">
-                                        {modalItem.loaders.length > 0 && (
-                                            <div>
-                                                <dt>Loader</dt>
-                                                <dd>
-                                                    {modalItem.loaders.join(' · ')}
-                                                </dd>
-                                            </div>
-                                        )}
-
-                                        {modalItem.game_versions.length > 0 && (
-                                            <div>
-                                                <dt>Minecraft</dt>
-                                                <dd>
-                                                    {modalItem.game_versions.length > 3
-                                                        ? `${modalItem.game_versions
-                                                            .slice(0, 3)
-                                                            .join(', ')} +`
-                                                        : modalItem.game_versions.join(', ')}
-                                                </dd>
-                                            </div>
-                                        )}
-
-                                        {modalItem.downloads !== null && (
-                                            <div>
-                                                <dt>Downloads</dt>
-                                                <dd>
-                                                    {formatCount(modalItem.downloads)}
-                                                </dd>
-                                            </div>
-                                        )}
-
-                                        {modalItem.follows !== null && (
-                                            <div>
-                                                <dt>Follows</dt>
-                                                <dd>
-                                                    {formatCount(modalItem.follows)}
-                                                </dd>
-                                            </div>
-                                        )}
-                                    </dl>
-
-                                    {modalItem.project_url && (
-                                        <a
-                                            href={modalItem.project_url}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            referrerPolicy="no-referrer"
-                                            className="modpackinstaller-modal-link"
-                                        >
-                                            View on ${providerLabels.get(
-                                                modalItem.provider,
-                                            ) ?? modalItem.provider}
-                                        </a>
+                                <dl className="modpackinstaller-catalog-card-meta">
+                                    {detailsItem.loaders.length > 0 && (
+                                        <div>
+                                            <dt>Loader</dt>
+                                            <dd>
+                                                {detailsItem.loaders.join(' · ')}
+                                            </dd>
+                                        </div>
                                     )}
-                                </div>
+
+                                    {detailsItem.game_versions.length > 0 && (
+                                        <div>
+                                            <dt>Minecraft</dt>
+                                            <dd>
+                                                {detailsItem.game_versions.length > 3
+                                                    ? `${detailsItem.game_versions
+                                                          .slice(0, 3)
+                                                          .join(', ')} +`
+                                                    : detailsItem.game_versions.join(', ')}
+                                            </dd>
+                                        </div>
+                                    )}
+
+                                    {detailsItem.downloads !== null && (
+                                        <div>
+                                            <dt>Downloads</dt>
+                                            <dd>
+                                                {formatCount(detailsItem.downloads)}
+                                            </dd>
+                                        </div>
+                                    )}
+
+                                    {detailsItem.follows !== null && (
+                                        <div>
+                                            <dt>Follows</dt>
+                                            <dd>
+                                                {formatCount(detailsItem.follows)}
+                                            </dd>
+                                        </div>
+                                    )}
+
+                                    {detailsItem.latest_version && (
+                                        <div>
+                                            <dt>Latest</dt>
+                                            <dd>
+                                                {detailsItem.latest_version}
+                                            </dd>
+                                        </div>
+                                    )}
+                                </dl>
+
+                                {detailsItem.project_url && (
+                                    <a
+                                        href={detailsItem.project_url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        referrerPolicy="no-referrer"
+                                        className="modpackinstaller-modal-link"
+                                    >
+                                        View on{' '}
+                                        {activeProvider?.label ??
+                                            detailsItem.provider}
+                                    </a>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="modpackinstaller-modal-filters">
+                            <div>
+                                <label htmlFor="modpackinstaller-modal-game-version">
+                                    Minecraft version
+                                </label>
+
+                                <select
+                                    id="modpackinstaller-modal-game-version"
+                                    value={modalGameVersion}
+                                    onChange={(event) =>
+                                        changeModalGameVersion(
+                                            event.target.value,
+                                        )
+                                    }
+                                    disabled={modalVersionsLoading}
+                                >
+                                    <option value="">Any</option>
+
+                                    {versionOptions.map((mcVersion) => (
+                                        <option
+                                            key={mcVersion}
+                                            value={mcVersion}
+                                        >
+                                            {mcVersion}
+                                        </option>
+                                    ))}
+                                </select>
                             </div>
 
-                            <div className="modpackinstaller-modal-filters">
-                                <div>
-                                    <label htmlFor="modpackinstaller-modal-game-version">
-                                        Minecraft version
-                                    </label>
+                            <div>
+                                <label htmlFor="modpackinstaller-modal-loader">
+                                    Loader
+                                </label>
 
-                                    <select
-                                        id="modpackinstaller-modal-game-version"
-                                        value={modalGameVersion}
-                                        onChange={(event) =>
-                                            changeModalGameVersion(
-                                                event.target.value,
-                                            )
-                                        }
-                                        disabled={modalVersionsLoading}
-                                    >
-                                        <option value="">Any</option>
-                                        {uniqueSorted(
-                                            modalItem.game_versions,
-                                            GAME_VERSIONS,
-                                        ).map((mcVersion) => (
-                                            <option
-                                                key={mcVersion}
-                                                value={mcVersion}
-                                            >
-                                                {mcVersion}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
+                                <select
+                                    id="modpackinstaller-modal-loader"
+                                    value={modalLoader}
+                                    onChange={(event) =>
+                                        changeModalLoader(
+                                            event.target.value,
+                                        )
+                                    }
+                                    disabled={modalVersionsLoading}
+                                >
+                                    <option value="">Any</option>
 
-                                <div>
-                                    <label htmlFor="modpackinstaller-modal-loader">
-                                        Loader
-                                    </label>
-
-                                    <select
-                                        id="modpackinstaller-modal-loader"
-                                        value={modalLoader}
-                                        onChange={(event) =>
-                                            changeModalLoader(
-                                                event.target.value,
-                                            )
-                                        }
-                                        disabled={modalVersionsLoading}
-                                    >
-                                        <option value="">Any</option>
-                                        {uniqueSorted(
-                                            modalItem.loaders,
-                                            LOADERS,
-                                        ).map((loader) => (
+                                    {modalLoaderOptions.map(
+                                        (loader) => (
                                             <option
                                                 key={loader}
                                                 value={loader}
                                             >
                                                 {loader}
                                             </option>
-                                        ))}
-                                    </select>
-                                </div>
+                                        ),
+                                    )}
+                                </select>
+                            </div>
+                        </div>
+
+                        <div className="modpackinstaller-modal-versions">
+                            <div className="modpackinstaller-modal-versions-heading">
+                                <span className="modpackinstaller-modal-versions-title">
+                                    Version
+                                </span>
+
+                                <span className="modpackinstaller-modal-versions-count">
+                                    {modalVersionsLoading
+                                        ? 'Loading versions ...'
+                                        : modalVersions === null
+                                            ? ''
+                                            : modalVersions.length === 0
+                                                ? 'No versions match the selected filters.'
+                                                : `${modalVersions.length} version${modalVersions.length === 1 ? '' : 's'}`}
+                                </span>
                             </div>
 
-                            <div
-                                className="modpackinstaller-modal-versions"
-                                aria-busy={modalVersionsLoading}
-                            >
-                                <div className="modpackinstaller-modal-versions-heading">
-                                    <label htmlFor="modpackinstaller-modal-version">
-                                        Version
-                                    </label>
-
-                                    <span className="modpackinstaller-modal-versions-count">
-                                        {modalVersionsLoading
-                                            ? 'Loading versions ...'
-                                            : modalVersions === null
-                                                ? ''
-                                                : modalVersions.length === 0
-                                                    ? 'No versions match the selected filters.'
-                                                    : `${modalVersions.length} version${modalVersions.length === 1 ? '' : 's'}`}
-                                    </span>
-                                </div>
-
-                                {modalVersionsLoading && (
-                                    <div
-                                        className="modpackinstaller-catalog-state"
-                                        role="status"
-                                    >
-                                        Loading versions ...
-                                    </div>
-                                )}
-
-                                {!modalVersionsLoading
-                                    && modalVersionsError
-                                    && (
-                                        <div className="modpackinstaller-catalog-state modpackinstaller-catalog-state--error">
-                                            <p role="alert">
-                                                {modalVersionsError}
-                                            </p>
-
-                                            <button
-                                                type="button"
-                                                onClick={retryModalVersions}
-                                            >
-                                                Retry
-                                            </button>
-                                        </div>
-                                    )}
-
-                                {!modalVersionsLoading
-                                    && !modalVersionsError
-                                    && modalVersions !== null
-                                    && modalVersions.length === 0 && (
-                                        <div className="modpackinstaller-catalog-state modpackinstaller-catalog-state--empty">
-                                            <p>
-                                                No versions match the
-                                                selected filters. Try
-                                                broadening the Minecraft
-                                                version or loader filters.
-                                            </p>
-                                        </div>
-                                    )}
-
-                                {!modalVersionsLoading
-                                    && !modalVersionsError
-                                    && modalVersions !== null
-                                    && modalVersions.length > 0 && (
-                                        <select
-                                            id="modpackinstaller-modal-version"
-                                            value={modalVersionSource ?? ''}
-                                            onChange={(event) =>
-                                                selectModalVersion(
-                                                    event.target.value,
-                                                )
-                                            }
-                                        >
-                                            <option value="">
-                                                Select a version
-                                            </option>
-
-                                            {modalVersionSource
-                                                && !modalVersions.some(
-                                                    (version) =>
-                                                        version.source
-                                                        === modalVersionSource,
-                                                ) && (
-                                                    <option
-                                                        value={modalVersionSource}
-                                                        disabled
-                                                    >
-                                                        {modalVersionSource}
-                                                    </option>
-                                                )}
-
-                                            {modalVersions.map((version) => (
-                                                <option
-                                                    key={version.source}
-                                                    value={version.source}
-                                                >
-                                                    {versionLabel(version)}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    )}
-                            </div>
-
-                            {modalMetadataLoading && (
+                            {modalVersionsLoading && (
                                 <div
                                     className="modpackinstaller-catalog-state"
                                     role="status"
                                 >
-                                    Resolving the selected version ...
+                                    Loading versions ...
                                 </div>
                             )}
 
-                            {!modalMetadataLoading
-                                && modalMetadataError
-                                && (
+                            {!modalVersionsLoading
+                                && modalVersionsError && (
                                     <div className="modpackinstaller-catalog-state modpackinstaller-catalog-state--error">
                                         <p role="alert">
-                                            {modalMetadataError}
+                                            {modalVersionsError}
                                         </p>
 
                                         <button
                                             type="button"
-                                            onClick={() =>
-                                                modalVersionSource
-                                                    && fetchModalMetadata(
-                                                        modalVersionSource,
-                                                    )
-                                            }
+                                            onClick={retryModalVersions}
                                         >
                                             Retry
                                         </button>
                                     </div>
                                 )}
+
+                            {!modalVersionsLoading
+                                && !modalVersionsError
+                                && modalVersions !== null
+                                && modalVersions.length === 0 && (
+                                    <div className="modpackinstaller-catalog-state modpackinstaller-catalog-state--empty">
+                                        <p>
+                                            No versions match the
+                                            selected filters. Try
+                                            broadening the Minecraft
+                                            version or loader filters.
+                                        </p>
+                                    </div>
+                                )}
+
+                            {!modalVersionsLoading
+                                && !modalVersionsError
+                                && modalVersions !== null
+                                && modalVersions.length > 0 && (
+                                    <div
+                                        className="modpackinstaller-version-options"
+                                        role="radiogroup"
+                                        aria-label="Version"
+                                    >
+                                        {modalVersions.map((version) => {
+                                            const checked =
+                                                modalVersionSource
+                                                === version.source;
+
+                                            return (
+                                                <button
+                                                    type="button"
+                                                    role="radio"
+                                                    aria-checked={checked}
+                                                    key={version.source}
+                                                    className={`modpackinstaller-version-option${
+                                                        checked
+                                                            ? ' modpackinstaller-version-option--selected'
+                                                            : ''
+                                                    }`}
+                                                    onClick={() =>
+                                                        selectModalVersion(
+                                                            version.source,
+                                                        )
+                                                    }
+                                                >
+                                                    <span className="modpackinstaller-version-option-name">
+                                                        {versionLabel(
+                                                            version,
+                                                        )}
+                                                    </span>
+
+                                                    <span className="modpackinstaller-version-option-meta">
+                                                        {version.date_published
+                                                            ? `Published ${formatDate(version.date_published)}`
+                                                            : 'Release date unavailable'}
+                                                    </span>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                )}
                         </div>
 
+                        {modalMetadataLoading && (
+                            <div
+                                className="modpackinstaller-catalog-state"
+                                role="status"
+                            >
+                                Resolving the selected version ...
+                            </div>
+                        )}
+
+                        {!modalMetadataLoading
+                            && modalMetadataError && (
+                                <div className="modpackinstaller-catalog-state modpackinstaller-catalog-state--error">
+                                    <p role="alert">
+                                        {modalMetadataError}
+                                    </p>
+
+                                    <button
+                                        type="button"
+                                        onClick={retryModalMetadata}
+                                    >
+                                        Retry
+                                    </button>
+                                </div>
+                            )}
+
                         {modalMetadata && (
-                            <div className="modpackinstaller-modal-options">
+                            <div className="modpackinstaller-modal-selected">
                                 <div className="modpackinstaller-details">
                                     <div>
                                         <span>Version</span>
@@ -2860,187 +3174,35 @@ export default () => {
                                     </div>
                                 </div>
 
-                                <div className="modpackinstaller-options">
-                                    <fieldset>
-                                        <legend>Package layout</legend>
-
-                                        <label>
-                                            <input
-                                                type="radio"
-                                                name="modpackinstaller-modal-layout"
-                                                value="direct"
-                                                checked={
-                                                    layout === 'direct'
-                                                }
-                                                onChange={() =>
-                                                    modalSelectLayout('direct')
-                                                }
-                                            />
-
-                                            Direct
-                                        </label>
-
-                                        <label>
-                                            <input
-                                                type="radio"
-                                                name="modpackinstaller-modal-layout"
-                                                value="overrides"
-                                                checked={
-                                                    layout === 'overrides'
-                                                }
-                                                onChange={() =>
-                                                    modalSelectLayout(
-                                                        'overrides',
-                                                    )
-                                                }
-                                            />
-
-                                            Overrides
-                                        </label>
-                                    </fieldset>
-
-                                    <fieldset>
-                                        <legend>Existing files</legend>
-
-                                        <label>
-                                            <input
-                                                type="radio"
-                                                name="modpackinstaller-modal-policy"
-                                                value="overwrite"
-                                                checked={
-                                                    policy === 'overwrite'
-                                                }
-                                                onChange={() =>
-                                                    modalSelectPolicy(
-                                                        'overwrite',
-                                                    )
-                                                }
-                                            />
-
-                                            Overwrite
-                                        </label>
-
-                                        <label>
-                                            <input
-                                                type="radio"
-                                                name="modpackinstaller-modal-policy"
-                                                value="skip_existing"
-                                                checked={
-                                                    policy === 'skip_existing'
-                                                }
-                                                onChange={() =>
-                                                    modalSelectPolicy(
-                                                        'skip_existing',
-                                                    )
-                                                }
-                                            />
-
-                                            Skip existing
-                                        </label>
-
-                                        <label>
-                                            <input
-                                                type="radio"
-                                                name="modpackinstaller-modal-policy"
-                                                value="create_only"
-                                                checked={
-                                                    policy === 'create_only'
-                                                }
-                                                onChange={() =>
-                                                    modalSelectPolicy(
-                                                        'create_only',
-                                                    )
-                                                }
-                                            />
-
-                                            Create only
-                                        </label>
-                                    </fieldset>
+                                <div className="modpackinstaller-source">
+                                    <span>Source</span>
+                                    <code>
+                                        {modalMetadata.source}
+                                    </code>
                                 </div>
 
-                                {modalMetadata.manual_download && (
+                                {modalMetadata.manual_download ? (
                                     <ManualDownloadNotice
-                                        manual={modalMetadata.manual_download}
-                                    />
-                                )}
-
-                                {!modalMetadata.manual_download && (
-                                <div className="modpackinstaller-modal-actions">
-                                    <button
-                                        type="button"
-                                        onClick={modalPreviewInstallation}
-                                        disabled={
-                                            !modalVersionSource
-                                            || modalPreviewLoading
-                                            || modalInstallLoading
+                                        manual={
+                                            modalMetadata.manual_download
                                         }
-                                    >
-                                        {modalPreviewLoading
-                                            ? 'Preparing Preview ...'
-                                            : 'Preview Installation'}
-                                    </button>
-
-                                    {modalPreview && (
+                                    />
+                                ) : (
+                                    <div className="modpackinstaller-modal-actions">
                                         <button
                                             type="button"
-                                            onClick={modalInstallModpack}
+                                            onClick={installModalModpack}
                                             disabled={
-                                                modalInstallLoading
-                                                || modalPreviewLoading
+                                                !modalVersionSource
+                                                || modalInstallLoading
                                             }
                                         >
                                             {modalInstallLoading
                                                 ? 'Installing ...'
                                                 : 'Install Modpack'}
                                         </button>
-                                    )}
-                                </div>
+                                    </div>
                                 )}
-                            </div>
-                        )}
-
-                        {modalPreview && (
-                            <div className="modpackinstaller-modal-preview">
-                                <div className="modpackinstaller-details">
-                                    <div>
-                                        <span>Total files</span>
-                                        <strong>
-                                            {modalPreview.total_files}
-                                        </strong>
-                                    </div>
-
-                                    <div>
-                                        <span>New files</span>
-                                        <strong>
-                                            {modalPreview.create_count}
-                                        </strong>
-                                    </div>
-
-                                    <div>
-                                        <span>Overwrite</span>
-                                        <strong>
-                                            {modalPreview.overwrite_count}
-                                        </strong>
-                                    </div>
-                                </div>
-
-                                <div className="modpackinstaller-operation-list">
-                                    {modalPreview.operations.map(
-                                        (operation) => (
-                                            <div
-                                                key={`${operation.action}:${operation.path}`}
-                                            >
-                                                <code>
-                                                    {operation.path}
-                                                </code>
-
-                                                <span>
-                                                    {operation.action}
-                                                </span>
-                                            </div>
-                                        ),
-                                    )}
-                                </div>
                             </div>
                         )}
 
@@ -3078,8 +3240,8 @@ export default () => {
                             </div>
                         )}
                     </div>
-                </div>
-            )}
+                )}
+            </Modal>
         </div>
     );
 };

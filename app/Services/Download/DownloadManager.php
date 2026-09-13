@@ -148,66 +148,62 @@ final class DownloadManager implements Downloader
         $maxBytes = $this->maxDownloadBytes;
         $headers = '';
 
-        try {
-            curl_setopt_array($curl, [
-                CURLOPT_URL => $url,
-                CURLOPT_FILE => $handle,
-                CURLOPT_FOLLOWLOCATION => false,
-                CURLOPT_FAILONERROR => false,
-                CURLOPT_CONNECTTIMEOUT => 15,
-                CURLOPT_TIMEOUT => 300,
-                CURLOPT_PROTOCOLS => CURLPROTO_HTTP | CURLPROTO_HTTPS,
-                CURLOPT_REDIR_PROTOCOLS => CURLPROTO_HTTP | CURLPROTO_HTTPS,
-                CURLOPT_SSL_VERIFYPEER => true,
-                CURLOPT_SSL_VERIFYHOST => 2,
-                CURLOPT_USERAGENT => 'ModpackInstaller/1.0',
-                CURLOPT_RESOLVE => [
-                    $parts['host'] . ':' . self::portFor($parts) . ':' . $ip,
-                ],
-                CURLOPT_NOPROGRESS => false,
-                CURLOPT_XFERINFOFUNCTION => function (
-                    $curl,
-                    float $downloadSize,
-                    float $downloaded,
-                    float $uploadSize,
-                    float $uploaded,
-                ) use ($maxBytes): int {
-                    return $downloaded > $maxBytes ? 1 : 0;
-                },
-                CURLOPT_HEADERFUNCTION => function (
-                    $curl,
-                    string $line,
-                ) use (&$headers): int {
-                    $headers .= $line;
-
-                    return strlen($line);
-                },
-            ]);
-
-            $success = curl_exec($curl);
-
-            $status = (int) curl_getinfo(
+        curl_setopt_array($curl, [
+            CURLOPT_URL => $url,
+            CURLOPT_FILE => $handle,
+            CURLOPT_FOLLOWLOCATION => false,
+            CURLOPT_FAILONERROR => false,
+            CURLOPT_CONNECTTIMEOUT => 15,
+            CURLOPT_TIMEOUT => 300,
+            CURLOPT_PROTOCOLS => CURLPROTO_HTTP | CURLPROTO_HTTPS,
+            CURLOPT_REDIR_PROTOCOLS => CURLPROTO_HTTP | CURLPROTO_HTTPS,
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYHOST => 2,
+            CURLOPT_USERAGENT => 'ModpackInstaller/1.0',
+            CURLOPT_RESOLVE => [
+                $parts['host'] . ':' . self::portFor($parts) . ':' . $ip,
+            ],
+            CURLOPT_NOPROGRESS => false,
+            CURLOPT_XFERINFOFUNCTION => function (
                 $curl,
-                CURLINFO_RESPONSE_CODE,
-            );
+                float $downloadSize,
+                float $downloaded,
+                float $uploadSize,
+                float $uploaded,
+            ) use ($maxBytes): int {
+                return $downloaded > $maxBytes ? 1 : 0;
+            },
+            CURLOPT_HEADERFUNCTION => function (
+                $curl,
+                string $line,
+            ) use (&$headers): int {
+                $headers .= $line;
 
-            if ($success !== true) {
-                if (curl_errno($curl) === CURLE_ABORTED_BY_CALLBACK) {
-                    throw new InvalidArgumentException(
-                        'The modpack download exceeds the maximum allowed size.'
-                    );
-                }
+                return strlen($line);
+            },
+        ]);
 
-                throw new RuntimeException(
-                    'Modpack download failed: '
-                    . $this->sanitizedCurlError($curl, $url)
+        $success = curl_exec($curl);
+
+        $status = (int) curl_getinfo(
+            $curl,
+            CURLINFO_RESPONSE_CODE,
+        );
+
+        if ($success !== true) {
+            if (curl_errno($curl) === CURLE_ABORTED_BY_CALLBACK) {
+                throw new InvalidArgumentException(
+                    'The modpack download exceeds the maximum allowed size.'
                 );
             }
 
-            return [$status, $headers];
-        } finally {
-            curl_close($curl);
+            throw new RuntimeException(
+                'Modpack download failed: '
+                . $this->sanitizedCurlError($curl, $url)
+            );
         }
+
+        return [$status, $headers];
     }
 
     private function hopBytes($handle): int

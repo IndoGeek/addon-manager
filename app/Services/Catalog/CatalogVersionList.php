@@ -11,12 +11,14 @@ final readonly class CatalogVersionList
 {
     /**
      * @param array<int, CatalogVersion> $versions
+     * @param array<string>              $appliedGameVersions
+     * @param array<string>              $appliedLoaders
      */
     public function __construct(
         public string $provider,
-        public ?string $appliedGameVersion,
-        public ?string $appliedLoader,
-        public array $versions,
+        public array $appliedGameVersions = [],
+        public array $appliedLoaders = [],
+        public array $versions = [],
     ) {
     }
 
@@ -28,8 +30,8 @@ final readonly class CatalogVersionList
         return [
             'provider' => $this->provider,
             'filters' => [
-                'game_version' => $this->appliedGameVersion,
-                'loader' => $this->appliedLoader,
+                'game_versions' => $this->appliedGameVersions,
+                'loaders' => $this->appliedLoaders,
             ],
             'versions' => array_map(
                 static fn (CatalogVersion $version): array => $version->toArray(),

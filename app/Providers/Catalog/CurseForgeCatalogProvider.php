@@ -7,6 +7,7 @@ use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogPagination;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogProvider;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogProviderException;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogProjectQuery;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogResult;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogSearchQuery;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogSort;
@@ -21,6 +22,13 @@ use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Provider
  * Only the constant API base plus validated, scalar query facets are used;
  * the API key travels exclusively in the X-Api-Key header and every payload is
  * type-checked before it leaves this provider.
+ *
+ * The CurseForge search API accepts a single value per filter group. When the
+ * user selects multiple values, the first value is applied upstream and the
+ * remaining values are applied as a provider-side filter on the fetched page
+ * (never on the frontend). Because the true filtered total cannot be known, the
+ * pagination total is then reported conservatively: only the items we can
+ * actually produce are counted, so the UI never over-claims pages.
  */
 final class CurseForgeCatalogProvider implements CatalogProvider
 {
@@ -45,6 +53,55 @@ final class CurseForgeCatalogProvider implements CatalogProvider
     private const URL_SLUG_PATTERN = '/^[A-Za-z0-9_-]{1,64}$/';
 
     private const VERSION_PATTERN = '/^\d+\.\d+(\.\d+)*$/';
+
+    /**
+     * Curated common game versions offered as facet options. CurseForge only
+     * accepts versions that exist on its own version list, which is why this
+     * list is intentionally conservative; it is capability metadata, not a
+     * search result.
+     *
+     * @var array<string>
+     */
+    private const COMMON_GAME_VERSIONS = [
+        '1.21.1',
+        '1.21',
+        '1.20.6',
+        '1.20.4',
+        '1.20.2',
+        '1.20.1',
+        '1.20',
+        '1.19.4',
+        '1.19.2',
+        '1.18.2',
+        '1.17.1',
+        '1.16.5',
+    ];
+
+    /**
+     * CurseForge modpack categories (default sub-categories under the
+     * Modpacks class). These are the real category slugs accepted upstream.
+     *
+     * @var array<string>
+     */
+    private const MODPACK_CATEGORIES = [
+        'adventure-and-rpg',
+        'boss',
+        'combat-pve',
+        'crafting',
+        'creation',
+        'decoration',
+        'exploration',
+        'magic',
+        'management',
+        'map',
+        'minigame',
+        'pve',
+        'pvp',
+        'storage',
+        'technology',
+        'theme',
+        'world-gen',
+    ];
 
     /**
      * File statuses that are visible to the public.
@@ -133,6 +190,16 @@ final class CurseForgeCatalogProvider implements CatalogProvider
         return $this->apiKey !== null && $this->apiKey !== '';
     }
 
+    public function state(): string
+    {
+        return $this->available() ? 'available' : 'not_configured';
+    }
+
+    public function developmentOnly(): bool
+    {
+        return false;
+    }
+
     public function unavailableReason(): ?string
     {
         if ($this->available()) {
@@ -142,9 +209,41 @@ final class CurseForgeCatalogProvider implements CatalogProvider
         return 'The CurseForge catalog is not configured. Set the CURSEFORGE_API_KEY server-side environment variable.';
     }
 
+    /**
+     * @return array{query: bool, game_versions: bool, loaders: bool, categories: bool, environment: bool, sort: bool}
+     */
+    public function capabilities(): array
+    {
+        return [
+            'query' => true,
+            'game_versions' => true,
+            'loaders' => true,
+            'categories' => true,
+            'environment' => false,
+            'sort' => true,
+        ];
+    }
+
+    /**
+     * @return array{game_versions: array<int, string>, loaders: array<int, string>, categories: array<int, string>, environments: array<int, string>}
+     */
+    public function facets(): array
+    {
+        return [
+            'game_versions' => self::COMMON_GAME_VERSIONS,
+            'loaders' => array_keys(self::LOADER_TO_MOD_LOADER),
+            'categories' => self::MODPACK_CATEGORIES,
+            'environments' => [],
+        ];
+    }
+
     public function search(CatalogSearchQuery $query): CatalogResult
     {
         $this->assertConfigured();
+
+        if ($query->environments !== []) {
+            return $this->emptyResult($query);
+        }
 
         $index = $query->offset();
 
@@ -167,18 +266,18 @@ final class CurseForgeCatalogProvider implements CatalogProvider
             $parameters['searchFilter'] = $query->query;
         }
 
-        if ($query->gameVersion !== null) {
-            $parameters['gameVersion'] = $query->gameVersion;
+        if ($query->gameVersions !== []) {
+            $parameters['gameVersion'] = $query->gameVersions[0];
         }
 
-        if ($query->loader !== null) {
-            $parameters['modLoaderType'] = $this->modLoader($query->loader);
+        if ($query->loaders !== []) {
+            $parameters['modLoaderType'] = $this->modLoader($query->loaders[0]);
         }
 
         $categoryId = null;
 
-        if ($query->category !== null) {
-            $categoryId = $this->resolveCategoryId($query->category);
+        if ($query->categories !== []) {
+            $categoryId = $this->resolveCategoryId($query->categories[0]);
 
             if ($categoryId === null) {
                 return $this->emptyResult($query);
@@ -187,7 +286,39 @@ final class CurseForgeCatalogProvider implements CatalogProvider
             $parameters['categoryId'] = $categoryId;
         }
 
-        return $this->mapSearchPayload($query, $this->requestSearch($parameters));
+        $payload = $this->requestSearch($parameters);
+
+        $items = $this->mapSearchItems($payload['data']);
+
+        $needsPostFilter = count($query->gameVersions) > 1
+            || count($query->loaders) > 1
+            || count($query->categories) > 1;
+
+        if ($needsPostFilter) {
+            $items = $this->postFilterItems($query, $items);
+        }
+
+        $total = $needsPostFilter
+            ? $index + count($items)
+            : ($this->intOrNull(
+                $payload['pagination']['totalCount'] ?? null,
+            ) ?? 0);
+
+        return new CatalogResult(
+            items: $items,
+            pagination: new CatalogPagination(
+                $query->page,
+                $query->limit,
+                $total,
+            ),
+            provider: $this->name(),
+            sort: $query->sort->value,
+            appliedQuery: $query->query,
+            appliedGameVersions: $query->gameVersions,
+            appliedLoaders: $query->loaders,
+            appliedCategories: $query->categories,
+            appliedEnvironments: $query->environments,
+        );
     }
 
     /**
@@ -207,12 +338,12 @@ final class CurseForgeCatalogProvider implements CatalogProvider
             'pageSize' => self::FILES_PAGE_SIZE,
         ];
 
-        if ($query->gameVersion !== null) {
-            $parameters['gameVersion'] = $query->gameVersion;
+        if ($query->gameVersions !== []) {
+            $parameters['gameVersion'] = $query->gameVersions[0];
         }
 
-        if ($query->loader !== null) {
-            $parameters['modLoaderType'] = $this->modLoader($query->loader);
+        if ($query->loaders !== []) {
+            $parameters['modLoaderType'] = $this->modLoader($query->loaders[0]);
         }
 
         $files = $this->requestAllFiles($query->project, $parameters);
@@ -250,6 +381,136 @@ final class CurseForgeCatalogProvider implements CatalogProvider
         });
 
         return $versions;
+    }
+
+    public function project(CatalogProjectQuery $query): CatalogItem
+    {
+        $this->assertConfigured();
+
+        if (!ctype_digit($query->project)) {
+            throw new InvalidArgumentException(
+                'Invalid CurseForge project id.',
+            );
+        }
+
+        try {
+            $response = $this->http->get(
+                self::API_BASE . '/mods/' . $query->project,
+                headers: $this->headers(),
+            );
+
+            if (
+                !is_array($response->body)
+                || !is_array($response->body['data'] ?? null)
+            ) {
+                throw new CatalogProviderException(
+                    'The modpack catalog provider returned an invalid response.',
+                );
+            }
+
+            if (!$this->isModpackClass($response->body['data'])) {
+                throw new CatalogProviderException(
+                    'The requested project is not a modpack.',
+                );
+            }
+
+            return $this->mapItem($response->body['data']);
+        } catch (InvalidArgumentException $exception) {
+            throw $exception;
+        } catch (CatalogProviderException $exception) {
+            throw $exception;
+        } catch (ProviderHttpException $exception) {
+            throw $this->requestFailure($exception);
+        }
+    }
+
+    /**
+     * @param array<mixed> $entries
+     *
+     * @return array<int, CatalogItem>
+     */
+    private function mapSearchItems(array $entries): array
+    {
+        $items = [];
+
+        foreach ($entries as $mod) {
+            if (!is_array($mod)) {
+                throw new CatalogProviderException(
+                    'The modpack catalog provider returned an invalid response.',
+                );
+            }
+
+            if (!$this->isModpackClass($mod)) {
+                continue;
+            }
+
+            $items[] = $this->mapItem($mod);
+        }
+
+        return $items;
+    }
+
+    /**
+     * Keeps only the items that satisfy every multi-value group that could not
+     * be expressed upstream (any match within a group counts). A group with a
+     * single value was already applied to the upstream request, so it is
+     * excluded here.
+     *
+     * @param array<int, CatalogItem> $items
+     *
+     * @return array<int, CatalogItem>
+     */
+    private function postFilterItems(
+        CatalogSearchQuery $query,
+        array $items,
+    ): array {
+        return array_values(array_filter(
+            $items,
+            static fn (CatalogItem $item): bool => self::matchesMultiFilters(
+                $query,
+                $item,
+            ),
+        ));
+    }
+
+    /**
+     * @param array<int, CatalogItem> $items
+     */
+    private static function matchesMultiFilters(
+        CatalogSearchQuery $query,
+        CatalogItem $item,
+    ): bool {
+        if (
+            count($query->gameVersions) > 1
+            && array_intersect(
+                $query->gameVersions,
+                $item->gameVersions,
+            ) === []
+        ) {
+            return false;
+        }
+
+        if (
+            count($query->loaders) > 1
+            && array_intersect(
+                $query->loaders,
+                $item->loaders,
+            ) === []
+        ) {
+            return false;
+        }
+
+        if (
+            count($query->categories) > 1
+            && array_intersect(
+                $query->categories,
+                $item->categories,
+            ) === []
+        ) {
+            return false;
+        }
+
+        return true;
     }
 
     /**
@@ -398,49 +659,6 @@ final class CurseForgeCatalogProvider implements CatalogProvider
         }
     }
 
-    /**
-     * @param array<string, mixed> $payload
-     */
-    private function mapSearchPayload(
-        CatalogSearchQuery $query,
-        array $payload,
-    ): CatalogResult {
-        $items = [];
-
-        foreach ($payload['data'] as $mod) {
-            if (!is_array($mod)) {
-                throw new CatalogProviderException(
-                    'The modpack catalog provider returned an invalid response.',
-                );
-            }
-
-            if (!$this->isModpackClass($mod)) {
-                continue;
-            }
-
-            $items[] = $this->mapItem($mod);
-        }
-
-        $total = $this->intOrNull(
-            $payload['pagination']['totalCount'] ?? null,
-        ) ?? 0;
-
-        return new CatalogResult(
-            items: $items,
-            pagination: new CatalogPagination(
-                $query->page,
-                $query->limit,
-                $total,
-            ),
-            provider: $this->name(),
-            sort: $query->sort->value,
-            appliedQuery: $query->query,
-            appliedGameVersion: $query->gameVersion,
-            appliedLoader: $query->loader,
-            appliedCategory: $query->category,
-        );
-    }
-
     private function emptyResult(CatalogSearchQuery $query): CatalogResult
     {
         return new CatalogResult(
@@ -453,9 +671,10 @@ final class CurseForgeCatalogProvider implements CatalogProvider
             provider: $this->name(),
             sort: $query->sort->value,
             appliedQuery: $query->query,
-            appliedGameVersion: $query->gameVersion,
-            appliedLoader: $query->loader,
-            appliedCategory: $query->category,
+            appliedGameVersions: $query->gameVersions,
+            appliedLoaders: $query->loaders,
+            appliedCategories: $query->categories,
+            appliedEnvironments: $query->environments,
         );
     }
 
@@ -478,7 +697,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
 
             $modLoader = $this->intOrNull($entry['modLoader'] ?? null);
             $loaderSlug = $modLoader !== null
-                ? ($this->MOD_LOADER_TO_SLUG[$modLoader] ?? null)
+                ? (self::MOD_LOADER_TO_SLUG[$modLoader] ?? null)
                 : null;
 
             if ($loaderSlug !== null) {

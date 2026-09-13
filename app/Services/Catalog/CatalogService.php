@@ -4,14 +4,37 @@ namespace Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Ca
 
 /**
  * Application-level catalog facade used by the HTTP layer. It resolves the
- * requested provider, refuses unavailable providers, and exposes the list of
- * providers (with their availability) for the UI's provider selector.
+ * requested provider, refuses unavailable providers, exposes the list of
+ * providers (with their availability, capabilities and facet options) for the
+ * UI, and resolves normalized project details for the details view.
  */
 final class CatalogService
 {
     public function __construct(
         private readonly CatalogProviderRegistry $registry,
     ) {
+    }
+
+    /**
+     * The provider the UI should preselect: the first provider that is
+     * available and not development-only, or the plain first provider name.
+     */
+    public function defaultProvider(): string
+    {
+        $first = null;
+
+        foreach ($this->registry->all() as $provider) {
+            $first ??= $provider->name();
+
+            if (
+                $provider->available()
+                && !$provider->developmentOnly()
+            ) {
+                return $provider->name();
+            }
+        }
+
+        return $first ?? CatalogSearchQuery::DEFAULT_PROVIDER;
     }
 
     /**
@@ -26,7 +49,12 @@ final class CatalogService
                 'name' => $provider->name(),
                 'label' => $provider->label(),
                 'available' => $provider->available(),
+                'state' => $provider->state(),
+                'development_only' => $provider->developmentOnly(),
+                'development' => $provider->developmentOnly(),
                 'unavailable_reason' => $provider->unavailableReason(),
+                'capabilities' => $provider->capabilities(),
+                'facets' => $provider->facets(),
             ];
         }
 
@@ -58,10 +86,23 @@ final class CatalogService
 
         return new CatalogVersionList(
             provider: $provider->name(),
-            appliedGameVersion: $query->gameVersion,
-            appliedLoader: $query->loader,
+            appliedGameVersions: $query->gameVersions,
+            appliedLoaders: $query->loaders,
             versions: $provider->versions($query),
         );
+    }
+
+    public function project(CatalogProjectQuery $query): CatalogItem
+    {
+        $provider = $this->registry->get($query->provider);
+
+        if (!$provider->available()) {
+            throw new CatalogUnavailableException(
+                $this->unavailableMessage($provider),
+            );
+        }
+
+        return $provider->project($query);
     }
 
     private function unavailableMessage(CatalogProvider $provider): string

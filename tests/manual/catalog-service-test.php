@@ -26,6 +26,7 @@ use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Providers\Catalog
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Providers\Catalog\ModrinthCatalogProvider;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogProvider;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogProviderRegistry;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogProjectQuery;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogResult;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogSearchQuery;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogService;
@@ -85,12 +86,29 @@ foreach ($providers as $entry) {
 if (($mapped['mock']['available'] ?? false) !== true) {
     throw new RuntimeException('Mock catalog should be available.');
 }
+if (($mapped['mock']['development_only'] ?? false) !== true) {
+    throw new RuntimeException('Mock catalog must be flagged development-only.');
+}
+if (($mapped['mock']['state'] ?? '') !== 'available') {
+    throw new RuntimeException('Mock catalog state mismatch.');
+}
 if (($mapped['modrinth']['available'] ?? false) !== true) {
     throw new RuntimeException('Modrinth catalog should be available.');
 }
+if (($mapped['modrinth']['state'] ?? '') !== 'available') {
+    throw new RuntimeException('Modrinth catalog state mismatch.');
+}
+if (($mapped['modrinth']['development_only'] ?? true) !== false) {
+    throw new RuntimeException('Modrinth must not be development-only.');
+}
 if (($mapped['curseforge']['available'] ?? false) !== false) {
     throw new RuntimeException(
-        'CurseForge catalog must not claim availability (not implemented).',
+        'CurseForge catalog must not claim availability without a key.',
+    );
+}
+if (($mapped['curseforge']['state'] ?? '') !== 'not_configured') {
+    throw new RuntimeException(
+        'CurseForge catalog should report not_configured.',
     );
 }
 if (($mapped['curseforge']['label'] ?? '') !== 'CurseForge') {
@@ -100,7 +118,28 @@ if (($mapped['mock']['label'] ?? '') === '') {
     throw new RuntimeException('Mock label missing.');
 }
 
-pass('provider listing surfaces availability flags');
+foreach ($providers as $entry) {
+    if (!isset($entry['capabilities']['query'], $entry['facets']['categories'])) {
+        throw new RuntimeException('Provider capabilities/facets missing.');
+    }
+}
+
+if (
+    ($mapped['curseforge']['capabilities']['environment'] ?? true) !== false
+) {
+    throw new RuntimeException(
+        'CurseForge must not claim an environment capability it lacks.',
+    );
+}
+
+if ($service->defaultProvider() !== 'modrinth') {
+    throw new RuntimeException(
+        'Default provider should skip development-only providers: '
+            . $service->defaultProvider(),
+    );
+}
+
+pass('provider listing surfaces availability, state, capabilities and facets');
 
 $result = $service->search(new CatalogSearchQuery(
     provider: 'mock',
@@ -116,6 +155,45 @@ if (($result->items[0]->slug ?? null) !== 'vanilla-tweaks') {
 }
 
 pass('service search delegates to resolved provider');
+
+$project = $service->project(new CatalogProjectQuery(
+    provider: 'mock',
+    project: 'vanilla-tweaks',
+));
+
+if (($project->name ?? '') !== 'Vanilla Tweaks Pack') {
+    throw new RuntimeException('Project lookup did not resolve mock details.');
+}
+
+pass('service project lookup resolves normalized details');
+
+try {
+    $service->project(new CatalogProjectQuery(
+        provider: 'mock',
+        project: 'no-such-pack',
+    ));
+    throw new RuntimeException('Unknown mock project lookup was accepted.');
+} catch (CatalogUnavailableException $exception) {
+    if (!str_contains($exception->getMessage(), 'not found')) {
+        throw new RuntimeException('Unexpected unknown-project message.');
+    }
+}
+
+pass('unknown project lookup rejected cleanly');
+
+try {
+    $service->project(new CatalogProjectQuery(
+        provider: 'curseforge',
+        project: '1234',
+    ));
+    throw new RuntimeException('Unavailable provider project was accepted.');
+} catch (CatalogUnavailableException $exception) {
+    if (!str_contains($exception->getMessage(), 'not configured')) {
+        throw new RuntimeException('Unexpected unavailable project message.');
+    }
+}
+
+pass('unavailable provider project lookup rejected');
 
 try {
     $service->search(new CatalogSearchQuery(

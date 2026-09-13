@@ -54,8 +54,8 @@ $query = new CatalogVersionQuery(
 if ($query->project !== 'example-pack') {
     throw new RuntimeException('Unexpected project echo.');
 }
-if ($query->gameVersion !== null || $query->loader !== null) {
-    throw new RuntimeException('Optional filters should default to null.');
+if ($query->gameVersions !== [] || $query->loaders !== []) {
+    throw new RuntimeException('Optional filters should default to empty.');
 }
 
 pass('valid query echoes normalized fields');
@@ -69,10 +69,10 @@ $query = new CatalogVersionQuery(
 if ($query->project !== 'Prominence-2_RPG') {
     throw new RuntimeException('Project was not trimmed.');
 }
-if ($query->gameVersion !== '1.21.1') {
+if ($query->gameVersions !== ['1.21.1']) {
     throw new RuntimeException('Game version not normalized.');
 }
-if ($query->loader !== 'fabric') {
+if ($query->loaders !== ['fabric']) {
     throw new RuntimeException('Loader was not lowercased.');
 }
 
