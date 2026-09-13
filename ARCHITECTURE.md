@@ -57,6 +57,47 @@ that could break other Blueprint extensions.
 The installation engine must not depend directly on a particular
 modpack provider.
 
+Provider-specific capabilities are surfaced through optional capability
+interfaces, and the controller/UI branch on the interface, not on a provider
+name. **Manual download** (`ManualDownloadProvider`) is one such capability:
+providers that can resolve a project/file but whose installable archive has no
+public download URL return normalized guidance (never keys, paths, or raw API
+bodies), which the metadata endpoint exposes as a nullable `manual_download`
+field and the dashboard renders instead of Install/Preview.
+
+### Managed installations
+
+Successful installs are recorded in an extension-owned JSON store
+(`InstallRecordStore`, `InstallRecord`) so the dashboard can update and
+uninstall installed modpacks without trusting the client:
+
+- **Persistence.** Records live in `MODPACK_INSTALLER_DATA_DIR`
+  (default `/var/lib/pterodactyl/modpack-installer`) under `installs.json`,
+  keyed by server UUID. Writes take an exclusive `flock` on a separate lock
+  file and commit via a same-directory temporary file + `rename`, so concurrent
+  mutating requests and crashed writers never yield a torn file. Records are
+  hydrated with strict validation; corrupt or hostile entries are ignored.
+- **Record content.** Normalized source (pinned to the actually-resolved
+  version), display name, version, Minecraft version/loader, layout, policy,
+  timestamps, and an ownership manifest of the server-relative paths the engine
+  created/overwrote. Ownership paths are re-validated with `ServerRelativePath`
+  both when written and when read back.
+- **Update.** The base source (unpinned project) is re-resolved by the provider
+  to the latest version and deployed through the full installation engine
+  (backup/rollback) using the recorded layout/policy — never a delete-then-write
+  step. If the resolved version equals the recorded version the request returns
+  a controlled `409`. The record (including ownership) is swapped only after the
+  engine reports success; files orphaned by the previous layout are left in
+  place and simply drop off the manifest.
+- **Uninstall.** `OwnershipRemover` deletes exactly the owned relative paths,
+  skipping missing entries deterministically and never touching directories or
+  unrelated files. The record is deleted only when the entire removal succeeds;
+  any removal error aborts without mutating the store.
+- **Concurrency.** Update/uninstall share the same per-server installation lock
+  as installs; the ownership store is additionally consistent under concurrent
+  writes via the lock + atomic rename above. Installed records for one server
+  never affect another.
+
 ### Catalog
 
 Browsing and search is a read-only contract (`CatalogProvider`) separate from
@@ -160,3 +201,6 @@ Every input boundary treats its data as untrusted and is validated:
 - Panel log lines from `report()` are only as sanitized as their inputs;
   provider HTTP failure details are mapped to static messages before
   bubbling up. (CurseForge authorization headers are never logged.)
+- Since the server file target has no recursive directory listing surface
+  (see TARGETS.md), uninstall removes files but never prunes now-empty
+  directories; empty folders may remain after uninstall.

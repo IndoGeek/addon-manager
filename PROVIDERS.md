@@ -72,6 +72,10 @@ Get an API key at <https://console.curseforge.com/>.
   - `client-overrides/` and the `modrinth.index.json` manifest are skipped.
 - The normalized archive is deployed by the existing installation engine and
   cleaned up after preview/install.
+- `getPackage` pins the actually-resolved version id in the returned source
+  (`modrinth://<slug-or-id>@<version-id>`) even for unpinned requests, so an
+  installed pack records exactly what is deployed and can be diffed against
+  later versions for update tracking.
 
 ### CurseForge
 
@@ -81,7 +85,19 @@ Get an API key at <https://console.curseforge.com/>.
 - Metadata: project id, name, latest Release file (falling back to the newest
   file), its Minecraft version and loader, description, icon, and canonical
   `curseforge://<project-id>` source.
-- Packages use the file's public `downloadUrl` when available.
+- Packages use the file's public `downloadUrl` when available. The resolved
+  file, server pack expansion included, is what defines the installable file:
+  a client-pack archive is rejected, and a server-pack archive is deployed
+  as-is.
+- When the installable file has no public download URL, `getPackage`/install
+  are refused with a clear error and the provider reports
+  `manualDownloadInfo()`: normalized guidance (name, version, official
+  download/project URLs, reason) that the metadata endpoint surfaces as
+  `manual_download`. The dashboard renders this instead of installing. Updates
+  surface the same requirement.
+- `getPackage` records the actually-resolved file id in the returned source
+  (`curseforge://<project-id>@<file-id>`) so that an installed pack can be
+  compared against later versions for update tracking.
 
 ## Current package limitations
 
@@ -93,8 +109,12 @@ Get an API key at <https://console.curseforge.com/>.
   - CurseForge client modpacks (archives containing `manifest.json`) require
     mod file resolution and are rejected with a clear error. Install a
     CurseForge server pack instead.
-- CurseForge files without a public download URL are rejected with a clear
-  error (the pack author has not enabled mod distribution).
+- CurseForge clients switching between "Overwrite" and "Skip existing"
+  policies is fine, but the engine never resolves mod dependencies from a
+  manifest (see above).
+- CurseForge files without a public download URL can never be installed or
+  updated automatically; the dashboard shows official download guidance and
+  the API refuses with a clear error (`manual_download`).
 - Packages depend on the server already having the matching game/loader
   runtime; the installer does not provision the server binary.
 

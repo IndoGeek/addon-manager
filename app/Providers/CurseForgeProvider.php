@@ -11,7 +11,7 @@ use RuntimeException;
 use Throwable;
 use ZipArchive;
 
-final class CurseForgeProvider implements ModpackProvider
+final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvider
 {
     private const API_BASE = 'https://api.curseforge.com/v1';
 
@@ -133,12 +133,18 @@ final class CurseForgeProvider implements ModpackProvider
 
         $this->temporaryPackages[$archivePath] = true;
 
+        $resolvedFileId = $this->intOrNull($file['id'] ?? null);
+
+        $resolvedFileId = $resolvedFileId === null
+            ? $parsed['fileId']
+            : (string) $resolvedFileId;
+
         try {
             $this->assertServerPack($archivePath);
 
             return new ModpackPackage(
                 archivePath: $archivePath,
-                source: $this->canonicalSource($projectId, $parsed['fileId']),
+                source: $this->canonicalSource($projectId, $resolvedFileId),
             );
         } catch (Throwable $exception) {
             $this->removeTracked($archivePath);
@@ -147,9 +153,112 @@ final class CurseForgeProvider implements ModpackProvider
         }
     }
 
+    /**
+     * Returns normalized manual-download info when a CurseForge file cannot be
+     * downloaded automatically. The caller (frontend or controller) should
+     * display this as a "manual download required" state rather than a generic
+     * installation failure.
+     *
+     * @return array{provider: string, project_name: string, project_url: string,
+     *   file_name: string, version: string, download_url: string|null, reason: string}
+     */
+    public function manualDownloadInfo(array $file, array $project): array
+    {
+        $logo = is_array($project['logo'] ?? null)
+            ? $project['logo']
+            : [];
+
+        $icon = $this->nullableString($logo['thumbnailUrl'] ?? null)
+            ?? $this->nullableString($logo['url'] ?? null);
+
+        $projectUrl = $this->nullableString($project['links']['websiteUrl'] ?? null);
+
+        $downloadUrl = $this->nullableString($file['downloadUrl'] ?? null);
+
+        $version = $this->nullableString($file['displayName'] ?? null)
+            ?? $this->nullableString($file['fileName'] ?? null);
+
+        $reason = '';
+
+        if ($downloadUrl === null) {
+            $reason = 'This CurseForge modpack does not provide a public download URL. '
+                . 'Please download the file manually from '
+                . ($projectUrl ? $projectUrl : 'CurseForge.');
+        } elseif (($file['isAvailable'] ?? true) === false) {
+            $reason = 'This file is not available for download at this time.';
+        } elseif (
+            $this->intOrNull($file['fileStatus'] ?? null) !== null
+            && !in_array($this->intOrNull($file['fileStatus'] ?? null), [4, 10], true)
+        ) {
+            $reason = 'This file is not publicly available for download.';
+        } else {
+            $reason = 'Unable to download this file automatically. '
+                . 'Please download manually from CurseForge.';
+        }
+
+        return [
+            'provider' => 'curseforge',
+            'project_name' => $this->nullableString($project['name'] ?? null) ?? '',
+            'project_url' => $projectUrl,
+            'file_name' => $this->nullableString($file['displayName'] ?? null)
+                ?? $this->nullableString($file['fileName'] ?? null),
+            'version' => $version,
+            'download_url' => $downloadUrl,
+            'reason' => $reason,
+        ];
+    }
+
     public function cleanup(ModpackPackage $package): void
     {
         $this->removeTracked($package->archivePath);
+    }
+
+    /**
+     * Resolves the file a source would install and, when that file cannot be
+     * downloaded automatically, returns normalized manual-download guidance.
+     * Returns null when the file can be installed automatically.
+     *
+     * @return array{
+     *   provider: string,
+     *   project_name: string,
+     *   project_url: string|null,
+     *   file_name: string,
+     *   version: string,
+     *   download_url: string|null,
+     *   reason: string,
+     * }|null
+     */
+    public function manualDownloadInfoFor(string $source): ?array
+    {
+        $parsed = $this->parseSource($source);
+
+        if ($parsed === null) {
+            throw new InvalidArgumentException(
+                'Unsupported modpack source.',
+            );
+        }
+
+        $this->assertConfigured();
+
+        $project = $this->fetchProject($parsed['projectId']);
+
+        $this->assertModpackProject($project);
+
+        $file = $this->resolveFile($parsed['projectId'], $parsed['fileId']);
+
+        if ($file === null) {
+            throw new InvalidArgumentException(
+                'The CurseForge project has no files.',
+            );
+        }
+
+        $file = $this->resolvePackageFile($file, $parsed['projectId']);
+
+        if ($this->isPubliclyDownloadable($file)) {
+            return null;
+        }
+
+        return $this->manualDownloadInfo($file, $project);
     }
 
     private function removeTracked(string $path): void

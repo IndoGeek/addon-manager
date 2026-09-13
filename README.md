@@ -15,7 +15,11 @@ Blueprint.
 
 ## Status
 
-🚧 Early development
+Functional: catalog browsing, exact-version selection, install preview,
+network-hardened installation, and an installed-modpack lifecycle
+(update to latest / uninstall). Providers: Modrinth (live search + install)
+and CurseForge (metadata/install with manual-download guidance for packs
+without a public download URL).
 
 ## Development
 
@@ -30,6 +34,10 @@ development deployment target.
 The installer ships with a mock provider for development plus Modrinth and
 CurseForge providers. See [PROVIDERS.md](PROVIDERS.md) for source formats,
 configuration, catalog support, and current package limitations.
+
+CurseForge packs whose installable file has no public download URL are never
+installed automatically; the dashboard shows normalized manual-download
+guidance instead.
 
 ## Catalog
 
@@ -49,6 +57,23 @@ metadata/preview/install pipeline.
   provider, and upstream calls go through the same pinned HTTP client as the
   rest of the extension. See [ARCHITECTURE.md](ARCHITECTURE.md) for the
   filter/sort mapping and error handling.
+
+## Installed modpacks lifecycle
+
+Every successful install is recorded in an extension-owned store. The dashboard
+lists the installed modpacks for the current server and offers:
+
+- **Update to latest** – re-resolves the same project's latest version, deploys
+  it through the installation engine (with backup/rollback), and updates the
+  record only on success. Already up-to-date returns a controlled `409`.
+- **Uninstall** (two-step confirm) – removes only the files the record owns
+  and nothing else; missing files are tolerated and directories are never
+  deleted. The record is removed only when the whole removal succeeds.
+
+Records are stored as JSON in `MODPACK_INSTALLER_DATA_DIR` (default
+`/var/lib/pterodactyl/modpack-installer`), keyed by server UUID, written with an
+exclusive lock and an atomic rename. See [ARCHITECTURE.md](ARCHITECTURE.md) for
+the persistence, ownership, and concurrency model.
 
 ## Server Target
 
@@ -79,8 +104,9 @@ client-supplied options) is validated at every boundary:
   relative paths, honors backup/rollback for every overwrite, and never lets
   best-effort cleanup mask an installation outcome.
 - **Concurrency** is serialized per server with a filesystem lock: second
-  installs for the same server receive `503 Service Unavailable` while one is
-  already running, and stale locks are reclaimed automatically.
+  install/update/uninstall operations for the same server receive
+  `503 Service Unavailable` while one is already running, and stale locks are
+  reclaimed automatically.
 - **Errors** returned to clients are static and never include hosts, URLs,
   tokens, or the CurseForge API key.
 
@@ -89,6 +115,7 @@ Optional knobs (server-side environment variables):
 | Variable                            | Meaning                                        |
 |-------------------------------------|------------------------------------------------|
 | `MODPACK_INSTALLER_MAX_DOWNLOAD_MB` | Max modpack download in MiB (default 2048).   |
+| `MODPACK_INSTALLER_DATA_DIR`        | Installed-modpack record store dir (default `/var/lib/pterodactyl/modpack-installer`). |
 | `CURSEFORGE_API_KEY`                | CurseForge API key (`Providers` document).    |
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the hardening model and

@@ -77,9 +77,11 @@ php -r 'var_dump(env("MODPACK_INSTALLER_SERVER_TARGET", "local"));'
 - The file tree is currently read and written only through the installer's
   operations (`exists` / `isDirectory` / `read` / `write` / `delete` /
   `ensureDirectory`); there is no full recursive directory listing surface.
-- Concurrent installs for the **same** server are serialized by a per-server
-  filesystem lock (see ARCHITECTURE.md): while one install is
-  running, a second one for that server fails fast with `503 Service
+  Because of this, uninstall removes exactly the files an install record owns
+  and never prunes directories: now-empty folders may remain after uninstall.
+- Concurrent install/update/uninstall operations for the **same** server are
+  serialized by a per-server filesystem lock (see ARCHITECTURE.md): while one
+  is running, another for that server fails fast with `503 Service
   Unavailable`. Stale locks are reclaimed automatically after their timeout.
   Different servers never contend with each other.
 - The downloader's live success/redirect path is validated at deployment time

@@ -412,6 +412,66 @@ if (is_file($serverPackPath)) {
 
 pass('server-pack archive returned as-is and cleaned up');
 
+$http = new FakeProviderHttpClient([$projectResponse, $filesResponse]);
+$provider = new CurseForgeProvider(
+    $http,
+    new FakeDownloader('/does/not/matter'),
+    SECRET_KEY,
+);
+
+if ($provider->manualDownloadInfoFor('curseforge://314768') !== null) {
+    throw new RuntimeException(
+        'Publicly downloadable file should not require manual download.',
+    );
+}
+
+pass('downloadable file reports no manual-download requirement');
+
+$http = new FakeProviderHttpClient([$projectResponse, $noDownload]);
+$provider = new CurseForgeProvider(
+    $http,
+    new FakeDownloader('/does/not/matter'),
+    SECRET_KEY,
+);
+
+$info = $provider->manualDownloadInfoFor('curseforge://314768');
+
+if ($info === null) {
+    throw new RuntimeException(
+        'Non-downloadable file should report manual-download guidance.',
+    );
+}
+
+if (($info['provider'] ?? '') !== 'curseforge') {
+    throw new RuntimeException('Unexpected manual-download provider.');
+}
+
+if (($info['project_name'] ?? '') !== 'Prominence 2 RPG') {
+    throw new RuntimeException('Unexpected manual-download project name.');
+}
+
+if (($info['version'] ?? '') !== 'V1.0.0') {
+    throw new RuntimeException('Unexpected manual-download version.');
+}
+
+if (array_key_exists('download_url', $info) && $info['download_url'] !== null) {
+    throw new RuntimeException('Missing download URL must stay null.');
+}
+
+if (($info['project_url'] ?? '') === '') {
+    throw new RuntimeException('Manual-download guidance must include a project URL.');
+}
+
+if (($info['reason'] ?? '') === '') {
+    throw new RuntimeException('Manual-download guidance must include a reason.');
+}
+
+if (str_contains(json_encode($info), SECRET_KEY)) {
+    throw new RuntimeException('API key leaked into manual-download guidance.');
+}
+
+pass('missing-download file yields normalized manual-download guidance');
+
 $iterator = new RecursiveIteratorIterator(
     new RecursiveDirectoryIterator(
         $temporaryRoot,

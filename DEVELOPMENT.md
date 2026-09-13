@@ -63,6 +63,20 @@ Exact-version (pinned source) resolution is covered hermetically:
 php tests/manual/modrinth-version-resolution-test.php
 ```
 
+Installed-modpack records, the ownership store, and the file-only uninstall
+remover are covered hermetically:
+
+```bash
+php tests/manual/install-record-test.php
+php tests/manual/install-record-store-test.php
+php tests/manual/ownership-remover-test.php
+```
+
+The record store writes to `MODPACK_INSTALLER_DATA_DIR` (default
+`/var/lib/pterodactyl/modpack-installer`); tests point it at a fresh temp
+directory. The store's lock + atomic-rename guarantees are exercised by
+reopening the store and by concurrency-free corruption checks.
+
 Standalone (non-extension) tests may `require` the classes directly;
 tests that exercise the extension namespace register an `spl_autoload_register`
 callback that maps `Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\...`

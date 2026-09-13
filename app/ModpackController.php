@@ -7,13 +7,17 @@ use Illuminate\Http\Request;
 use InvalidArgumentException;
 use Pterodactyl\Http\Controllers\Controller;
 use Pterodactyl\Models\Server;
+use RuntimeException;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Providers\Catalog\CurseForgeCatalogProvider;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Providers\Catalog\MockCatalogProvider;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Providers\Catalog\ModrinthCatalogProvider;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Providers\CurseForgeProvider;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Providers\ManualDownloadProvider;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Providers\MockModpackProvider;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Providers\ModrinthProvider;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Providers\ModpackProvider;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Providers\UnsupportedModpackPackageException;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Models\ModpackMetadata;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogProviderException;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogProviderRegistry;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogSearchQuery;
@@ -29,9 +33,13 @@ use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Download
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\InstallationLock;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\InstallationLockedException;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\InstallationOrchestrator;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\InstallationResult;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\InstallationWorkspace;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\PackageLayout;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\PackageRootResolver;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Management\InstallRecord;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Management\InstallRecordStore;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Management\OwnershipRemover;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\ModpackProviderRegistry;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Provider\CurlProviderHttpClient;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Provider\ProviderHttpClient;
@@ -71,6 +79,12 @@ final class ModpackController extends Controller
             $provider = $this->providerRegistry()->resolve($source);
             $metadata = $provider->getMetadata($source);
 
+            $manualDownload = null;
+
+            if ($provider instanceof ManualDownloadProvider) {
+                $manualDownload = $provider->manualDownloadInfoFor($source);
+            }
+
             return response()->json([
                 'data' => [
                     'id' => $metadata->id,
@@ -81,6 +95,7 @@ final class ModpackController extends Controller
                     'description' => $metadata->description,
                     'icon_url' => $metadata->iconUrl,
                     'source' => $metadata->source,
+                    'manual_download' => $manualDownload,
                 ],
             ]);
         } catch (InvalidArgumentException $exception) {
@@ -262,12 +277,29 @@ final class ModpackController extends Controller
                 layout: $layout,
             );
 
+            $metadata = $this->installMetadata(
+                $provider,
+                $package->source,
+            );
+
+            $record = $this->buildInstallRecord(
+                server: $server,
+                installedSource: $package->source,
+                metadata: $metadata,
+                result: $result,
+                layout: $layout,
+                policy: $policy,
+            );
+
+            $this->store()->save($record);
+
             return response()->json([
                 'data' => [
                     'total_files' => $result->totalFiles(),
                     'created' => $result->createdCount(),
                     'overwritten' => $result->overwrittenCount(),
                     'backed_up' => $result->backupCount(),
+                    'record_id' => $record->id,
                 ],
             ]);
         } catch (InstallationLockedException $exception) {
@@ -303,6 +335,306 @@ final class ModpackController extends Controller
                 } catch (Throwable) {
                     // Releasing the lock must never mask the installation
                     // outcome; stale-lock handling covers leftover locks.
+                }
+            }
+
+            if ($provider !== null && $package !== null) {
+                $provider->cleanup($package);
+            }
+        }
+    }
+
+    public function installedModpacks(
+        Request $request,
+        Server $server,
+    ): JsonResponse {
+        try {
+            $records = $this->store()->all((string) $server->uuid);
+
+            return response()->json([
+                'data' => array_map(
+                    static fn (InstallRecord $record): array => $record->toArray(),
+                    $records,
+                ),
+            ]);
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return response()->json([
+                'error' => 'Unable to load the installed modpacks.',
+            ], 500);
+        }
+    }
+
+    public function installedModpack(
+        Request $request,
+        Server $server,
+        string $id,
+    ): JsonResponse {
+        try {
+            $record = $this->store()->find(
+                (string) $server->uuid,
+                $this->validateRecordId($id),
+            );
+
+            if ($record === null) {
+                return response()->json([
+                    'error' => 'The installed modpack was not found.',
+                ], 404);
+            }
+
+            return response()->json([
+                'data' => $record->toArray(),
+            ]);
+        } catch (InvalidArgumentException $exception) {
+            return response()->json([
+                'error' => $exception->getMessage(),
+            ], 422);
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return response()->json([
+                'error' => 'Unable to load the installed modpack.',
+            ], 500);
+        }
+    }
+
+    public function uninstall(
+        Request $request,
+        Server $server,
+        string $id,
+    ): JsonResponse {
+        $lock = null;
+        $token = bin2hex(random_bytes(16));
+
+        try {
+            $id = $this->validateRecordId($id);
+
+            $lock = $this->installationLock()->acquire(
+                $this->lockKey($server),
+                $token,
+            );
+
+            $record = $this->store()->find(
+                (string) $server->uuid,
+                $id,
+            );
+
+            if ($record === null) {
+                return response()->json([
+                    'error' => 'The installed modpack was not found.',
+                ], 404);
+            }
+
+            if ($record->status !== InstallRecord::STATUS_INSTALLED) {
+                return response()->json([
+                    'error' => 'The installed modpack is not in an active state.',
+                ], 409);
+            }
+
+            $target = $this->serverTarget($server);
+
+            $outcome = (new OwnershipRemover($target))->remove(
+                $record->ownedFiles(),
+            );
+
+            if ($outcome['errors'] !== []) {
+                report(new RuntimeException(
+                    'Modpack uninstall failed to remove owned files: '
+                        . implode('; ', $outcome['errors']),
+                ));
+
+                return response()->json([
+                    'error' => 'Unable to fully uninstall the modpack. No files were partially removed from the record.',
+                ], 500);
+            }
+
+            $this->store()->delete((string) $server->uuid, $id);
+
+            return response()->json([
+                'data' => [
+                    'id' => $record->id,
+                    'display_name' => $record->displayName,
+                    'version' => $record->version,
+                    'removed' => count($outcome['deleted']),
+                    'missing' => count($outcome['missing']),
+                ],
+            ]);
+        } catch (InstallationLockedException $exception) {
+            return response()->json([
+                'error' => 'Another installation operation is already running for this server. Please wait and try again.',
+            ], 503);
+        } catch (InvalidArgumentException $exception) {
+            return response()->json([
+                'error' => $exception->getMessage(),
+            ], 422);
+        } catch (WingsConnectionException $exception) {
+            return response()->json([
+                'error' => 'Unable to reach the server node. Please try again later.',
+            ], 503);
+        } catch (WingsHttpException $exception) {
+            return response()->json([
+                'error' => 'The server node could not complete the operation. Please try again later.',
+            ], 503);
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return response()->json([
+                'error' => 'Unable to uninstall the modpack.',
+            ], 500);
+        } finally {
+            if ($lock !== null) {
+                try {
+                    $this->installationLock()->release($lock, $token);
+                } catch (Throwable) {
+                    // Releasing the lock must never mask the outcome.
+                }
+            }
+        }
+    }
+
+    public function updateModpack(
+        Request $request,
+        Server $server,
+        string $id,
+    ): JsonResponse {
+        $lock = null;
+        $provider = null;
+        $package = null;
+        $token = bin2hex(random_bytes(16));
+
+        try {
+            $id = $this->validateRecordId($id);
+
+            $lock = $this->installationLock()->acquire(
+                $this->lockKey($server),
+                $token,
+            );
+
+            $record = $this->store()->find(
+                (string) $server->uuid,
+                $id,
+            );
+
+            if ($record === null) {
+                return response()->json([
+                    'error' => 'The installed modpack was not found.',
+                ], 404);
+            }
+
+            if ($record->status !== InstallRecord::STATUS_INSTALLED) {
+                return response()->json([
+                    'error' => 'The installed modpack is not in an active state.',
+                ], 409);
+            }
+
+            $provider = $this->providerRegistry()->resolve($record->source);
+
+            $latestBase = $this->latestBaseSource($record->source);
+
+            $package = $provider->getPackage($latestBase);
+
+            $metadata = $this->installMetadata(
+                $provider,
+                $package->source,
+            );
+
+            if ($metadata !== null && $metadata->version !== ''
+                && $metadata->version === $record->version
+            ) {
+                return response()->json([
+                    'error' => 'The modpack is already up to date.',
+                ], 409);
+            }
+
+            $layout = PackageLayout::tryFrom($record->layout)
+                ?? PackageLayout::DIRECT;
+
+            $policy = DeploymentPolicy::tryFrom($record->policy)
+                ?? DeploymentPolicy::OVERWRITE;
+
+            $target = $this->serverTarget($server);
+
+            $orchestrator = $this->orchestrator($target);
+
+            $result = $orchestrator->install(
+                archivePath: $package->archivePath,
+                policy: $policy,
+                layout: $layout,
+            );
+
+            $updated = $this->buildInstallRecord(
+                server: $server,
+                installedSource: $package->source,
+                metadata: $metadata,
+                result: $result,
+                layout: $layout,
+                policy: $policy,
+                existingRecord: $record,
+            );
+
+            $this->store()->save($updated);
+
+            return response()->json([
+                'data' => [
+                    'id' => $updated->id,
+                    'display_name' => $updated->displayName,
+                    'previous_version' => $record->version,
+                    'version' => $updated->version,
+                    'total_files' => $result->totalFiles(),
+                    'created' => $result->createdCount(),
+                    'overwritten' => $result->overwrittenCount(),
+                    'backed_up' => $result->backupCount(),
+                ],
+            ]);
+        } catch (InstallationLockedException $exception) {
+            return response()->json([
+                'error' => 'Another installation operation is already running for this server. Please wait and try again.',
+            ], 503);
+        } catch (InvalidArgumentException $exception) {
+            if (
+                $provider instanceof ManualDownloadProvider
+                && $record !== null
+            ) {
+                try {
+                    $manualDownload = $provider->manualDownloadInfoFor(
+                        $this->latestBaseSource($record->source),
+                    );
+                } catch (Throwable) {
+                    $manualDownload = null;
+                }
+
+                if ($manualDownload !== null) {
+                    return response()->json([
+                        'error' => $exception->getMessage(),
+                        'manual_download' => $manualDownload,
+                    ], 422);
+                }
+            }
+
+            return response()->json([
+                'error' => $exception->getMessage(),
+            ], 422);
+        } catch (WingsConnectionException $exception) {
+            return response()->json([
+                'error' => 'Unable to reach the server node. Please try again later.',
+            ], 503);
+        } catch (WingsHttpException $exception) {
+            return response()->json([
+                'error' => 'The server node could not complete the operation. Please try again later.',
+            ], 503);
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return response()->json([
+                'error' => 'Unable to update the modpack.',
+            ], 500);
+        } finally {
+            if ($lock !== null) {
+                try {
+                    $this->installationLock()->release($lock, $token);
+                } catch (Throwable) {
+                    // Releasing the lock must never mask the outcome.
                 }
             }
 
@@ -755,5 +1087,128 @@ final class ModpackController extends Controller
             packageRootResolver: new PackageRootResolver(),
             serverFileTarget: $target,
         );
+    }
+
+    private function store(): InstallRecordStore
+    {
+        return new InstallRecordStore(
+            $this->installDataDir(),
+        );
+    }
+
+    private function installDataDir(): string
+    {
+        $directory = env('MODPACK_INSTALLER_DATA_DIR');
+
+        if (is_string($directory) && $directory !== '') {
+            return $directory;
+        }
+
+        return '/var/lib/pterodactyl/modpack-installer';
+    }
+
+    private function buildInstallRecord(
+        Server $server,
+        string $installedSource,
+        ?ModpackMetadata $metadata,
+        InstallationResult $result,
+        PackageLayout $layout,
+        DeploymentPolicy $policy,
+        ?InstallRecord $existingRecord = null,
+    ): InstallRecord {
+        [$provider, $projectId, $versionId] = $this->sourceParts(
+            $installedSource,
+        );
+
+        if ($metadata !== null && $metadata->version !== '') {
+            $version = $metadata->version;
+        } else {
+            $version = $versionId
+                ?? $existingRecord?->version
+                ?? ($metadata?->version ?? '');
+        }
+
+        return new InstallRecord(
+            id: $existingRecord?->id ?? $this->newRecordId(),
+            serverUuid: (string) $server->uuid,
+            provider: $provider,
+            projectId: $projectId,
+            versionId: $versionId,
+            source: $installedSource,
+            displayName: ($metadata !== null && $metadata->name !== '')
+                ? $metadata->name
+                : ($existingRecord?->displayName ?? $projectId),
+            version: $version,
+            minecraftVersion: $metadata?->minecraftVersion,
+            loader: $metadata?->loader,
+            layout: $layout->value,
+            policy: $policy->value,
+            installedAt: $existingRecord?->installedAt ?? gmdate('c'),
+            updatedAt: gmdate('c'),
+            status: InstallRecord::STATUS_INSTALLED,
+            createdFiles: $result->created,
+            overwrittenFiles: $result->overwritten,
+        );
+    }
+
+    private function installMetadata(
+        ModpackProvider $provider,
+        string $source,
+    ): ?ModpackMetadata {
+        try {
+            return $provider->getMetadata($source);
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * Returns the unpinned base of an installed source so that an update can
+     * resolve the latest available version: the scheme and project id remain,
+     * any pinned version is dropped.
+     */
+    private function latestBaseSource(string $source): string
+    {
+        return explode('@', $source, 2)[0];
+    }
+
+    /**
+     * @return array{0: string, 1: string, 2: string|null}
+     */
+    private function sourceParts(string $source): array
+    {
+        $rest = preg_replace('/^([a-z0-9-]+):\/\//', '', $source)
+            ?? $source;
+
+        $pieces = explode('@', $rest, 2);
+
+        $projectId = $pieces[0] ?? '';
+        $versionId = isset($pieces[1]) && $pieces[1] !== ''
+            ? $pieces[1]
+            : null;
+
+        if (preg_match('/^([a-z0-9-]+):\/\//', $source, $matches) === 1) {
+            $provider = $matches[1];
+        } else {
+            $provider = '';
+        }
+
+        return [$provider, $projectId, $versionId];
+    }
+
+    private function validateRecordId(string $id): string
+    {
+        if (preg_match('/^[0-9a-f]{32}$/', $id) !== 1) {
+            throw new InvalidArgumentException(
+                'The installed modpack id is invalid.',
+            );
+        }
+
+        return $id;
+    }
+
+    private function newRecordId(): string
+    {
+        return bin2hex(random_bytes(16));
     }
 }

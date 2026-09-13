@@ -127,11 +127,14 @@ final class ModrinthProvider implements ModpackProvider
 
         $this->temporaryPackages[$archivePath] = true;
 
+        $resolvedVersionId = $this->nullableString($version['id'] ?? null)
+            ?? $parsed['versionId'];
+
         try {
             if ($extension !== 'mrpack') {
                 return new ModpackPackage(
                     archivePath: $archivePath,
-                    source: $this->canonicalSource($project, $parsed['versionId']),
+                    source: $this->canonicalSource($project, $resolvedVersionId),
                 );
             }
 
@@ -143,7 +146,7 @@ final class ModrinthProvider implements ModpackProvider
 
             return new ModpackPackage(
                 archivePath: $normalized,
-                source: $this->canonicalSource($project, $parsed['versionId']),
+                source: $this->canonicalSource($project, $resolvedVersionId),
             );
         } catch (Throwable $exception) {
             $this->removeTracked($archivePath);

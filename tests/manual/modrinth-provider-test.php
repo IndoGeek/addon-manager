@@ -107,6 +107,7 @@ function sampleResponses(): array
 
     $versions = [
         [
+            'id' => 'version-001',
             'version_number' => '1.0.0',
             'version_type' => 'release',
             'date_published' => '2024-01-01T00:00:00Z',
@@ -374,7 +375,7 @@ if (!is_file($package->archivePath)) {
     throw new RuntimeException('Normalized package archive does not exist.');
 }
 
-if ($package->source !== 'modrinth://prominence-2-rpg') {
+if ($package->source !== 'modrinth://prominence-2-rpg@version-001') {
     throw new RuntimeException('Unexpected package source.');
 }
 

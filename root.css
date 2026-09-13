@@ -475,6 +475,124 @@
     background: rgba(180, 40, 40, 0.15);
 }
 
+.modpackinstaller-manual-download {
+    margin-top: 20px;
+    padding: 16px;
+    border: 1px solid rgba(200, 150, 40, 0.4);
+    border-radius: 8px;
+    background: rgba(200, 150, 40, 0.08);
+}
+
+.modpackinstaller-manual-download h4 {
+    margin-top: 0;
+    color: #f2c14e;
+}
+
+.modpackinstaller-manual-download p {
+    margin: 0 0 12px;
+}
+
+.modpackinstaller-manual-download .modpackinstaller-details {
+    margin-bottom: 12px;
+}
+
+.modpackinstaller-manual-download .modpackinstaller-manual-download-link {
+    margin: 0 0 6px;
+}
+
+.modpackinstaller-manual-download-link a {
+    color: #6cb6ff;
+    overflow-wrap: anywhere;
+}
+
+.modpackinstaller-card-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.modpackinstaller-card-heading h3 {
+    margin: 0;
+}
+
+.modpackinstaller-card-heading button {
+    padding: 8px 14px;
+    border: 0;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    cursor: pointer;
+}
+
+.modpackinstaller-installed-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 16px;
+}
+
+.modpackinstaller-installed-item {
+    padding: 16px;
+    border: 1px solid rgba(127, 127, 127, 0.15);
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.12);
+}
+
+.modpackinstaller-installed-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.modpackinstaller-installed-header h4 {
+    margin: 0;
+}
+
+.modpackinstaller-installed-source {
+    margin-top: 10px;
+}
+
+.modpackinstaller-installed-source span {
+    display: block;
+    margin-bottom: 4px;
+    font-size: 0.8rem;
+    opacity: 0.7;
+}
+
+.modpackinstaller-installed-source code {
+    overflow-wrap: anywhere;
+}
+
+.modpackinstaller-installed-meta {
+    margin: 10px 0 0;
+    font-size: 0.85rem;
+    opacity: 0.7;
+}
+
+.modpackinstaller-installed-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 14px;
+}
+
+.modpackinstaller-installed-actions button {
+    padding: 8px 14px;
+    border: 0;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    cursor: pointer;
+}
+
+.modpackinstaller-installed-actions button:disabled {
+    cursor: wait;
+    opacity: 0.6;
+}
+
+.modpackinstaller-installed-actions .modpackinstaller-danger-armed {
+    background: rgba(180, 40, 40, 0.8);
+}
+
 .modpackinstaller-catalog-pagination {
     display: flex;
     align-items: center;

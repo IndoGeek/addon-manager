@@ -1,6 +1,16 @@
 import React, { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 
+interface ManualDownloadInfo {
+    provider: string;
+    project_name: string;
+    project_url: string | null;
+    file_name: string;
+    version: string;
+    download_url: string | null;
+    reason: string;
+}
+
 interface ModpackMetadata {
     id: string;
     name: string;
@@ -10,6 +20,7 @@ interface ModpackMetadata {
     description: string | null;
     icon_url: string | null;
     source: string;
+    manual_download: ManualDownloadInfo | null;
 }
 
 interface MetadataResponse {
@@ -41,6 +52,59 @@ interface InstallationResult {
 
 interface InstallResponse {
     data: InstallationResult;
+}
+
+interface InstallRecordData {
+    id: string;
+    server_uuid: string;
+    provider: string;
+    project_id: string;
+    version_id: string | null;
+    source: string;
+    display_name: string;
+    version: string;
+    minecraft_version: string | null;
+    loader: string | null;
+    layout: string;
+    policy: string;
+    installed_at: string;
+    updated_at: string;
+    status: string;
+    ownership: {
+        created: string[];
+        overwritten: string[];
+    };
+}
+
+interface InstalledModpacksResponse {
+    data: InstallRecordData[];
+}
+
+interface InstalledModpackResponse {
+    data: InstallRecordData;
+}
+
+interface UninstallResponse {
+    data: {
+        id: string;
+        display_name: string;
+        version: string;
+        removed: number;
+        missing: number;
+    };
+}
+
+interface UpdateResponse {
+    data: {
+        id: string;
+        display_name: string;
+        previous_version: string;
+        version: string;
+        total_files: number;
+        created: number;
+        overwritten: number;
+        backed_up: number;
+    };
 }
 
 interface StatusMessage {
@@ -210,6 +274,16 @@ const formatCount = (value: number): string => {
     return String(value);
 };
 
+const formatDate = (value: string): string => {
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+        return value;
+    }
+
+    return date.toLocaleString();
+};
+
 const versionLabel = (version: CatalogVersion): string => {
     const suffix: string[] = [];
 
@@ -243,6 +317,69 @@ const uniqueSorted = (
     combined.forEach((value) => seen.add(value));
 
     return Array.from(seen);
+};
+
+const ManualDownloadNotice = ({
+    manual,
+}: {
+    manual: ManualDownloadInfo;
+}) => {
+    return (
+        <div
+            className="modpackinstaller-manual-download"
+            role="alert"
+        >
+            <h4>Manual download required</h4>
+
+            <p>{manual.reason}</p>
+
+            <div className="modpackinstaller-details">
+                <div>
+                    <span>Provider</span>
+                    <strong>{manual.provider}</strong>
+                </div>
+
+                <div>
+                    <span>Project</span>
+                    <strong>{manual.project_name}</strong>
+                </div>
+
+                <div>
+                    <span>File</span>
+                    <strong>{manual.file_name}</strong>
+                </div>
+
+                <div>
+                    <span>Version</span>
+                    <strong>{manual.version}</strong>
+                </div>
+            </div>
+
+            {manual.download_url && (
+                <p className="modpackinstaller-manual-download-link">
+                    <a
+                        href={manual.download_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                    >
+                        Open official download
+                    </a>
+                </p>
+            )}
+
+            {manual.project_url && (
+                <p className="modpackinstaller-manual-download-link">
+                    <a
+                        href={manual.project_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                    >
+                        View project on CurseForge
+                    </a>
+                </p>
+            )}
+        </div>
+    );
 };
 
 const ModpackIcon = ({ item }: { item: CatalogItem }) => {
@@ -409,6 +546,21 @@ export default () => {
     const [providersError, setProvidersError] =
         useState<string | null>(null);
 
+    const [installed, setInstalled] =
+        useState<InstallRecordData[] | null>(null);
+
+    const [installedLoading, setInstalledLoading] =
+        useState(false);
+
+    const [installedError, setInstalledError] =
+        useState<string | null>(null);
+
+    const [lifecycleRecordId, setLifecycleRecordId] =
+        useState<string | null>(null);
+
+    const [armedUninstall, setArmedUninstall] =
+        useState<string | null>(null);
+
     const [filters, setFilters] = useState<CatalogFilters>({
         provider: DEFAULT_PROVIDER,
         query: '',
@@ -562,6 +714,166 @@ export default () => {
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    const loadInstalled = async () => {
+        if (!server) {
+            setInstalled([]);
+            setInstalledError(null);
+            return;
+        }
+
+        setInstalledLoading(true);
+        setInstalledError(null);
+
+        try {
+            const response =
+                await axios.get<InstalledModpacksResponse>(
+                    `${API_BASE}/servers/${server}/installed`,
+                );
+
+            if (!alive.current) {
+                return;
+            }
+
+            setInstalled(response.data.data);
+        } catch (requestError: any) {
+            if (!alive.current) {
+                return;
+            }
+
+            setInstalled([]);
+            setInstalledError(
+                requestError.response?.data?.error ||
+                'Unable to load the installed modpacks.',
+            );
+        } finally {
+            if (alive.current) {
+                setInstalledLoading(false);
+            }
+        }
+    };
+
+    useEffect(() => {
+        loadInstalled();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [server]);
+
+    const refreshInstalled = () => {
+        loadInstalled();
+        setArmedUninstall(null);
+    };
+
+    const updateInstalledModpack = async (record: InstallRecordData) => {
+        if (!server) {
+            setStatus({
+                kind: 'error',
+                message:
+                    'Unable to determine the current server.',
+            });
+            return;
+        }
+
+        if (lifecycleRecordId !== null) {
+            return;
+        }
+
+        setLifecycleRecordId(record.id);
+        setStatus(null);
+
+        try {
+            const response =
+                await axios.post<UpdateResponse>(
+                    `${API_BASE}/servers/${server}/installed/${record.id}/update`,
+                );
+
+            if (!alive.current) {
+                return;
+            }
+
+            setStatus({
+                kind: 'success',
+                message: `Updated ${response.data.data.display_name} from ${response.data.data.previous_version} to ${response.data.data.version}.`,
+            });
+            refreshInstalled();
+        } catch (requestError: any) {
+            if (!alive.current) {
+                return;
+            }
+
+            const message =
+                requestError.response?.data?.error ||
+                'Unable to update the modpack.';
+
+            setStatus({
+                kind: 'error',
+                message,
+            });
+
+            if (requestError.response?.data?.manual_download) {
+                setStatus({
+                    kind: 'error',
+                    message:
+                        'This modpack requires a manual download to update.',
+                });
+            }
+        } finally {
+            if (alive.current) {
+                setLifecycleRecordId(null);
+            }
+        }
+    };
+
+    const uninstallInstalledModpack = async (record: InstallRecordData) => {
+        if (!server) {
+            setStatus({
+                kind: 'error',
+                message:
+                    'Unable to determine the current server.',
+            });
+            return;
+        }
+
+        if (lifecycleRecordId !== null) {
+            return;
+        }
+
+        setLifecycleRecordId(record.id);
+        setStatus(null);
+
+        try {
+            const response =
+                await axios.post<UninstallResponse>(
+                    `${API_BASE}/servers/${server}/installed/${record.id}/uninstall`,
+                );
+
+            if (!alive.current) {
+                return;
+            }
+
+            setStatus({
+                kind: 'success',
+                message: `Uninstalled ${response.data.data.display_name} (${response.data.data.removed} files removed).`,
+            });
+            refreshInstalled();
+        } catch (requestError: any) {
+            if (!alive.current) {
+                return;
+            }
+
+            const message =
+                requestError.response?.data?.error ||
+                'Unable to uninstall the modpack.';
+
+            setStatus({
+                kind: 'error',
+                message,
+            });
+        } finally {
+            if (alive.current) {
+                setLifecycleRecordId(null);
+            }
+        }
+    };
 
     const onQueryChange = (value: string) => {
         setFilters((current) => ({
@@ -1049,6 +1361,7 @@ export default () => {
                 kind: 'success',
                 message: 'Installation complete.',
             });
+            refreshInstalled();
         } catch (requestError: any) {
             if (!alive.current || modalItem === null) {
                 return;
@@ -1253,6 +1566,7 @@ export default () => {
                 kind: 'success',
                 message: 'Installation complete.',
             });
+            refreshInstalled();
         } catch (requestError: any) {
             if (!alive.current) {
                 return;
@@ -1316,6 +1630,195 @@ export default () => {
                     Browse, search, and install a modpack directly
                     onto this server.
                 </p>
+            </div>
+
+            <div className="modpackinstaller-card">
+                <div className="modpackinstaller-card-heading">
+                    <h3>Installed modpacks</h3>
+
+                    <button
+                        type="button"
+                        onClick={refreshInstalled}
+                        disabled={installedLoading}
+                    >
+                        {installedLoading
+                            ? 'Refreshing ...'
+                            : 'Refresh'}
+                    </button>
+                </div>
+
+                {installed === null && installedLoading && (
+                    <div
+                        className="modpackinstaller-catalog-state"
+                        role="status"
+                    >
+                        Loading installed modpacks ...
+                    </div>
+                )}
+
+                {installed !== null && installedError && (
+                    <div className="modpackinstaller-catalog-state modpackinstaller-catalog-state--error">
+                        <p role="alert">{installedError}</p>
+
+                        <button
+                            type="button"
+                            onClick={refreshInstalled}
+                        >
+                            Retry
+                        </button>
+                    </div>
+                )}
+
+                {installed !== null
+                    && !installedError
+                    && installed.length === 0
+                    && !installedLoading && (
+                        <div className="modpackinstaller-catalog-state modpackinstaller-catalog-state--empty">
+                            <p>
+                                No modpacks are installed on this
+                                server yet.
+                            </p>
+                        </div>
+                    )}
+
+                {!installedError
+                    && installed !== null
+                    && installed.length > 0 && (
+                        <div className="modpackinstaller-installed-list">
+                            {installed.map((record) => (
+                                <article
+                                    className="modpackinstaller-installed-item"
+                                    key={record.id}
+                                >
+                                    <div className="modpackinstaller-installed-header">
+                                        <span className="modpackinstaller-catalog-card-badge">
+                                            {record.provider}
+                                        </span>
+
+                                        <h4>{record.display_name}</h4>
+                                    </div>
+
+                                    <div className="modpackinstaller-details">
+                                        <div>
+                                            <span>Version</span>
+                                            <strong>
+                                                {record.version}
+                                            </strong>
+                                        </div>
+
+                                        {record.minecraft_version && (
+                                            <div>
+                                                <span>Minecraft</span>
+                                                <strong>
+                                                    {record.minecraft_version}
+                                                </strong>
+                                            </div>
+                                        )}
+
+                                        {record.loader && (
+                                            <div>
+                                                <span>Loader</span>
+                                                <strong>
+                                                    {record.loader}
+                                                </strong>
+                                            </div>
+                                        )}
+
+                                        <div>
+                                            <span>Layout</span>
+                                            <strong>
+                                                {record.layout}
+                                            </strong>
+                                        </div>
+                                    </div>
+
+                                    <div className="modpackinstaller-installed-source">
+                                        <span>Source</span>
+                                        <code>{record.source}</code>
+                                    </div>
+
+                                    <p className="modpackinstaller-installed-meta">
+                                        Installed{' '}
+                                        {formatDate(record.installed_at)}
+                                        {' '}· Updated{' '}
+                                        {formatDate(record.updated_at)}
+                                    </p>
+
+                                    <div className="modpackinstaller-installed-actions">
+                                        <button
+                                            type="button"
+                                            onClick={() =>
+                                                updateInstalledModpack(
+                                                    record,
+                                                )
+                                            }
+                                            disabled={
+                                                lifecycleRecordId !== null
+                                            }
+                                        >
+                                            {lifecycleRecordId
+                                                === record.id
+                                                ? 'Working ...'
+                                                : 'Update to latest'}
+                                        </button>
+
+                                        {armedUninstall === record.id ? (
+                                            <>
+                                                <button
+                                                    type="button"
+                                                    className="modpackinstaller-danger-armed"
+                                                    onClick={() =>
+                                                        uninstallInstalledModpack(
+                                                            record,
+                                                        )
+                                                    }
+                                                    disabled={
+                                                        lifecycleRecordId
+                                                        !== null
+                                                    }
+                                                >
+                                                    {lifecycleRecordId
+                                                        === record.id
+                                                        ? 'Removing ...'
+                                                        : 'Confirm uninstall'}
+                                                </button>
+
+                                                <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                        setArmedUninstall(
+                                                            null,
+                                                        )
+                                                    }
+                                                    disabled={
+                                                        lifecycleRecordId
+                                                        !== null
+                                                    }
+                                                >
+                                                    Cancel
+                                                </button>
+                                            </>
+                                        ) : (
+                                            <button
+                                                type="button"
+                                                onClick={() =>
+                                                    setArmedUninstall(
+                                                        record.id,
+                                                    )
+                                                }
+                                                disabled={
+                                                    lifecycleRecordId
+                                                    !== null
+                                                }
+                                            >
+                                                Uninstall
+                                            </button>
+                                        )}
+                                    </div>
+                                </article>
+                            ))}
+                        </div>
+                    )}
             </div>
 
             {status && (
@@ -1796,6 +2299,12 @@ export default () => {
                             </code>
                         </div>
                     </div>
+
+                    {metadata.manual_download && (
+                        <ManualDownloadNotice
+                            manual={metadata.manual_download}
+                        />
+                    )}
                 </div>
             )}
 
@@ -2451,6 +2960,13 @@ export default () => {
                                     </fieldset>
                                 </div>
 
+                                {modalMetadata.manual_download && (
+                                    <ManualDownloadNotice
+                                        manual={modalMetadata.manual_download}
+                                    />
+                                )}
+
+                                {!modalMetadata.manual_download && (
                                 <div className="modpackinstaller-modal-actions">
                                     <button
                                         type="button"
@@ -2481,6 +2997,7 @@ export default () => {
                                         </button>
                                     )}
                                 </div>
+                                )}
                             </div>
                         )}
 

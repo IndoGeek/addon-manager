@@ -43,4 +43,24 @@ Route::group([
         ModpackController::class,
         'install',
     ]);
+
+    Route::get('/installed', [
+        ModpackController::class,
+        'installedModpacks',
+    ]);
+
+    Route::get('/installed/{id}', [
+        ModpackController::class,
+        'installedModpack',
+    ]);
+
+    Route::post('/installed/{id}/update', [
+        ModpackController::class,
+        'updateModpack',
+    ]);
+
+    Route::post('/installed/{id}/uninstall', [
+        ModpackController::class,
+        'uninstall',
+    ]);
 });
