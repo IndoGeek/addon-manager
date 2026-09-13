@@ -88,6 +88,13 @@ function sampleMod(int $id, string $slug, string $loaderValue): array
                 'filename' => $slug . '-1.0.0.zip',
             ],
         ],
+        'authors' => [
+            ['name' => ucfirst($slug) . ' Author'],
+        ],
+        'dateModified' => '2025-01-10T00:00:00Z',
+        'screenshots' => [
+            ['thumbnailUrl' => 'https://cdn.example/' . $slug . '-shot.png'],
+        ],
         'logo' => ['url' => 'https://cdn.example/' . $slug . '.png'],
     ];
 }
@@ -228,6 +235,18 @@ if (count($multi->items) !== 1) {
 
 if (($multi->items[0]->slug ?? '') !== 'fabric-pack') {
     throw new RuntimeException('Post-filter kept the wrong item.');
+}
+
+if (($multi->items[0]->author ?? null) !== 'Fabric-pack Author') {
+    throw new RuntimeException('Author should map from the first author entry.');
+}
+
+if (($multi->items[0]->updatedAt ?? null) !== '2025-01-10T00:00:00Z') {
+    throw new RuntimeException('dateModified should map to updated date.');
+}
+
+if (($multi->items[0]->bannerUrl ?? null) !== 'https://cdn.example/fabric-pack-shot.png') {
+    throw new RuntimeException('First screenshot should map to the banner.');
 }
 
 if ($multi->pagination->total !== 1) {

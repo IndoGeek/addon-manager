@@ -28,6 +28,10 @@ final readonly class CatalogItem
         public array $loaders,
         public ?string $latestVersion,
         public string $source,
+        public ?string $author,
+        public ?string $updatedAt,
+        public ?string $bannerUrl,
+        public ?string $environment,
     ) {
     }
 
@@ -51,6 +55,10 @@ final readonly class CatalogItem
             'loaders' => $this->loaders,
             'latest_version' => $this->latestVersion,
             'source' => $this->source,
+            'author' => $this->author,
+            'updated_at' => $this->updatedAt,
+            'banner_url' => $this->bannerUrl,
+            'environment' => $this->environment,
         ];
     }
 }

@@ -105,6 +105,10 @@ interface CatalogItem {
     loaders: string[];
     latest_version: string | null;
     source: string;
+    author: string | null;
+    updated_at: string | null;
+    banner_url: string | null;
+    environment: string | null;
 }
 
 interface CatalogPagination {
@@ -271,6 +275,64 @@ const formatDate = (value: string): string => {
     }
 
     return date.toLocaleString();
+};
+
+const formatUpdated = (value: string): string => {
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+        return value;
+    }
+
+    return date.toLocaleDateString(undefined, {
+        year: 'numeric',
+        month: 'short',
+    });
+};
+
+const titleCaseTag = (value: string): string => {
+    const special: Record<string, string> = {
+        neoforge: 'NeoForge',
+        client: 'Client',
+        server: 'Server',
+        'client-and-server': 'Client/Server',
+    };
+
+    if (special[value]) {
+        return special[value];
+    }
+
+    return value
+        .split('-')
+        .map(
+            (part) =>
+                part.charAt(0).toUpperCase() + part.slice(1),
+        )
+        .join(' ');
+};
+
+interface CardTag {
+    label: string;
+    loader: boolean;
+}
+
+const buildCardTags = (item: CatalogItem): CardTag[] => {
+    const tags: CardTag[] = [];
+
+    const push = (value: string, loader: boolean): void => {
+        if (!tags.some((tag) => tag.label === value)) {
+            tags.push({ label: value, loader });
+        }
+    };
+
+    if (item.environment) {
+        push(item.environment, false);
+    }
+
+    item.categories.forEach((category) => push(category, false));
+    item.loaders.forEach((loader) => push(loader, true));
+
+    return tags;
 };
 
 const versionLabel = (version: CatalogVersion): string => {
@@ -831,6 +893,97 @@ const PaginationBar = ({
     );
 };
 
+const DownloadStatIcon = () => (
+    <svg
+        width="14"
+        height="14"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+    >
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+        <polyline points="7 10 12 15 17 10" />
+        <line x1="12" y1="15" x2="12" y2="3" />
+    </svg>
+);
+
+const FollowsStatIcon = () => (
+    <svg
+        width="14"
+        height="14"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+    >
+        <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+    </svg>
+);
+
+const UpdatedStatIcon = () => (
+    <svg
+        width="14"
+        height="14"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+    >
+        <circle cx="12" cy="12" r="10" />
+        <polyline points="12 6 12 12 16 14" />
+    </svg>
+);
+
+const CardBanner = ({ item }: { item: CatalogItem }) => {
+    const mounted = useRef(true);
+
+    const [failed, setFailed] = useState(item.banner_url === null);
+
+    useEffect(() => {
+        setFailed(item.banner_url === null);
+    }, [item.banner_url, item.provider_project_id]);
+
+    useEffect(() => {
+        return () => {
+            mounted.current = false;
+        };
+    }, []);
+
+    if (!item.banner_url || failed) {
+        return (
+            <div
+                className="modpackinstaller-card-banner modpackinstaller-card-banner--fallback"
+                aria-hidden="true"
+            />
+        );
+    }
+
+    return (
+        <img
+            src={item.banner_url}
+            alt=""
+            className="modpackinstaller-card-banner"
+            loading="lazy"
+            referrerPolicy="no-referrer"
+            onError={() => {
+                if (mounted.current) {
+                    setFailed(true);
+                }
+            }}
+        />
+    );
+};
+
 const CatalogCard = ({
     item,
     view,
@@ -842,96 +995,127 @@ const CatalogCard = ({
     onOpen: (item: CatalogItem) => void;
     disabled: boolean;
 }) => {
+    const tags = buildCardTags(item);
+
+    const visibleTags = tags.slice(0, 5);
+    const overflowCount = tags.length - visibleTags.length;
+
+    const gameVersions =
+        item.game_versions.length > 3
+            ? [
+                  ...item.game_versions.slice(0, 3),
+                  `+${item.game_versions.length - 3}`,
+              ]
+            : item.game_versions;
+
     return (
         <article
             className={`modpackinstaller-catalog-card modpackinstaller-catalog-card--${view}`}
         >
-            <ModpackIcon item={item} compact={view === 'list'} />
+            <div className="modpackinstaller-card-media">
+                {view === 'grid' && <CardBanner item={item} />}
+
+                <div className="modpackinstaller-card-logo">
+                    <ModpackIcon item={item} compact={view === 'list'} />
+                </div>
+            </div>
 
             <div className="modpackinstaller-catalog-card-content">
                 <div className="modpackinstaller-catalog-card-header">
-                    <span className="modpackinstaller-catalog-card-badge">
+                    <h4 title={item.name}>{item.name}</h4>
+
+                    <span className="modpackinstaller-catalog-card-author">
+                        {item.author || 'Unknown author'} ·{' '}
                         {item.provider}
                     </span>
-
-                    <h4>{item.name}</h4>
                 </div>
 
                 <p className="modpackinstaller-catalog-card-summary">
                     {item.summary || 'No description available.'}
                 </p>
 
-                <dl className="modpackinstaller-catalog-card-meta">
-                    {item.categories.length > 0 && (
-                        <div>
-                            <dt>Category</dt>
-                            <dd>
-                                {item.categories
-                                    .slice(0, 3)
-                                    .join(' · ')}
-                            </dd>
-                        </div>
-                    )}
+                {tags.length > 0 && (
+                    <div className="modpackinstaller-catalog-card-tags">
+                        {visibleTags.map((tag) => (
+                            <span
+                                key={tag.label}
+                                className={`modpackinstaller-pill${
+                                    tag.loader
+                                        ? ' modpackinstaller-pill--loader'
+                                        : ''
+                                }`}
+                            >
+                                {titleCaseTag(tag.label)}
+                            </span>
+                        ))}
 
-                    {item.loaders.length > 0 && (
-                        <div>
-                            <dt>Loader</dt>
-                            <dd>{item.loaders.join(' · ')}</dd>
-                        </div>
-                    )}
+                        {overflowCount > 0 && (
+                            <span className="modpackinstaller-pill modpackinstaller-pill--overflow">
+                                +{overflowCount}
+                            </span>
+                        )}
+                    </div>
+                )}
 
-                    {item.game_versions.length > 0 && (
-                        <div>
-                            <dt>Minecraft</dt>
-                            <dd>
-                                {item.game_versions.length > 2
-                                    ? `${item.game_versions
-                                          .slice(0, 2)
-                                          .join(', ')} +`
-                                    : item.game_versions.join(', ')}
-                            </dd>
-                        </div>
-                    )}
+                {gameVersions.length > 0 && (
+                    <div className="modpackinstaller-catalog-card-versions">
+                        <span className="modpackinstaller-catalog-card-versions-label">
+                            MC
+                        </span>
 
+                        {gameVersions.map((version) => (
+                            <span
+                                key={version}
+                                className="modpackinstaller-version-chip"
+                            >
+                                {version}
+                            </span>
+                        ))}
+                    </div>
+                )}
+
+                <div className="modpackinstaller-catalog-card-stats">
                     {item.downloads !== null && (
-                        <div>
-                            <dt>Downloads</dt>
-                            <dd>{formatCount(item.downloads)}</dd>
-                        </div>
+                        <span title="Downloads">
+                            <DownloadStatIcon />
+                            {formatCount(item.downloads)}
+                        </span>
                     )}
 
                     {item.follows !== null && (
-                        <div>
-                            <dt>Follows</dt>
-                            <dd>{formatCount(item.follows)}</dd>
-                        </div>
+                        <span title="Follows">
+                            <FollowsStatIcon />
+                            {formatCount(item.follows)}
+                        </span>
                     )}
 
-                    {item.latest_version && (
-                        <div>
-                            <dt>Latest</dt>
-                            <dd>{item.latest_version}</dd>
-                        </div>
+                    {item.updated_at && (
+                        <span title="Last updated">
+                            <UpdatedStatIcon />
+                            {formatUpdated(item.updated_at)}
+                        </span>
                     )}
-                </dl>
+                </div>
 
                 <div className="modpackinstaller-catalog-card-actions">
                     <button
                         type="button"
+                        className="modpackinstaller-card-action-open"
                         onClick={() => onOpen(item)}
                         disabled={disabled}
                     >
-                        View details
+                        Open
                     </button>
 
                     {item.project_url && (
                         <a
+                            className="modpackinstaller-card-action-details"
                             href={item.project_url}
                             target="_blank"
                             rel="noopener noreferrer"
                             referrerPolicy="no-referrer"
                         >
-                            Open page
+                            Details
                         </a>
                     )}
                 </div>
@@ -2928,7 +3112,7 @@ export default () => {
                                         : modalVersions === null
                                             ? ''
                                             : modalVersions.length === 0
-                                                ? 'No versions match the selected filters.'
+                                                ? 'No versions are available for this modpack.'
                                                 : `${modalVersions.length} version${modalVersions.length === 1 ? '' : 's'}`}
                                 </span>
                             </div>

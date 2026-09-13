@@ -494,6 +494,13 @@ final class ModrinthCatalogProvider implements CatalogProvider
             loaders: $loaders,
             latestVersion: $this->stringOrNull($hit['latest_version'] ?? null),
             source: 'modrinth://' . $sourceId,
+            author: $this->stringOrNull($hit['author'] ?? null),
+            updatedAt: $this->stringOrNull($hit['date_modified'] ?? null),
+            bannerUrl: $this->galleryImage($hit),
+            environment: $this->environmentFlags(
+                $this->stringOrNull($hit['client_side'] ?? null),
+                $this->stringOrNull($hit['server_side'] ?? null),
+            ),
         );
     }
 
@@ -541,7 +548,70 @@ final class ModrinthCatalogProvider implements CatalogProvider
             loaders: $loaders,
             latestVersion: null,
             source: 'modrinth://' . $sourceId,
+            author: $this->stringOrNull($project['author'] ?? null),
+            updatedAt: $this->stringOrNull($project['updated'] ?? null),
+            bannerUrl: $this->galleryImage($project),
+            environment: $this->environmentFlags(
+                $this->stringOrNull($project['client_side'] ?? null),
+                $this->stringOrNull($project['server_side'] ?? null),
+            ),
         );
+    }
+
+    /**
+     * Best "banner" image available for a project: the featured gallery item
+     * when present, otherwise the first gallery entry (Modrinth has no
+     * dedicated banner image for modpacks).
+     *
+     * @param array<string, mixed> $data
+     */
+    private function galleryImage(array $data): ?string
+    {
+        foreach (['featured_gallery', 'gallery'] as $key) {
+            $entries = $data[$key] ?? null;
+
+            if (!is_array($entries)) {
+                continue;
+            }
+
+            foreach ($entries as $entry) {
+                if (!is_array($entry)) {
+                    continue;
+                }
+
+                $url = $this->validImageUrl(
+                    $this->stringOrNull($entry['url'] ?? null)
+                        ?? $this->stringOrNull($entry['raw_url'] ?? null),
+                );
+
+                if ($url !== null) {
+                    return $url;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Derive a client/server environment label from the Modrinth side flags,
+     * falling back to "client-and-server" when the flags are absent.
+     */
+    private function environmentFlags(?string $clientSide, ?string $serverSide): ?string
+    {
+        if ($clientSide === 'unsupported' && $serverSide === 'unsupported') {
+            return null;
+        }
+
+        if ($serverSide === 'unsupported') {
+            return 'client';
+        }
+
+        if ($clientSide === 'unsupported') {
+            return 'server';
+        }
+
+        return 'client-and-server';
     }
 
     private function totalHits(mixed $value): int

@@ -79,6 +79,13 @@ function sampleHits(): array
             'title' => 'Prominence 2 RPG',
             'description' => 'A dark fantasy modpack.',
             'icon_url' => 'https://cdn.example/icon.png',
+            'author' => 'Team Prominence',
+            'date_modified' => '2025-01-15T10:00:00Z',
+            'featured_gallery' => [
+                ['url' => 'https://cdn.example/banner.png'],
+            ],
+            'client_side' => 'required',
+            'server_side' => 'required',
             'categories' => ['fabric', 'adventure', 'combat'],
             'display_categories' => ['fabric'],
             'versions' => ['1.21.1', '1.20'],
@@ -97,6 +104,8 @@ function sampleHits(): array
             'versions' => [],
             'downloads' => '500',
             'latest_version' => '',
+            'client_side' => 'unsupported',
+            'server_side' => 'required',
             'project_type' => 'modpack',
         ],
     ];
@@ -299,6 +308,18 @@ if ($first->latestVersion !== '2.0.1') {
 if ($first->source !== 'modrinth://prominence-2-rpg') {
     throw new RuntimeException('Unexpected source.');
 }
+if ($first->author !== 'Team Prominence') {
+    throw new RuntimeException('Unexpected author.');
+}
+if ($first->updatedAt !== '2025-01-15T10:00:00Z') {
+    throw new RuntimeException('Unexpected updated date.');
+}
+if ($first->bannerUrl !== 'https://cdn.example/banner.png') {
+    throw new RuntimeException('Featured gallery should map to banner.');
+}
+if ($first->environment !== 'client-and-server') {
+    throw new RuntimeException('Unexpected environment mapping.');
+}
 
 pass('hit mapped to normalized catalog item');
 
@@ -324,6 +345,20 @@ if ($second->latestVersion !== null) {
 
 if ($second->slug !== 'missing-meta' || $second->projectUrl === null) {
     throw new RuntimeException('Slug/URL mapping failed.');
+}
+
+if ($second->author !== null || $second->updatedAt !== null) {
+    throw new RuntimeException('Missing author/updated fields should stay null.');
+}
+
+if ($second->bannerUrl !== null) {
+    throw new RuntimeException('Missing gallery should leave banner null.');
+}
+
+if ($second->environment !== 'server') {
+    throw new RuntimeException(
+        'Unsupported client side should map to a server-only environment.',
+    );
 }
 
 pass('nullable and fallback fields mapped defensively');
@@ -378,6 +413,25 @@ if ($data['filters']['loaders'] !== ['fabric']) {
     throw new RuntimeException('toArray loader echo mismatch.');
 }
 
+$serializedItem = $data['items'][0] ?? null;
+
+if ($serializedItem === null || !is_array($serializedItem)) {
+    throw new RuntimeException('toArray missing serialized items.');
+}
+
+foreach (['author', 'updated_at', 'banner_url', 'environment'] as $key) {
+    if (!array_key_exists($key, $serializedItem)) {
+        throw new RuntimeException("toArray missing {$key}.");
+    }
+}
+
+if (
+    $serializedItem['author'] !== 'Team Prominence'
+    || $serializedItem['updated_at'] !== '2025-01-15T10:00:00Z'
+) {
+    throw new RuntimeException('toArray author/updated serialization mismatch.');
+}
+
 pass('normalized contract serializes with pagination + filters');
 
 $http = new FakeProviderHttpClient([
@@ -407,6 +461,13 @@ $http = new FakeProviderHttpClient([
         'title' => 'Prominence 2 RPG',
         'description' => 'A dark fantasy modpack.',
         'icon_url' => 'https://cdn.example/icon.png',
+        'author' => 'Team Prominence',
+        'updated' => '2025-01-15T10:00:00Z',
+        'gallery' => [
+            ['url' => 'https://cdn.example/shot.png'],
+        ],
+        'client_side' => 'required',
+        'server_side' => 'unsupported',
         'downloads' => 120000,
         'followers' => 8500,
         'categories' => ['fabric', 'adventure', 'combat'],
@@ -443,6 +504,22 @@ if ($details->loaders !== ['fabric']) {
 
 if (in_array('fabric', $details->categories, true)) {
     throw new RuntimeException('Loader leaked into project categories.');
+}
+
+if ($details->author !== 'Team Prominence') {
+    throw new RuntimeException('Project author not mapped.');
+}
+
+if ($details->updatedAt !== '2025-01-15T10:00:00Z') {
+    throw new RuntimeException('Project updated date not mapped.');
+}
+
+if ($details->bannerUrl !== 'https://cdn.example/shot.png') {
+    throw new RuntimeException('Project gallery should map to banner.');
+}
+
+if ($details->environment !== 'client') {
+    throw new RuntimeException('Project environment flags not mapped.');
 }
 
 if (($details->source ?? '') !== 'modrinth://prominence-2-rpg') {

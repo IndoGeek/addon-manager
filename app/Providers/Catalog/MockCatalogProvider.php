@@ -29,6 +29,9 @@ final class MockCatalogProvider implements CatalogProvider
             'slug' => 'example-pack',
             'name' => 'Example Modpack',
             'summary' => 'A mock modpack used for development and testing.',
+            'author' => 'Mock Team',
+            'updated_at' => '2025-01-10T00:00:00Z',
+            'banner_url' => 'https://cdn.example/banner-a.png',
             'latest_version' => '1.0.0',
             'categories' => ['adventure'],
             'loaders' => ['fabric'],
@@ -40,6 +43,9 @@ final class MockCatalogProvider implements CatalogProvider
             'slug' => 'vanilla-tweaks',
             'name' => 'Vanilla Tweaks Pack',
             'summary' => 'Small quality-of-life tweaks without changing the game feel.',
+            'author' => 'Vanilla Collective',
+            'updated_at' => '2025-02-20T00:00:00Z',
+            'banner_url' => 'https://cdn.example/banner-v.png',
             'latest_version' => '2.4.0',
             'categories' => ['utility'],
             'loaders' => ['fabric'],
@@ -51,6 +57,8 @@ final class MockCatalogProvider implements CatalogProvider
             'slug' => 'barebones-progression',
             'name' => 'Barebones Progression',
             'summary' => 'A minimal progression-focused modpack for older worlds.',
+            'author' => 'Solo Builder',
+            'updated_at' => '2024-12-05T00:00:00Z',
             'latest_version' => '3.1.0',
             'categories' => ['adventure', 'technology'],
             'loaders' => ['forge'],
@@ -306,7 +314,36 @@ final class MockCatalogProvider implements CatalogProvider
             loaders: self::stringList($modpack['loaders'] ?? []),
             latestVersion: self::optionalString($modpack['latest_version'] ?? null),
             source: 'mock://' . $modpack['slug'],
+            author: self::optionalString($modpack['author'] ?? null),
+            updatedAt: self::optionalString($modpack['updated_at'] ?? null),
+            bannerUrl: self::optionalString($modpack['banner_url'] ?? null),
+            environment: self::environmentFromTags(
+                self::stringList($modpack['environments'] ?? []),
+            ),
         );
+    }
+
+    /**
+     * @param array<string> $tags
+     */
+    private static function environmentFromTags(array $tags): ?string
+    {
+        $hasClient = in_array('client', $tags, true);
+        $hasServer = in_array('server', $tags, true);
+
+        if ($hasClient && $hasServer) {
+            return 'client-and-server';
+        }
+
+        if ($hasServer) {
+            return 'server';
+        }
+
+        if ($hasClient) {
+            return 'client';
+        }
+
+        return null;
     }
 
     /**

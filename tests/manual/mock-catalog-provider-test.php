@@ -101,6 +101,36 @@ foreach ($all->items as $item) {
     }
 }
 
+$firstItem = $all->items[0] ?? null;
+
+if ($firstItem === null) {
+    throw new RuntimeException('Expected at least one mock item.');
+}
+
+if ($firstItem->author !== 'Mock Team') {
+    throw new RuntimeException('Mock author not mapped.');
+}
+
+if ($firstItem->updatedAt !== '2025-01-10T00:00:00Z') {
+    throw new RuntimeException('Mock updated date not mapped.');
+}
+
+if ($firstItem->bannerUrl !== 'https://cdn.example/banner-a.png') {
+    throw new RuntimeException('Mock banner not mapped.');
+}
+
+if ($firstItem->environment !== 'client-and-server') {
+    throw new RuntimeException(
+        'Client + server tags should map to client-and-server.',
+    );
+}
+
+$serverOnly = $all->items[2] ?? null;
+
+if (($serverOnly->environment ?? null) !== 'server') {
+    throw new RuntimeException('Server-only tags should map to server.');
+}
+
 pass('mock catalog returns deterministic labeled items');
 
 $query = $provider->search(new CatalogSearchQuery(

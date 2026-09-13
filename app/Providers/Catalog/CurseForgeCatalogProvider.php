@@ -736,6 +736,41 @@ final class CurseForgeCatalogProvider implements CatalogProvider
             ? $mod['logo']
             : [];
 
+        $author = null;
+
+        foreach ($this->arrayOf($mod['authors'] ?? []) as $entry) {
+            if (!is_array($entry)) {
+                continue;
+            }
+
+            $name = $this->stringOrNull($entry['name'] ?? null);
+
+            if ($name !== null) {
+                $author = $name;
+
+                break;
+            }
+        }
+
+        $bannerUrl = null;
+
+        foreach ($this->arrayOf($mod['screenshots'] ?? []) as $entry) {
+            if (!is_array($entry)) {
+                continue;
+            }
+
+            $url = $this->validImageUrl(
+                $this->stringOrNull($entry['thumbnailUrl'] ?? null)
+                    ?? $this->stringOrNull($entry['url'] ?? null),
+            );
+
+            if ($url !== null) {
+                $bannerUrl = $url;
+
+                break;
+            }
+        }
+
         $latestVersion = null;
 
         foreach ($this->arrayOf($mod['latestFilesIndexes'] ?? []) as $entry) {
@@ -774,6 +809,10 @@ final class CurseForgeCatalogProvider implements CatalogProvider
             loaders: array_keys($loaders),
             latestVersion: $latestVersion,
             source: 'curseforge://' . $id,
+            author: $author,
+            updatedAt: $this->stringOrNull($mod['dateModified'] ?? null),
+            bannerUrl: $bannerUrl,
+            environment: null,
         );
     }
 
