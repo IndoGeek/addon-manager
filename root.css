@@ -1048,17 +1048,39 @@
     min-width: 0;
 }
 
-.modpackinstaller-modal-categories {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-}
-
 .modpackinstaller-modal-link {
     align-self: flex-start;
+    display: inline-flex;
+    align-items: center;
+    padding: 10px 16px;
+    border-radius: 6px;
     font-size: 0.85rem;
+    font-weight: 600;
     text-decoration: none;
-    border-bottom: 1px solid currentcolor;
+    background: #2563eb;
+    color: #fff;
+    transition: background 0.2s ease;
+}
+
+.modpackinstaller-modal-link:hover {
+    background: #1d4ed8;
+}
+
+.modpackinstaller-modal-link:focus-visible {
+    outline: 2px solid rgba(37, 99, 235, 0.6);
+    outline-offset: 2px;
+}
+
+.modpackinstaller-modal-summary {
+    display: block;
+    -webkit-line-clamp: unset;
+    overflow: visible;
+    margin-top: 12px;
+}
+
+.modpackinstaller-modal-stats {
+    border-top: 0;
+    justify-content: flex-start;
 }
 
 .modpackinstaller-modal-filters {
@@ -1198,6 +1220,16 @@
     background: #9ca3af;
     color: #e5e7eb;
     opacity: 1;
+}
+
+.modpackinstaller-modal-actions
+    button.modpackinstaller-modal-actions-button--success,
+.modpackinstaller-modal-actions
+    button.modpackinstaller-modal-actions-button--success:hover,
+.modpackinstaller-modal-actions
+    button.modpackinstaller-modal-actions-button--success:disabled {
+    background: #16a34a;
+    cursor: default;
 }
 
 .modpackinstaller-modal-result {

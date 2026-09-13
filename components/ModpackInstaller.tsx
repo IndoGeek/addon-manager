@@ -947,11 +947,19 @@ const UpdatedStatIcon = () => (
 const CardBanner = ({ item }: { item: CatalogItem }) => {
     const mounted = useRef(true);
 
-    const [failed, setFailed] = useState(item.banner_url === null);
+    const sources = [
+        item.banner_url,
+        item.icon_url,
+    ].filter(
+        (source): source is string =>
+            typeof source === 'string' && source.length > 0,
+    );
+
+    const [attempt, setAttempt] = useState(0);
 
     useEffect(() => {
-        setFailed(item.banner_url === null);
-    }, [item.banner_url, item.provider_project_id]);
+        setAttempt(0);
+    }, [item.banner_url, item.icon_url, item.provider_project_id]);
 
     useEffect(() => {
         return () => {
@@ -959,7 +967,9 @@ const CardBanner = ({ item }: { item: CatalogItem }) => {
         };
     }, []);
 
-    if (!item.banner_url || failed) {
+    const source = sources[attempt];
+
+    if (!source) {
         return (
             <div
                 className="modpackinstaller-card-banner modpackinstaller-card-banner--fallback"
@@ -970,17 +980,49 @@ const CardBanner = ({ item }: { item: CatalogItem }) => {
 
     return (
         <img
-            src={item.banner_url}
+            src={source}
             alt=""
             className="modpackinstaller-card-banner"
             loading="lazy"
             referrerPolicy="no-referrer"
             onError={() => {
                 if (mounted.current) {
-                    setFailed(true);
+                    setAttempt((current) => current + 1);
                 }
             }}
         />
+    );
+};
+
+const PillTags = ({ tags }: { tags: CardTag[] }) => {
+    const visibleTags = tags.slice(0, 5);
+    const overflowCount = tags.length - visibleTags.length;
+
+    if (tags.length === 0) {
+        return null;
+    }
+
+    return (
+        <div className="modpackinstaller-catalog-card-tags">
+            {visibleTags.map((tag) => (
+                <span
+                    key={tag.label}
+                    className={`modpackinstaller-pill${
+                        tag.loader
+                            ? ' modpackinstaller-pill--loader'
+                            : ''
+                    }`}
+                >
+                    {titleCaseTag(tag.label)}
+                </span>
+            ))}
+
+            {overflowCount > 0 && (
+                <span className="modpackinstaller-pill modpackinstaller-pill--overflow">
+                    +{overflowCount}
+                </span>
+            )}
+        </div>
     );
 };
 
@@ -996,9 +1038,6 @@ const CatalogCard = ({
     disabled: boolean;
 }) => {
     const tags = buildCardTags(item);
-
-    const visibleTags = tags.slice(0, 5);
-    const overflowCount = tags.length - visibleTags.length;
 
     return (
         <article
@@ -1033,28 +1072,7 @@ const CatalogCard = ({
                     {item.summary || 'No description available.'}
                 </p>
 
-                {tags.length > 0 && (
-                    <div className="modpackinstaller-catalog-card-tags">
-                        {visibleTags.map((tag) => (
-                            <span
-                                key={tag.label}
-                                className={`modpackinstaller-pill${
-                                    tag.loader
-                                        ? ' modpackinstaller-pill--loader'
-                                        : ''
-                                }`}
-                            >
-                                {titleCaseTag(tag.label)}
-                            </span>
-                        ))}
-
-                        {overflowCount > 0 && (
-                            <span className="modpackinstaller-pill modpackinstaller-pill--overflow">
-                                +{overflowCount}
-                            </span>
-                        )}
-                    </div>
-                )}
+                {tags.length > 0 && <PillTags tags={tags} />}
 
                 <div className="modpackinstaller-catalog-card-stats">
                     {item.downloads !== null && (
@@ -1882,10 +1900,7 @@ export default () => {
             }
 
             setModalMetadata(response.data.data);
-            setModalStatus({
-                kind: 'info',
-                message: `Resolved ${response.data.data.name} ${response.data.data.version}.`,
-            });
+            setModalStatus(null);
         } catch (requestError: any) {
             if (
                 !alive.current
@@ -1968,10 +1983,6 @@ export default () => {
             }
 
             setModalResult(response.data.data);
-            setModalStatus({
-                kind: 'success',
-                message: 'Installation complete.',
-            });
             loadInstalled();
         } catch (requestError: any) {
             if (!alive.current || detailsItem === null) {
@@ -2117,10 +2128,6 @@ export default () => {
             }
 
             setResult(response.data.data);
-            setStatus({
-                kind: 'success',
-                message: 'Installation complete.',
-            });
             loadInstalled();
         } catch (requestError: any) {
             if (!alive.current) {
@@ -2729,10 +2736,17 @@ export default () => {
                                     type="button"
                                     onClick={installManualSource}
                                     disabled={installLoading || result !== null}
+                                    className={`modpackinstaller-modal-actions-button${
+                                        result !== null
+                                            ? ' modpackinstaller-modal-actions-button--success'
+                                            : ''
+                                    }`}
                                 >
                                     {installLoading
                                         ? 'Installing ...'
-                                        : 'Install this modpack'}
+                                        : result !== null
+                                            ? 'Installation Complete'
+                                            : 'Install this modpack'}
                                 </button>
                             </div>
                         )}
@@ -2742,8 +2756,6 @@ export default () => {
 
             {result && (
                 <div className="modpackinstaller-card">
-                    <h3>Installation complete</h3>
-
                     <div className="modpackinstaller-result-grid">
                         <div>
                             <span>Total files</span>
@@ -2995,76 +3007,38 @@ export default () => {
                             />
 
                             <div className="modpackinstaller-modal-item-meta">
-                                <p className="modpackinstaller-catalog-card-summary">
-                                    {detailsItem.summary ||
-                                        'No description available.'}
-                                </p>
+                                <PillTags
+                                    tags={buildCardTags(detailsItem)}
+                                />
 
-                                {detailsItem.categories.length > 0 && (
-                                    <div className="modpackinstaller-modal-categories">
-                                        {detailsItem.categories.map(
-                                            (category) => (
-                                                <span
-                                                    className="modpackinstaller-chip"
-                                                    key={category}
-                                                >
-                                                    {category}
-                                                </span>
-                                            ),
-                                        )}
-                                    </div>
-                                )}
-
-                                <dl className="modpackinstaller-catalog-card-meta">
-                                    {detailsItem.loaders.length > 0 && (
-                                        <div>
-                                            <dt>Loader</dt>
-                                            <dd>
-                                                {detailsItem.loaders.join(' · ')}
-                                            </dd>
-                                        </div>
-                                    )}
-
-                                    {detailsItem.game_versions.length > 0 && (
-                                        <div>
-                                            <dt>Minecraft</dt>
-                                            <dd>
-                                                {detailsItem.game_versions.length > 3
-                                                    ? `${detailsItem.game_versions
-                                                          .slice(0, 3)
-                                                          .join(', ')} +`
-                                                    : detailsItem.game_versions.join(', ')}
-                                            </dd>
-                                        </div>
-                                    )}
-
+                                <div className="modpackinstaller-catalog-card-stats modpackinstaller-modal-stats">
                                     {detailsItem.downloads !== null && (
-                                        <div>
-                                            <dt>Downloads</dt>
-                                            <dd>
-                                                {formatCount(detailsItem.downloads)}
-                                            </dd>
-                                        </div>
+                                        <span title="Downloads">
+                                            <DownloadStatIcon />
+                                            {formatCount(
+                                                detailsItem.downloads,
+                                            )}
+                                        </span>
                                     )}
 
                                     {detailsItem.follows !== null && (
-                                        <div>
-                                            <dt>Follows</dt>
-                                            <dd>
-                                                {formatCount(detailsItem.follows)}
-                                            </dd>
-                                        </div>
+                                        <span title="Follows">
+                                            <FollowsStatIcon />
+                                            {formatCount(
+                                                detailsItem.follows,
+                                            )}
+                                        </span>
                                     )}
 
-                                    {detailsItem.latest_version && (
-                                        <div>
-                                            <dt>Latest</dt>
-                                            <dd>
-                                                {detailsItem.latest_version}
-                                            </dd>
-                                        </div>
+                                    {detailsItem.updated_at && (
+                                        <span title="Last updated">
+                                            <UpdatedStatIcon />
+                                            {formatUpdated(
+                                                detailsItem.updated_at,
+                                            )}
+                                        </span>
                                     )}
-                                </dl>
+                                </div>
 
                                 {detailsItem.project_url && (
                                     <a
@@ -3081,6 +3055,11 @@ export default () => {
                                 )}
                             </div>
                         </div>
+
+                        <p className="modpackinstaller-catalog-card-summary modpackinstaller-modal-summary">
+                            {detailsItem.summary ||
+                                'No description available.'}
+                        </p>
 
                         <div className="modpackinstaller-modal-versions">
                             <div className="modpackinstaller-modal-versions-heading">
@@ -3249,10 +3228,17 @@ export default () => {
                                         || modalInstallLoading
                                         || modalResult !== null
                                     }
+                                    className={`modpackinstaller-modal-actions-button${
+                                        modalResult !== null
+                                            ? ' modpackinstaller-modal-actions-button--success'
+                                            : ''
+                                    }`}
                                 >
                                             {modalInstallLoading
                                                 ? 'Installing ...'
-                                                : 'Install Modpack'}
+                                                : modalResult !== null
+                                                    ? 'Installation Complete'
+                                                    : 'Install Modpack'}
                                         </button>
                                     </div>
                                 )}
