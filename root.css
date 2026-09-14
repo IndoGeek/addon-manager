@@ -1772,11 +1772,6 @@
     .modpackinstaller-filter-options {
         grid-template-columns: 1fr 1fr;
     }
-
-    .modpackinstaller-card button,
-     .modpackinstaller-form button {
-         width: 100%;
-     }
 }
 
 .modpackinstaller-pagination {

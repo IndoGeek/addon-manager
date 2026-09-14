@@ -96,14 +96,43 @@ Run every meaningful change against:
    `components/ModpackInstaller.tsx` (e.g. `tsc --noEmit` with
    `jsx: react-jsx` and `@types/react`), since the panel build is deferred to
    deployment.
-5. Deployment compatibility, then lint the deployed controller under
-   `/var/www/pterodactyl/.blueprint/dev`:
+5. Deployment compatibility, then build and deploy the frontend:
    ```bash
-   ./sync.sh
-   npm ci
-   NODE_OPTIONS=--openssl-legacy-provider yarn run build:production
+   ./build.sh
    ```
-   `blueprint -build` is not used because `sudo` is unavailable on the panel;
-   assets are built directly and the extension files, controller, and routes
-   are synced into the running tree manually (see the deploy notes in the
-   project history).
+   `build.sh` performs the full pipeline:
+   1. `./sync.sh` — rsyncs the repository into
+      `/var/www/pterodactyl/.blueprint/dev` (owned by `www-data`).
+   2. Copies `root.css` into
+      `/var/www/pterodactyl/resources/scripts/blueprint/css/imported/modpackinstaller.css`,
+      which the panel's webpack build imports through
+      `resources/scripts/index.tsx` -> `blueprint/css/extensions.css`.
+      This step is essential: the imported CSS file is a plain copy, not a
+      symlink, so a stale copy ships old styles to the browser even though
+      the build succeeds.
+   3. Temporarily takes ownership of `public/assets` and
+      `.build-cache.json` (they are `www-data`-owned; only `rsync`,
+      `chown`, and `rm` are passwordless in sudoers), then runs
+      `NODE_OPTIONS=--openssl-legacy-provider yarn run build:production`
+      inside the panel directory, and restores `www-data` ownership.
+
+   `blueprint -build` is not used because `sudo` is unavailable on the
+   panel; assets are built directly and the extension files, controller,
+   and routes are synced into the running tree manually.
+
+### Verifying a frontend deploy actually went live
+
+The bundle filename embeds a content hash, so a real rebuild changes it
+(e.g. `bundle.3fafd6f6.js`). After building:
+
+```bash
+# The loaded bundle must contain your newest CSS marker:
+grep -o 'your-new-rule{[^}]*}' /var/www/pterodactyl/public/assets/bundle.*.js
+
+# The imported CSS copy must match the repository source:
+diff <(sha256sum < root.css) \
+  <(sha256sum < /var/www/pterodactyl/resources/scripts/blueprint/css/imported/modpackinstaller.css)
+```
+
+The bundle hash change is the cache-busting mechanism: browsers fetch the
+new URL automatically. If the hash did not change, nothing was rebuilt.
