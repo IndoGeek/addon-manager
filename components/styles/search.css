@@ -1,0 +1,105 @@
+.modpackinstaller-browser-toolbar {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    margin-top: 4px;
+}
+
+.modpackinstaller-search {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex: 1 1 100%;
+    min-width: 0;
+}
+
+.modpackinstaller-search > label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    opacity: 0.8;
+}
+
+.modpackinstaller-controls-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 8px;
+    width: 100%;
+}
+
+.modpackinstaller-search-box {
+    display: flex;
+    align-items: center;
+    flex: 1 1 auto;
+    min-width: 0;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.2);
+    overflow: hidden;
+}
+
+.modpackinstaller-search-box input {
+    flex: 1 1 auto;
+    min-width: 0;
+    box-sizing: border-box;
+    padding: 9px 12px;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font-size: 0.95rem;
+}
+
+.modpackinstaller-search-box input:focus {
+    outline: none;
+}
+
+.modpackinstaller-search-box:focus-within {
+    border-color: rgba(108, 182, 255, 0.55);
+}
+
+.modpackinstaller-search-box input:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.modpackinstaller-search-clear {
+    flex: 0 0 auto;
+    width: 34px;
+    height: 38px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font-size: 1.1rem;
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0.7;
+}
+
+.modpackinstaller-search-clear:hover {
+    opacity: 1;
+}
+
+.modpackinstaller-search-go {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 38px;
+    padding: 0;
+    border: 0;
+    border-left: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.06);
+    color: #ffffff;
+    cursor: pointer;
+}
+
+.modpackinstaller-search-go:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.12);
+}
+
+.modpackinstaller-search-go:disabled {
+    cursor: wait;
+    opacity: 0.6;
+}

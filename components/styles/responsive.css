@@ -1,0 +1,83 @@
+@media (max-width: 768px) {
+    .modpackinstaller-root {
+        padding: 16px;
+    }
+
+    .modpackinstaller-controls-row {
+        flex-direction: row;
+        align-items: center;
+    }
+
+    .modpackinstaller-install-toggle {
+        justify-content: center;
+    }
+
+    .modpackinstaller-installed-item {
+        flex-wrap: wrap;
+    }
+
+    .modpackinstaller-installed-actions {
+        width: 100%;
+        justify-content: flex-end;
+    }
+
+    .modpackinstaller-confirm-actions {
+        flex-direction: column-reverse;
+    }
+
+    .modpackinstaller-confirm-actions button {
+        width: 100%;
+    }
+
+    .modpackinstaller-catalog-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .modpackinstaller-catalog-card--list {
+        flex-direction: column;
+    }
+
+    .modpackinstaller-pagination {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .modpackinstaller-pagination-actions {
+        width: 100%;
+    }
+
+    .modpackinstaller-pagination-actions button {
+        flex: 1 1 auto;
+    }
+
+    .modpackinstaller-dropdown-trigger {
+        min-width: 140px;
+    }
+
+    .modpackinstaller-modal-overlay {
+        padding: 8px;
+    }
+
+    .modpackinstaller-modal {
+        padding: 16px;
+    }
+
+    .modpackinstaller-modal-header {
+        flex-direction: column;
+    }
+}
+
+@media (max-width: 500px) {
+    .modpackinstaller-pagination {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .modpackinstaller-pagination-results {
+        align-self: flex-start;
+    }
+
+    .modpackinstaller-pagination-actions {
+        justify-content: flex-end;
+    }
+}
