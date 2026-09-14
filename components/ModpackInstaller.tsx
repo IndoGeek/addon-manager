@@ -844,6 +844,38 @@ const ModpackIcon = ({
     );
 };
 
+const ChevronLeftIcon = () => (
+    <svg
+        width="17"
+        height="17"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+    >
+        <polyline points="15 18 9 12 15 6" />
+    </svg>
+);
+
+const ChevronRightIcon = () => (
+    <svg
+        width="17"
+        height="17"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+    >
+        <polyline points="9 18 15 12 9 6" />
+    </svg>
+);
+
 const PaginationBar = ({
     pagination,
     searching,
@@ -867,27 +899,45 @@ const PaginationBar = ({
             aria-label="Catalog pages"
             aria-busy={searching}
         >
-            <span className="modpackinstaller-pagination-info">
+            <span
+                className="modpackinstaller-pagination-results"
+                aria-label={`${pagination.total} ${
+                    pagination.total === 1
+                        ? 'result'
+                        : 'results'
+                }`}
+            >
                 {pagination.total}{' '}
-                {pagination.total === 1 ? 'result' : 'results'} · Page{' '}
-                {page} of {pagination.total_pages}
+                {pagination.total === 1
+                    ? 'result'
+                    : 'results'}
             </span>
 
             <div className="modpackinstaller-pagination-actions">
                 <button
                     type="button"
+                    className="modpackinstaller-pagination-button"
                     onClick={() => onPage(page - 1)}
                     disabled={!pagination.has_previous || searching}
+                    aria-label="Previous page"
+                    title="Previous page"
                 >
-                    Previous
+                    <ChevronLeftIcon />
                 </button>
+
+                <span className="modpackinstaller-pagination-page">
+                    Page {page} of {pagination.total_pages}
+                </span>
 
                 <button
                     type="button"
+                    className="modpackinstaller-pagination-button"
                     onClick={() => onPage(page + 1)}
                     disabled={!pagination.has_next || searching}
+                    aria-label="Next page"
+                    title="Next page"
                 >
-                    Next
+                    <ChevronRightIcon />
                 </button>
             </div>
         </nav>
@@ -1017,6 +1067,24 @@ const UploadIcon = () => (
     </svg>
 );
 
+const FilterIcon = () => (
+    <svg
+        width="17"
+        height="17"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+    >
+        <line x1="4" y1="6" x2="20" y2="6" />
+        <line x1="7" y1="12" x2="17" y2="12" />
+        <line x1="10" y1="18" x2="14" y2="18" />
+    </svg>
+);
+
 const TrashIcon = () => (
     <svg
         width="16"
@@ -1033,6 +1101,46 @@ const TrashIcon = () => (
         <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
         <line x1="10" y1="11" x2="10" y2="17" />
         <line x1="14" y1="11" x2="14" y2="17" />
+    </svg>
+);
+
+const GridIcon = () => (
+    <svg
+        width="17"
+        height="17"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+    >
+        <rect x="3" y="3" width="7" height="7" rx="1" />
+        <rect x="14" y="3" width="7" height="7" rx="1" />
+        <rect x="3" y="14" width="7" height="7" rx="1" />
+        <rect x="14" y="14" width="7" height="7" rx="1" />
+    </svg>
+);
+
+const ListIcon = () => (
+    <svg
+        width="17"
+        height="17"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+    >
+        <line x1="8" y1="6" x2="21" y2="6" />
+        <line x1="8" y1="12" x2="21" y2="12" />
+        <line x1="8" y1="18" x2="21" y2="18" />
+        <line x1="3" y1="6" x2="3.01" y2="6" />
+        <line x1="3" y1="12" x2="3.01" y2="12" />
+        <line x1="3" y1="18" x2="3.01" y2="18" />
     </svg>
 );
 
@@ -2424,21 +2532,6 @@ export default () => {
 
                             <button
                                 type="button"
-                                className="modpackinstaller-install-toggle"
-                                onClick={() =>
-                                    setManualOpen(
-                                        (current) => !current,
-                                    )
-                                }
-                                aria-expanded={manualOpen}
-                                disabled={loading}
-                            >
-                                <PackageIcon />
-                                Install Modpack
-                            </button>
-
-                            <button
-                                type="button"
                                 className="modpackinstaller-installed-toggle"
                                 onClick={openInstalledModal}
                             >
@@ -2473,17 +2566,25 @@ export default () => {
 
                         <button
                             type="button"
-                            className="modpackinstaller-filters-toggle"
+                            className={`modpackinstaller-filters-toggle${
+                                filtersOpen
+                                    ? ' modpackinstaller-filters-toggle--active'
+                                    : ''
+                            }`}
+                            aria-label="Filters"
+                            title={activeFilterCount > 0 ? `Filters (${activeFilterCount})` : 'Filters'}
                             aria-expanded={filtersOpen}
                             onClick={() =>
                                 setFiltersOpen((current) => !current)
                             }
                             disabled={catalogBusy}
                         >
-                            Filters
-                            {activeFilterCount > 0
-                                ? ` (${activeFilterCount})`
-                                : ''}
+                            <FilterIcon />
+                            {activeFilterCount > 0 && (
+                                <span className="modpackinstaller-filter-count">
+                                    {activeFilterCount}
+                                </span>
+                            )}
                         </button>
 
                         <div
@@ -2493,6 +2594,8 @@ export default () => {
                         >
                             <button
                                 type="button"
+                                aria-label="Grid view"
+                                title="Grid view"
                                 aria-pressed={view === 'grid'}
                                 className={
                                     view === 'grid'
@@ -2501,11 +2604,13 @@ export default () => {
                                 }
                                 onClick={() => changeView('grid')}
                             >
-                                Grid
+                                <GridIcon />
                             </button>
 
                             <button
                                 type="button"
+                                aria-label="List view"
+                                title="List view"
                                 aria-pressed={view === 'list'}
                                 className={
                                     view === 'list'
@@ -2514,7 +2619,7 @@ export default () => {
                                 }
                                 onClick={() => changeView('list')}
                             >
-                                List
+                                <ListIcon />
                             </button>
                         </div>
                     </div>

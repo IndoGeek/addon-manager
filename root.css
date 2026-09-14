@@ -312,6 +312,10 @@
     gap: 12px;
 }
 
+.modpackinstaller-toolbar-row .modpackinstaller-filters-toggle {
+    margin-left: auto;
+}
+
 .modpackinstaller-dropdown {
     display: flex;
     flex-direction: column;
@@ -410,11 +414,20 @@
 }
 
 .modpackinstaller-filters-toggle {
+    position: relative;
     flex: 0 0 auto;
-    padding: 10px 16px;
-    border: 0;
-    border-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    padding: 0;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.06);
+    color: inherit;
     cursor: pointer;
+    transition: background 0.12s ease, border-color 0.12s ease;
 }
 
 .modpackinstaller-filters-toggle:disabled {
@@ -428,24 +441,60 @@
 
 .modpackinstaller-view-toggle {
     display: inline-flex;
-    margin-left: auto;
+    flex: 0 0 auto;
     border: 1px solid rgba(255, 255, 255, 0.15);
-    border-radius: 6px;
+    border-radius: 8px;
     overflow: hidden;
 }
 
 .modpackinstaller-view-toggle button {
-    padding: 9px 14px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    padding: 0;
     border: 0;
     background: transparent;
     color: inherit;
-    font-size: 0.85rem;
     cursor: pointer;
     opacity: 0.7;
+    transition: background 0.12s ease, opacity 0.12s ease;
+}
+
+.modpackinstaller-view-toggle button:hover {
+    background: rgba(255, 255, 255, 0.08);
+    opacity: 1;
 }
 
 .modpackinstaller-view-toggle button.modpackinstaller-view-toggle--active {
-    background: rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.14);
+    opacity: 1;
+}
+
+@media (max-width: 700px) {
+    .modpackinstaller-toolbar-row .modpackinstaller-filters-toggle {
+        margin-left: auto;
+    }
+}
+
+.modpackinstaller-view-toggle button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    opacity: 0.7;
+    transition: background 0.12s ease, opacity 0.12s ease;
+}
+
+.modpackinstaller-view-toggle button.modpackinstaller-view-toggle--active {
+    background: rgba(255, 255, 255, 0.14);
     opacity: 1;
 }
 
@@ -621,30 +670,6 @@
     margin-top: 18px;
 }
 
-.modpackinstaller-pagination--top {
-    margin-bottom: 18px;
-    margin-top: 18px;
-}
-
-.modpackinstaller-pagination-info {
-    font-size: 0.85rem;
-    opacity: 0.75;
-}
-
-.modpackinstaller-pagination-actions {
-    display: flex;
-    gap: 8px;
-}
-
-.modpackinstaller-pagination-actions button {
-    padding: 8px 14px;
-    border: 0;
-    border-radius: 6px;
-    font-size: 0.9rem;
-    cursor: pointer;
-}
-
-.modpackinstaller-pagination-actions button:disabled {
     cursor: not-allowed;
     opacity: 0.5;
 }
@@ -1719,5 +1744,160 @@
     .modpackinstaller-card button,
     .modpackinstaller-form button {
         width: 100%;
+    }
+}.modpackinstaller-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 18px 0;
+}
+
+.modpackinstaller-pagination-results {
+    display: inline-flex;
+    align-items: center;
+    min-height: 34px;
+    padding: 0 12px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.06);
+    color: inherit;
+    font-size: 0.85rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.modpackinstaller-pagination-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.modpackinstaller-pagination-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.06);
+    color: inherit;
+    cursor: pointer;
+    transition: background 0.12s ease, opacity 0.12s ease;
+}
+
+.modpackinstaller-pagination-button:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.12);
+}
+
+.modpackinstaller-pagination-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.4;
+}
+
+.modpackinstaller-pagination-page {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 34px;
+    padding: 0 8px;
+    color: inherit;
+    font-size: 0.85rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+@media (max-width: 500px) {
+    .modpackinstaller-pagination {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .modpackinstaller-pagination-results {
+        align-self: flex-start;
+    }
+
+    .modpackinstaller-pagination-actions {
+        justify-content: flex-end;
+    }
+}
+.modpackinstaller-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 18px 0;
+}
+
+.modpackinstaller-pagination-results {
+    display: inline-flex;
+    align-items: center;
+    min-height: 34px;
+    padding: 0 12px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.06);
+    color: inherit;
+    font-size: 0.85rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.modpackinstaller-pagination-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.modpackinstaller-pagination-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.06);
+    color: inherit;
+    cursor: pointer;
+    transition: background 0.12s ease, opacity 0.12s ease;
+}
+
+.modpackinstaller-pagination-button:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.12);
+}
+
+.modpackinstaller-pagination-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.4;
+}
+
+.modpackinstaller-pagination-page {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 34px;
+    padding: 0 8px;
+    color: inherit;
+    font-size: 0.85rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+@media (max-width: 500px) {
+    .modpackinstaller-pagination {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .modpackinstaller-pagination-results {
+        align-self: flex-start;
+    }
+
+    .modpackinstaller-pagination-actions {
+        justify-content: flex-end;
     }
 }
