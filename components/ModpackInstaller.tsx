@@ -2484,10 +2484,6 @@ export default () => {
             <div className="modpackinstaller-card">
                 <div className="modpackinstaller-browser-toolbar">
                     <div className="modpackinstaller-search">
-                        <label htmlFor="modpackinstaller-search">
-                            Search
-                        </label>
-
                         <div className="modpackinstaller-controls-row">
                             <div className="modpackinstaller-search-box">
                                 <input
@@ -2534,13 +2530,18 @@ export default () => {
                                 type="button"
                                 className="modpackinstaller-installed-toggle"
                                 onClick={openInstalledModal}
+                                aria-label={
+                                    installed !== null && installed.length > 0
+                                        ? `Installed modpacks (${installed.length})`
+                                        : 'Installed modpacks'
+                                }
+                                title={
+                                    installed !== null && installed.length > 0
+                                        ? `Installed modpacks (${installed.length})`
+                                        : 'Installed modpacks'
+                                }
                             >
                                 <PackageIcon />
-                                Installed modpacks
-                                {installed !== null
-                                    && installed.length > 0
-                                    ? ` (${installed.length})`
-                                    : ''}
                             </button>
                         </div>
                     </div>

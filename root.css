@@ -48,16 +48,17 @@
 
 .modpackinstaller-controls-row {
     display: flex;
-    align-items: stretch;
-    flex-wrap: wrap;
+    align-items: center;
+    flex-wrap: nowrap;
     gap: 8px;
+    width: 100%;
 }
 
 .modpackinstaller-search-box {
     display: flex;
     align-items: center;
-    flex: 1 1 240px;
-    min-width: 200px;
+    flex: 1 1 auto;
+    min-width: 0;
     border: 1px solid rgba(255, 255, 255, 0.15);
     border-radius: 8px;
     background: rgba(0, 0, 0, 0.2);
@@ -159,24 +160,29 @@
     opacity: 0.6;
 }
 
-.modpackinstaller-installed-toggle {
-    flex: 0 0 auto;
+.modpackinstaller-root .modpackinstaller-controls-row .modpackinstaller-installed-toggle {
+    flex: 0 0 38px;
     display: inline-flex;
     align-items: center;
-    gap: 8px;
-    padding: 9px 16px;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    min-width: 38px;
+    padding: 0;
     border: 1px solid rgba(255, 255, 255, 0.15);
     border-radius: 8px;
-    font-size: 0.9rem;
-    font-weight: 600;
+    background: #16a34a !important;
+    color: #ffffff !important;
     cursor: pointer;
-    background: rgba(255, 255, 255, 0.06);
-    color: inherit;
-    transition: background 0.12s ease;
+    margin-left: auto !important;
+    transition:
+        background 0.12s ease,
+        border-color 0.12s ease;
 }
 
-.modpackinstaller-installed-toggle:hover:not(:disabled) {
-    background: rgba(255, 255, 255, 0.12);
+.modpackinstaller-root .modpackinstaller-controls-row .modpackinstaller-installed-toggle:hover:not(:disabled) {
+    background: #15803d !important;
+    border-color: rgba(255, 255, 255, 0.25) !important;
 }
 
 .modpackinstaller-icon-button {
@@ -1636,12 +1642,11 @@
     }
 
     .modpackinstaller-controls-row {
-        flex-direction: column;
-        align-items: stretch;
+        flex-direction: row;
+        align-items: center;
     }
 
-    .modpackinstaller-install-toggle,
-    .modpackinstaller-installed-toggle {
+    .modpackinstaller-install-toggle {
         justify-content: center;
     }
 
@@ -1746,84 +1751,6 @@
         width: 100%;
     }
 }.modpackinstaller-pagination {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    margin: 18px 0;
-}
-
-.modpackinstaller-pagination-results {
-    display: inline-flex;
-    align-items: center;
-    min-height: 34px;
-    padding: 0 12px;
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.06);
-    color: inherit;
-    font-size: 0.85rem;
-    font-weight: 600;
-    white-space: nowrap;
-}
-
-.modpackinstaller-pagination-actions {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.modpackinstaller-pagination-button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 34px;
-    height: 34px;
-    padding: 0;
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    border-radius: 8px;
-    background: rgba(255, 255, 255, 0.06);
-    color: inherit;
-    cursor: pointer;
-    transition: background 0.12s ease, opacity 0.12s ease;
-}
-
-.modpackinstaller-pagination-button:hover:not(:disabled) {
-    background: rgba(255, 255, 255, 0.12);
-}
-
-.modpackinstaller-pagination-button:disabled {
-    cursor: not-allowed;
-    opacity: 0.4;
-}
-
-.modpackinstaller-pagination-page {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 34px;
-    padding: 0 8px;
-    color: inherit;
-    font-size: 0.85rem;
-    font-weight: 600;
-    white-space: nowrap;
-}
-
-@media (max-width: 500px) {
-    .modpackinstaller-pagination {
-        align-items: stretch;
-        flex-direction: column;
-    }
-
-    .modpackinstaller-pagination-results {
-        align-self: flex-start;
-    }
-
-    .modpackinstaller-pagination-actions {
-        justify-content: flex-end;
-    }
-}
-.modpackinstaller-pagination {
     display: flex;
     align-items: center;
     justify-content: space-between;
