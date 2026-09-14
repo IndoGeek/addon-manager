@@ -322,10 +322,6 @@
     gap: 12px;
 }
 
-.modpackinstaller-toolbar-row .modpackinstaller-filters-toggle {
-    margin-left: auto;
-}
-
 .modpackinstaller-dropdown {
     display: flex;
     flex-direction: column;
@@ -432,12 +428,16 @@
     width: 38px;
     height: 38px;
     padding: 0;
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    border-radius: 8px;
-    background: rgba(255, 255, 255, 0.06);
-    color: inherit;
+    border: 0;
+    border-radius: 6px;
+    background: #5a5a5a;
+    color: #ffffff;
     cursor: pointer;
-    transition: background 0.12s ease, border-color 0.12s ease;
+    transition: background 0.12s ease;
+}
+
+.modpackinstaller-filters-toggle:hover:not(:disabled) {
+    background: #6b6b6b;
 }
 
 .modpackinstaller-filters-toggle:disabled {
@@ -446,7 +446,11 @@
 }
 
 .modpackinstaller-filters-toggle[aria-expanded='true'] {
-    background: rgba(108, 182, 255, 0.2);
+    background: #16a34a;
+}
+
+.modpackinstaller-filters-toggle[aria-expanded='true']:hover {
+    background: #15803d;
 }
 
 .modpackinstaller-view-toggle {
