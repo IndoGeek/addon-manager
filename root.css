@@ -478,14 +478,14 @@
     padding: 0;
     border: 0;
     border-radius: 6px;
-    background: #5a5a5a;
+    background: #16a34a;
     color: #ffffff;
     cursor: pointer;
     transition: background 0.12s ease;
 }
 
 .modpackinstaller-filters-toggle:hover:not(:disabled) {
-    background: #6b6b6b;
+    background: #15803d;
 }
 
 .modpackinstaller-filters-toggle:disabled {
@@ -494,7 +494,7 @@
 }
 
 .modpackinstaller-filters-toggle[aria-expanded='true'] {
-    background: #16a34a;
+    background: #15803d;
 }
 
 .modpackinstaller-filters-toggle[aria-expanded='true']:hover {
@@ -534,7 +534,7 @@
 }
 
 .modpackinstaller-view-toggle button.modpackinstaller-view-toggle--active {
-    background: rgba(255, 255, 255, 0.14);
+    background: #16a34a;
     opacity: 1;
 }
 
