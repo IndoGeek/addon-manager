@@ -3,11 +3,17 @@
 namespace Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Archive;
 
 use InvalidArgumentException;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\InstallationCancelledException;
 use RuntimeException;
 use ZipArchive;
 
 final class ArchiveExtractor
 {
+    /**
+     * @var null|callable(): bool
+     */
+    private $cancelChecker = null;
+
     public function __construct(
         private readonly string $temporaryRoot,
         private readonly int $maxArchiveBytes = 10_737_418_240,
@@ -15,6 +21,14 @@ final class ArchiveExtractor
         private readonly int $maxEntries = 50_000,
         private readonly int $maxEntryBytes = 10_737_418_240,
     ) {
+    }
+
+    /**
+     * @param null|callable(): bool $checker
+     */
+    public function setCancelChecker(?callable $checker): void
+    {
+        $this->cancelChecker = $checker;
     }
 
     public function extract(string $archivePath): string
@@ -70,6 +84,14 @@ final class ArchiveExtractor
         $writtenBytes = 0;
 
         for ($index = 0; $index < $zip->numFiles; $index++) {
+            $checker = $this->cancelChecker;
+
+            if ($checker !== null && $checker()) {
+                throw new InstallationCancelledException(
+                    'Installation cancelled.'
+                );
+            }
+
             $entry = $zip->statIndex($index);
 
             if ($entry === false) {

@@ -210,6 +210,40 @@ export const TrashIcon = () => (
     </svg>
 );
 
+export const CancelIcon = () => (
+    <svg
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+    >
+        <circle cx="12" cy="12" r="9" />
+        <line x1="8.5" y1="8.5" x2="15.5" y2="15.5" />
+        <line x1="15.5" y1="8.5" x2="8.5" y2="15.5" />
+    </svg>
+);
+
+export const CheckIcon = () => (
+    <svg
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+    >
+        <polyline points="20 6 9 17 4 12" />
+    </svg>
+);
+
 export const GridIcon = () => (
     <svg
         width="17"

@@ -30,6 +30,7 @@ interface ToolbarProps {
     onViewChange: (view: 'grid' | 'list') => void;
 
     installedCount: number | null;
+    badgeCount: number | null;
     onOpenInstalled: () => void;
 }
 
@@ -50,6 +51,7 @@ export const CatalogToolbar = ({
     view,
     onViewChange,
     installedCount,
+    badgeCount,
     onOpenInstalled,
 }: ToolbarProps) => {
     return (
@@ -111,6 +113,15 @@ export const CatalogToolbar = ({
                         }
                     >
                         <PackageIcon />
+
+                        {badgeCount !== null && badgeCount > 0 && (
+                            <span
+                                className="modpackinstaller-badge"
+                                aria-hidden="true"
+                            >
+                                {badgeCount}
+                            </span>
+                        )}
                     </button>
                 </div>
             </div>

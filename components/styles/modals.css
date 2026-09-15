@@ -352,6 +352,17 @@
   cursor: default;
 }
 
+.modpackinstaller-modal-actions
+  button.modpackinstaller-modal-actions-button--locked,
+.modpackinstaller-modal-actions
+  button.modpackinstaller-modal-actions-button--locked:hover,
+.modpackinstaller-modal-actions
+  button.modpackinstaller-modal-actions-button--locked:disabled {
+  background: #92400e;
+  color: #fde68a;
+  cursor: not-allowed;
+}
+
 .modpackinstaller-modal-result {
   margin-top: 4px;
   padding-top: 16px;

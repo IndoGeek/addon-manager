@@ -12,8 +12,10 @@ final class InstallationWorkspace
     ) {
     }
 
-    public function prepare(string $archivePath): string
-    {
+    public function prepare(
+        string $archivePath,
+        ?callable $cancelChecker = null,
+    ): string {
         if ($archivePath === '') {
             throw new InvalidArgumentException(
                 'An archive path is required.'
@@ -33,6 +35,10 @@ final class InstallationWorkspace
         }
 
         $extractor = new ArchiveExtractor($workspaceRoot);
+
+        if ($cancelChecker !== null) {
+            $extractor->setCancelChecker($cancelChecker);
+        }
 
         return $extractor->extract($archivePath);
     }

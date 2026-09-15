@@ -560,3 +560,87 @@
   cursor: wait;
   opacity: 0.6;
 }
+
+.modpackinstaller-active-item {
+  border-color: rgba(108, 182, 255, 0.45);
+  background: rgba(108, 182, 255, 0.07);
+}
+
+.modpackinstaller-active-actions {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.modpackinstaller-active-note {
+  font-weight: 600;
+}
+
+.modpackinstaller-active-note--complete {
+  color: #4ade80;
+}
+
+.modpackinstaller-active-note--cancelled {
+  color: #fbbf24;
+}
+
+.modpackinstaller-active-note--failed {
+  color: #f87171;
+}
+
+.modpackinstaller-active-cancelling {
+  font-size: 0.78rem;
+  font-weight: 600;
+  opacity: 0.8;
+}
+
+.modpackinstaller-circular {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modpackinstaller-circular svg {
+  display: block;
+}
+
+.modpackinstaller-circular circle {
+  fill: none;
+}
+
+.modpackinstaller-circular-track {
+  stroke: rgba(127, 127, 127, 0.25);
+}
+
+.modpackinstaller-circular-bar {
+  stroke: #16a34a;
+  transform: rotate(-90deg);
+  transform-origin: center;
+  transition: stroke-dashoffset 0.3s linear;
+}
+
+.modpackinstaller-circular-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: inherit;
+}
+
+.modpackinstaller-circular--idle {
+  width: 72px;
+  height: 72px;
+  color: #fbbf24;
+}
+
+.modpackinstaller-circular--idle .modpackinstaller-icon-spinner {
+  width: 28px;
+  height: 28px;
+}

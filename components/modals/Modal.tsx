@@ -29,7 +29,11 @@ export const Modal = ({
         if (open) {
             setShown(true);
             setPhase('in');
-        } else if (shown) {
+
+            return undefined;
+        }
+
+        if (shown) {
             setPhase('out');
 
             const timer = window.setTimeout(() => {
@@ -38,6 +42,8 @@ export const Modal = ({
 
             return () => window.clearTimeout(timer);
         }
+
+        return undefined;
     }, [open, shown]);
 
     useEffect(() => {

@@ -25,10 +25,12 @@ import {
     DEFAULT_PROVIDER,
     PAGE_LIMIT,
     VIEW_STORAGE_KEY,
+    activeInstallStorageKey,
     getServerIdentifier,
 } from './utils/constants';
 
 import {
+    ActiveInstallRecord,
     CatalogFilters,
     CatalogItem,
     CatalogPagination,
@@ -57,6 +59,7 @@ import { ManualDownloadNotice } from './modals/ManualDownloadNotice';
 import { InstalledModpacksBody } from './modals/InstalledModpacksBody';
 import { DetailsModalBody } from './modals/DetailsModalBody';
 import { UninstallConfirmBody } from './modals/UninstallConfirmBody';
+import { isActiveRunning } from './modals/ActiveInstallCard';
 
 import { CatalogToolbar } from './toolbar/CatalogToolbar';
 import { FilterPanel } from './toolbar/FilterPanel';
@@ -84,8 +87,12 @@ export default () => {
                 window.clearTimeout(debounceTimer.current);
             }
 
-            if (progressPollTimer.current !== null) {
-                window.clearInterval(progressPollTimer.current);
+            if (activePollTimer.current !== null) {
+                window.clearInterval(activePollTimer.current);
+            }
+
+            if (outcomeTimer.current !== null) {
+                window.clearTimeout(outcomeTimer.current);
             }
         };
     }, []);
@@ -186,7 +193,21 @@ export default () => {
     const [installProgress, setInstallProgress] =
         useState<InstallProgressData | null>(null);
 
-    const progressPollTimer = useRef<number | null>(null);
+    const [activeInstall, setActiveInstall] =
+        useState<ActiveInstallRecord | null>(null);
+
+    const [activeProgress, setActiveProgress] =
+        useState<InstallProgressData | null>(null);
+
+    const [outcomeBanner, setOutcomeBanner] =
+        useState<StatusMessage | null>(null);
+
+    const activeInstallRef =
+        useRef<ActiveInstallRecord | null>(null);
+
+    const activePollTimer = useRef<number | null>(null);
+
+    const outcomeTimer = useRef<number | null>(null);
 
     const versionsRequestId = useRef(0);
 
@@ -212,6 +233,15 @@ export default () => {
 
     const processing =
         loading || installLoading || modalInstallLoading;
+
+    const activeRunning =
+        activeInstall !== null && isActiveRunning(activeProgress);
+
+    const badgeCount = activeRunning
+        ? 1
+        : (installed !== null && installed.length > 0
+            ? installed.length
+            : null);
 
     const modalBusy =
         modalVersionsLoading ||
@@ -933,42 +963,57 @@ export default () => {
         }
     };
 
-    const stopProgressPolling = () => {
-        if (progressPollTimer.current !== null) {
-            window.clearInterval(progressPollTimer.current);
-            progressPollTimer.current = null;
+    const stopActivePolling = () => {
+        if (activePollTimer.current !== null) {
+            window.clearInterval(activePollTimer.current);
+            activePollTimer.current = null;
         }
     };
 
-    const startProgressPolling = (token: string) => {
-        stopProgressPolling();
+    const clearActiveInstallStorage = () => {
+        if (!server) {
+            return;
+        }
 
-        const tick = async () => {
-            try {
-                const response =
-                    await axios.get<InstallProgressResponse>(
-                        `${API_BASE}/install/progress`,
-                        {
-                            params: {
-                                progress_token: token,
-                            },
-                        },
-                    );
+        try {
+            window.localStorage.removeItem(
+                activeInstallStorageKey(server),
+            );
+        } catch {
+            // storage unavailable; nothing to clear
+        }
+    };
 
-                if (!alive.current) {
-                    return;
-                }
+    const scheduleOutcomeClear = () => {
+        if (outcomeTimer.current !== null) {
+            window.clearTimeout(outcomeTimer.current);
+        }
 
-                setInstallProgress(response.data.data);
-            } catch {
-                // Transient poll failures are ignored; the install
-                // response itself is authoritative for completion.
-            }
-        };
+        outcomeTimer.current = window.setTimeout(() => {
+            outcomeTimer.current = null;
+            setOutcomeBanner(null);
+            setActiveInstall(null);
+            setActiveProgress(null);
+        }, 15000);
+    };
 
-        tick();
+    const dismissOutcome = () => {
+        if (outcomeTimer.current !== null) {
+            window.clearTimeout(outcomeTimer.current);
+            outcomeTimer.current = null;
+        }
 
-        progressPollTimer.current = window.setInterval(tick, 750);
+        stopActivePolling();
+        setOutcomeBanner(null);
+        setActiveInstall(null);
+        setActiveProgress(null);
+    };
+
+    const clearActiveInstall = () => {
+        stopActivePolling();
+        clearActiveInstallStorage();
+        setActiveInstall(null);
+        setActiveProgress(null);
     };
 
     const newProgressToken = (): string => {
@@ -986,6 +1031,292 @@ export default () => {
 
         return token;
     };
+
+    const beginActiveInstall = ({
+        source,
+        provider,
+        name,
+        version,
+        iconUrl,
+    }: {
+        source: string;
+        provider: string;
+        name: string;
+        version: string;
+        iconUrl: string | null;
+    }): string | null => {
+        if (!server) {
+            return null;
+        }
+
+        const token = newProgressToken();
+
+        if (outcomeTimer.current !== null) {
+            window.clearTimeout(outcomeTimer.current);
+            outcomeTimer.current = null;
+        }
+
+        const record: ActiveInstallRecord = {
+            server,
+            token,
+            provider,
+            name,
+            version,
+            icon_url: iconUrl,
+            source,
+            started_at: new Date().toISOString(),
+        };
+
+        setActiveInstall(record);
+        setActiveProgress({
+            phase: 'starting',
+            percent: 0,
+            indeterminate: false,
+        });
+        setInstallProgress({
+            phase: 'starting',
+            percent: 1,
+            indeterminate: false,
+        });
+        setOutcomeBanner(null);
+
+        try {
+            window.localStorage.setItem(
+                activeInstallStorageKey(server),
+                JSON.stringify(record),
+            );
+        } catch {
+            // storage unavailable; the in-memory state still applies
+        }
+
+        return token;
+    };
+
+    const handleProgressState = (
+        state: InstallProgressData,
+        record: ActiveInstallRecord,
+    ) => {
+        if (state.phase === 'idle') {
+            clearActiveInstall();
+            return;
+        }
+
+        if (state.phase === 'complete') {
+            stopActivePolling();
+            clearActiveInstallStorage();
+            setActiveInstall(null);
+            setActiveProgress(null);
+            setOutcomeBanner({
+                kind: 'success',
+                message: `${record.name} installed successfully.`,
+            });
+            loadInstalled();
+            return;
+        }
+
+        if (state.phase === 'cancelled' || state.phase === 'failed') {
+            stopActivePolling();
+            clearActiveInstallStorage();
+            setActiveProgress(state);
+
+            const message =
+                state.message
+                || (state.phase === 'cancelled'
+                    ? `${record.name} download was cancelled.`
+                    : `${record.name} installation failed.`);
+
+            setOutcomeBanner({
+                kind: state.phase === 'cancelled' ? 'info' : 'error',
+                message,
+            });
+
+            scheduleOutcomeClear();
+            return;
+        }
+
+        setActiveProgress(state);
+    };
+
+    const cancelActiveInstall = async () => {
+        const activeRef = activeInstallRef.current;
+
+        if (!activeRef || !server) {
+            return;
+        }
+
+        try {
+            await axios.post(
+                `${API_BASE}/servers/${server}/install/cancel`,
+                undefined,
+                {
+                    params: {
+                        progress_token: activeRef.token,
+                    },
+                },
+            );
+        } catch {
+            // The install request clears the flag when it finishes; the
+            // polling loop still surfaces the cancelled state on its own.
+        }
+
+        setActiveProgress((current) =>
+            current === null
+                ? {
+                    phase: 'cancelling',
+                    percent: 0,
+                    indeterminate: false,
+                }
+                : {
+                    ...current,
+                    phase: 'cancelling',
+                    indeterminate: false,
+                },
+        );
+    };
+
+    useEffect(() => {
+        activeInstallRef.current = activeInstall;
+    });
+
+    useEffect(() => {
+        const record = activeInstall;
+
+        if (record === null) {
+            return;
+        }
+
+        let stopped = false;
+
+        const tick = async () => {
+            if (stopped || !alive.current) {
+                return;
+            }
+
+            try {
+                const response =
+                    await axios.get<InstallProgressResponse>(
+                        `${API_BASE}/install/progress`,
+                        {
+                            params: {
+                                progress_token: record.token,
+                            },
+                        },
+                    );
+
+                if (stopped || !alive.current) {
+                    return;
+                }
+
+                handleProgressState(response.data.data, record);
+            } catch {
+                // Transient poll failures are ignored; the loop keeps going
+                // and store expiry surfaces as an 'idle' state.
+            }
+        };
+
+        tick();
+
+        activePollTimer.current = window.setInterval(tick, 750);
+
+        return () => {
+            stopped = true;
+
+            if (activePollTimer.current !== null) {
+                window.clearInterval(activePollTimer.current);
+                activePollTimer.current = null;
+            }
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeInstall?.token]);
+
+    useEffect(() => {
+        if (!server) {
+            return;
+        }
+
+        let cancelled = false;
+
+        try {
+            const raw = window.localStorage.getItem(
+                activeInstallStorageKey(server),
+            );
+
+            if (raw) {
+                const record = JSON.parse(raw) as ActiveInstallRecord;
+
+                if (
+                    !cancelled
+                    && record
+                    && typeof record.token === 'string'
+                    && record.server === server
+                ) {
+                    setActiveInstall(record);
+                    setActiveProgress({
+                        phase: 'starting',
+                        percent: 0,
+                        indeterminate: false,
+                    });
+                }
+            }
+        } catch {
+            // Storage unavailable or corrupt; a fresh install can start.
+        }
+
+        return () => {
+            cancelled = true;
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [server]);
+
+    useEffect(() => {
+        if (!server) {
+            return;
+        }
+
+        const onStorage = (event: StorageEvent) => {
+            if (event.key !== activeInstallStorageKey(server)) {
+                return;
+            }
+
+            if (event.newValue === null) {
+                if (activeInstallRef.current !== null) {
+                    clearActiveInstall();
+                }
+                return;
+            }
+
+            try {
+                const record =
+                    JSON.parse(event.newValue) as ActiveInstallRecord;
+
+                if (
+                    record
+                    && typeof record.token === 'string'
+                    && record.server === server
+                ) {
+                    setActiveInstall(record);
+                    setActiveProgress((current) =>
+                        current !== null && isActiveRunning(current)
+                            ? current
+                            : {
+                                phase: 'starting',
+                                percent: 0,
+                                indeterminate: false,
+                            },
+                    );
+                }
+            } catch {
+                // ignore malformed cross-tab writes
+            }
+        };
+
+        window.addEventListener('storage', onStorage);
+
+        return () => {
+            window.removeEventListener('storage', onStorage);
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [server]);
 
     const installModalModpack = async () => {
         if (!server) {
@@ -1012,7 +1343,23 @@ export default () => {
             return;
         }
 
-        if (modalInstallLoading) {
+        if (modalInstallLoading || activeRunning) {
+            return;
+        }
+
+        const token = beginActiveInstall({
+            source: modalVersionSource,
+            provider: detailsItem?.provider ?? '',
+            name: modalMetadata.name,
+            version: modalMetadata.version,
+            iconUrl: modalMetadata.icon_url,
+        });
+
+        if (token === null) {
+            setModalStatus({
+                kind: 'error',
+                message: 'Unable to determine the current server.',
+            });
             return;
         }
 
@@ -1020,46 +1367,37 @@ export default () => {
         setModalStatus(null);
         setModalResult(null);
 
-        const token = newProgressToken();
-
-        setInstallProgress({
-            phase: 'starting',
-            percent: 0,
-            indeterminate: false,
-        });
-
-        startProgressPolling(token);
+        closeDetailsModal();
+        setInstalledOpen(true);
+        loadInstalled();
 
         try {
-            const response =
-                await axios.post<InstallResponse>(
-                    `${API_BASE}/servers/${server}/install`,
-                    {
-                        source: modalVersionSource,
+            await axios.post<InstallResponse>(
+                `${API_BASE}/servers/${server}/install`,
+                {
+                    source: modalVersionSource,
+                },
+                {
+                    params: {
+                        progress_token: token,
                     },
-                    {
-                        params: {
-                            progress_token: token,
-                        },
-                    },
-                );
-
-            if (!alive.current || detailsItem === null) {
+                },
+            );
+        } catch (requestError: any) {
+            if (!alive.current) {
                 return;
             }
 
-            stopProgressPolling();
+            if (requestError.response?.status === 503) {
+                // Another install holds the lock; the Installed window is
+                // already open and shows the running install.
+                clearActiveInstall();
+                return;
+            }
 
-            setInstallProgress({
-                phase: 'complete',
-                percent: 100,
-                indeterminate: false,
-            });
-
-            setModalResult(response.data.data);
-            loadInstalled();
-        } catch (requestError: any) {
-            if (!alive.current || detailsItem === null) {
+            if (requestError.response?.status === 409) {
+                // Our own cancel request; the polling loop surfaces the
+                // cancelled state on its next tick.
                 return;
             }
 
@@ -1067,13 +1405,21 @@ export default () => {
                 requestError.response?.data?.error ||
                 'Unable to install the modpack.';
 
-            setModalStatus({
+            stopActivePolling();
+            clearActiveInstallStorage();
+            setActiveProgress({
+                phase: 'failed',
+                percent: 0,
+                indeterminate: false,
+                message,
+            });
+            setOutcomeBanner({
                 kind: 'error',
                 message,
             });
+            scheduleOutcomeClear();
         } finally {
-            if (alive.current && detailsItem !== null) {
-                stopProgressPolling();
+            if (alive.current) {
                 setModalInstallLoading(false);
             }
         }
@@ -1181,7 +1527,23 @@ export default () => {
             return;
         }
 
-        if (installLoading) {
+        if (installLoading || activeRunning) {
+            return;
+        }
+
+        const token = beginActiveInstall({
+            source: selectedSource,
+            provider: metadata?.source.split('://')[0] ?? '',
+            name: metadata?.name ?? selectedSource,
+            version: metadata?.version ?? '',
+            iconUrl: metadata?.icon_url ?? null,
+        });
+
+        if (token === null) {
+            setStatus({
+                kind: 'error',
+                message: 'Unable to determine the current server.',
+            });
             return;
         }
 
@@ -1189,46 +1551,32 @@ export default () => {
         setStatus(null);
         setResult(null);
 
-        const token = newProgressToken();
-
-        setInstallProgress({
-            phase: 'starting',
-            percent: 0,
-            indeterminate: false,
-        });
-
-        startProgressPolling(token);
+        setInstalledOpen(true);
+        loadInstalled();
 
         try {
-            const response =
-                await axios.post<InstallResponse>(
-                    `${API_BASE}/servers/${server}/install`,
-                    {
-                        source: selectedSource,
+            await axios.post<InstallResponse>(
+                `${API_BASE}/servers/${server}/install`,
+                {
+                    source: selectedSource,
+                },
+                {
+                    params: {
+                        progress_token: token,
                     },
-                    {
-                        params: {
-                            progress_token: token,
-                        },
-                    },
-                );
-
+                },
+            );
+        } catch (requestError: any) {
             if (!alive.current) {
                 return;
             }
 
-            stopProgressPolling();
+            if (requestError.response?.status === 503) {
+                clearActiveInstall();
+                return;
+            }
 
-            setInstallProgress({
-                phase: 'complete',
-                percent: 100,
-                indeterminate: false,
-            });
-
-            setResult(response.data.data);
-            loadInstalled();
-        } catch (requestError: any) {
-            if (!alive.current) {
+            if (requestError.response?.status === 409) {
                 return;
             }
 
@@ -1236,13 +1584,21 @@ export default () => {
                 requestError.response?.data?.error ||
                 'Unable to install the modpack.';
 
-            setStatus({
+            stopActivePolling();
+            clearActiveInstallStorage();
+            setActiveProgress({
+                phase: 'failed',
+                percent: 0,
+                indeterminate: false,
+                message,
+            });
+            setOutcomeBanner({
                 kind: 'error',
                 message,
             });
+            scheduleOutcomeClear();
         } finally {
             if (alive.current) {
-                stopProgressPolling();
                 setInstallLoading(false);
             }
         }
@@ -1275,6 +1631,7 @@ export default () => {
                     installedCount={
                         installed !== null ? installed.length : null
                     }
+                    badgeCount={badgeCount}
                     onOpenInstalled={openInstalledModal}
                 />
 
@@ -1432,12 +1789,16 @@ export default () => {
                                     type="button"
                                     onClick={installManualSource}
                                     disabled={
-                                        installLoading || result !== null
+                                        installLoading
+                                        || result !== null
+                                        || activeRunning
                                     }
                                     className={`modpackinstaller-modal-actions-button modpackinstaller-install-button${
                                         result !== null
                                             ? ' modpackinstaller-modal-actions-button--success'
-                                            : ''
+                                            : activeRunning
+                                                ? ' modpackinstaller-modal-actions-button--locked'
+                                                : ''
                                     }`}
                                 >
                                     {installLoading && (
@@ -1454,16 +1815,18 @@ export default () => {
                                         />
                                     )}
                                     <span className="modpackinstaller-install-progress-label">
-                                        {installLoading
-                                            ? `Installing ...${
-                                                  installProgress
-                                                  && !installProgress.indeterminate
-                                                      ? ` ${installProgress.percent}%`
-                                                      : ''
-                                              }`
-                                            : result !== null
-                                                ? 'Installed'
-                                                : 'Install this modpack'}
+                                        {activeRunning
+                                            ? '1 modpack installation in progress'
+                                            : installLoading
+                                                ? `Installing ...${
+                                                      installProgress
+                                                      && !installProgress.indeterminate
+                                                          ? ` ${installProgress.percent}%`
+                                                          : ''
+                                                  }`
+                                                : result !== null
+                                                    ? 'Installed'
+                                                    : 'Install this modpack'}
                                     </span>
                                 </button>
                             </div>
@@ -1524,6 +1887,11 @@ export default () => {
                     installedError={installedError}
                     installedStatus={installedStatus}
                     lifecycleRecordId={lifecycleRecordId}
+                    activeInstall={activeInstall}
+                    activeProgress={activeProgress}
+                    outcomeBanner={outcomeBanner}
+                    onCancelActive={cancelActiveInstall}
+                    onDismissOutcome={dismissOutcome}
                     onRefresh={refreshInstalled}
                     onUpdate={updateInstalledModpack}
                     onRestore={restoreInstalledModpack}
@@ -1555,6 +1923,7 @@ export default () => {
                         modalResult={modalResult}
                         modalInstallLoading={modalInstallLoading}
                         installProgress={installProgress}
+                        installBlocked={activeRunning}
                         onSelectVersion={selectModalVersion}
                         onRetryVersions={retryModalVersions}
                         onRetryMetadata={retryModalMetadata}

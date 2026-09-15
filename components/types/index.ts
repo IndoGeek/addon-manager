@@ -43,10 +43,22 @@ export interface InstallProgressData {
     total_bytes?: number | null;
     deployed_files?: number | null;
     total_files?: number | null;
+    message?: string | null;
 }
 
 export interface InstallProgressResponse {
     data: InstallProgressData;
+}
+
+export interface ActiveInstallRecord {
+    server: string;
+    token: string;
+    provider: string;
+    name: string;
+    version: string;
+    icon_url: string | null;
+    source: string;
+    started_at: string;
 }
 
 export interface RecordIntegrity {

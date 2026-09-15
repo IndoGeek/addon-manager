@@ -40,6 +40,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  position: relative;
   width: 38px;
   height: 38px;
   min-width: 38px;
@@ -53,6 +54,26 @@
   transition:
     background 0.12s ease,
     border-color 0.12s ease;
+}
+
+.modpackinstaller-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  background: #dc2626;
+  color: #ffffff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1;
+  border: 1px solid rgba(255, 255, 255, 0.25);
 }
 
 .modpackinstaller-installed-toggle:hover:not(:disabled) {
@@ -121,4 +142,29 @@
 
 .modpackinstaller-icon-spinner {
   animation: modpackinstaller-spin 0.8s linear infinite;
+}
+
+.modpackinstaller-cancel-button {
+  width: auto;
+  height: auto;
+  min-height: 32px;
+  padding: 6px 10px;
+  gap: 6px;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.modpackinstaller-active-dismiss {
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  background: rgba(127, 127, 127, 0.18);
+  color: inherit;
+}
+
+.modpackinstaller-active-dismiss:hover:not(:disabled) {
+  background: rgba(127, 127, 127, 0.3);
 }

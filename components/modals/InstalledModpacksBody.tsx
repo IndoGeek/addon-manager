@@ -1,6 +1,12 @@
 import React from 'react';
-import { InstallRecordData, StatusMessage } from '../types';
+import {
+    ActiveInstallRecord,
+    InstallProgressData,
+    InstallRecordData,
+    StatusMessage,
+} from '../types';
 import { InstalledModpackImage } from '../cards/InstalledModpackImage';
+import { ActiveInstallCard } from './ActiveInstallCard';
 import {
     RefreshIcon,
     SpinnerIcon,
@@ -16,6 +22,11 @@ interface InstalledModpacksBodyProps {
     installedError: string | null;
     installedStatus: StatusMessage | null;
     lifecycleRecordId: string | null;
+    activeInstall: ActiveInstallRecord | null;
+    activeProgress: InstallProgressData | null;
+    outcomeBanner: StatusMessage | null;
+    onCancelActive: () => void;
+    onDismissOutcome: () => void;
     onRefresh: () => void;
     onUpdate: (record: InstallRecordData) => void;
     onRestore: (record: InstallRecordData) => void;
@@ -28,6 +39,11 @@ export const InstalledModpacksBody = ({
     installedError,
     installedStatus,
     lifecycleRecordId,
+    activeInstall,
+    activeProgress,
+    outcomeBanner,
+    onCancelActive,
+    onDismissOutcome,
     onRefresh,
     onUpdate,
     onRestore,
@@ -35,6 +51,28 @@ export const InstalledModpacksBody = ({
 }: InstalledModpacksBodyProps) => {
     return (
         <>
+            {outcomeBanner && (
+                <div
+                    className={`modpackinstaller-status modpackinstaller-status--${outcomeBanner.kind} modpackinstaller-status--dismissible`}
+                    role={
+                        outcomeBanner.kind === 'error'
+                            ? 'alert'
+                            : 'status'
+                    }
+                >
+                    <span>{outcomeBanner.message}</span>
+
+                    <button
+                        type="button"
+                        className="modpackinstaller-status-dismiss"
+                        onClick={onDismissOutcome}
+                        aria-label="Dismiss"
+                    >
+                        &times;
+                    </button>
+                </div>
+            )}
+
             {installedStatus && (
                 <div
                     className={`modpackinstaller-status modpackinstaller-status--${installedStatus.kind}`}
@@ -46,6 +84,15 @@ export const InstalledModpacksBody = ({
                 >
                     {installedStatus.message}
                 </div>
+            )}
+
+            {activeInstall && (
+                <ActiveInstallCard
+                    active={activeInstall}
+                    progress={activeProgress}
+                    onCancel={onCancelActive}
+                    onDismiss={onDismissOutcome}
+                />
             )}
 
             {installed === null && installedLoading && (
@@ -73,7 +120,8 @@ export const InstalledModpacksBody = ({
             {installed !== null
                 && !installedError
                 && installed.length === 0
-                && !installedLoading && (
+                && !installedLoading
+                && activeInstall === null && (
                     <div className="modpackinstaller-catalog-state modpackinstaller-catalog-state--empty">
                         <p>No modpacks installed</p>
                     </div>

@@ -7,13 +7,18 @@ use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployme
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentExecutor;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentOperation;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentPlan;
-use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Server\ServerFileTarget;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentPlanner;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Server\ServerFileTarget;
 use RuntimeException;
 use Throwable;
 
 final class InstallationOrchestrator
 {
+    /**
+     * @var null|callable(): bool
+     */
+    private $cancelChecker = null;
+
     public function __construct(
         private readonly InstallationWorkspace $workspaceManager,
         private readonly DeploymentPlanner $planner,
@@ -22,6 +27,20 @@ final class InstallationOrchestrator
         private readonly string $temporaryRoot,
         private readonly ServerFileTarget $serverFileTarget,
     ) {
+    }
+
+    /**
+     * Registers a predicate consulted at checkpoints through the
+     * installation flow. When it returns true the operation aborts
+     * with an InstallationCancelledException.
+     *
+     * @param null|callable(): bool $checker
+     */
+    public function setCancelChecker(?callable $checker): void
+    {
+        $this->cancelChecker = $checker;
+
+        $this->executor->setCancelChecker($checker);
     }
 
     public function install(
@@ -33,7 +52,14 @@ final class InstallationOrchestrator
         $created = [];
 
         try {
-            $workspace = $this->workspaceManager->prepare($archivePath);
+            $this->ensureNotCancelled();
+
+            $workspace = $this->workspaceManager->prepare(
+                $archivePath,
+                $this->cancelChecker,
+            );
+
+            $this->ensureNotCancelled();
 
             $plan = $this->planner->plan($workspace);
 
@@ -44,11 +70,15 @@ final class InstallationOrchestrator
                     continue;
                 }
 
+                $this->ensureNotCancelled();
+
                 $backups[$operation->relativePath] = $this->backupManager->backup(
                     $operation->relativePath,
                     $backupDirectory,
                 );
             }
+
+            $this->ensureNotCancelled();
 
             $created = $this->executor->execute($plan);
 
@@ -118,7 +148,14 @@ final class InstallationOrchestrator
         $deployed = [];
 
         try {
-            $workspace = $this->workspaceManager->prepare($archivePath);
+            $this->ensureNotCancelled();
+
+            $workspace = $this->workspaceManager->prepare(
+                $archivePath,
+                $this->cancelChecker,
+            );
+
+            $this->ensureNotCancelled();
 
             $plan = $this->planner->plan($workspace);
 
@@ -140,6 +177,8 @@ final class InstallationOrchestrator
                     backedUp: [],
                 );
             }
+
+            $this->ensureNotCancelled();
 
             $deployed = $this->executor->execute(
                 new DeploymentPlan($operations),
@@ -174,6 +213,17 @@ final class InstallationOrchestrator
             if ($workspace !== null) {
                 $this->workspaceManager->cleanup($workspace);
             }
+        }
+    }
+
+    private function ensureNotCancelled(): void
+    {
+        $checker = $this->cancelChecker;
+
+        if ($checker !== null && $checker()) {
+            throw new InstallationCancelledException(
+                'Installation cancelled.'
+            );
         }
     }
 

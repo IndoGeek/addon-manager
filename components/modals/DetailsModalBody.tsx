@@ -42,6 +42,7 @@ interface DetailsModalBodyProps {
     } | null;
     modalInstallLoading: boolean;
     installProgress: InstallProgressData | null;
+    installBlocked: boolean;
     onSelectVersion: (source: string) => void;
     onRetryVersions: () => void;
     onRetryMetadata: () => void;
@@ -62,6 +63,7 @@ export const DetailsModalBody = ({
     modalResult,
     modalInstallLoading,
     installProgress,
+    installBlocked,
     onSelectVersion,
     onRetryVersions,
     onRetryMetadata,
@@ -328,11 +330,14 @@ export const DetailsModalBody = ({
                                         !modalVersionSource
                                         || modalInstallLoading
                                         || modalResult !== null
+                                        || installBlocked
                                     }
                                     className={`modpackinstaller-modal-actions-button modpackinstaller-install-button${
                                         modalResult !== null
                                             ? ' modpackinstaller-modal-actions-button--success'
-                                            : ''
+                                            : installBlocked
+                                                ? ' modpackinstaller-modal-actions-button--locked'
+                                                : ''
                                     }`}
                                 >
                                     {modalInstallLoading && (
@@ -349,16 +354,18 @@ export const DetailsModalBody = ({
                                         />
                                     )}
                                     <span className="modpackinstaller-install-progress-label">
-                                        {modalInstallLoading
-                                            ? `Installing ...${
-                                                  installProgress
-                                                  && !installProgress.indeterminate
-                                                      ? ` ${installProgress.percent}%`
-                                                      : ''
-                                              }`
-                                            : modalResult !== null
-                                                ? 'Installed'
-                                                : 'Install Modpack'}
+                                        {installBlocked
+                                            ? '1 modpack installation in progress'
+                                            : modalInstallLoading
+                                                ? `Installing ...${
+                                                      installProgress
+                                                      && !installProgress.indeterminate
+                                                          ? ` ${installProgress.percent}%`
+                                                          : ''
+                                                  }`
+                                                : modalResult !== null
+                                                    ? 'Installed'
+                                                    : 'Install Modpack'}
                                     </span>
                                 </button>
                             </div>

@@ -5,6 +5,9 @@ export const DEFAULT_PROVIDER = 'modrinth';
 export const PAGE_LIMIT = 20;
 export const VIEW_STORAGE_KEY = 'modpackinstaller-view';
 
+export const activeInstallStorageKey = (server: string): string =>
+    `modpackinstaller-active-install-${server}`;
+
 export const SORT_OPTIONS: Array<{ value: string; label: string }> = [
     { value: 'relevance', label: 'Relevance' },
     { value: 'downloads', label: 'Most downloads' },

@@ -2,6 +2,7 @@
 
 namespace Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment;
 
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\InstallationCancelledException;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Server\ServerFileTarget;
 use RuntimeException;
 use Throwable;
@@ -12,6 +13,11 @@ final class DeploymentExecutor
      * @var null|callable(int $deployedFiles, int $totalFiles): void
      */
     private $progressCallback = null;
+
+    /**
+     * @var null|callable(): bool
+     */
+    private $cancelChecker = null;
 
     public function __construct(
         private readonly ServerFileTarget $serverFileTarget,
@@ -30,6 +36,17 @@ final class DeploymentExecutor
         $this->progressCallback = $callback;
     }
 
+    /**
+     * Registers a predicate consulted between deployed files. When it returns
+     * true deployment aborts with an InstallationCancelledException.
+     *
+     * @param null|callable(): bool $checker
+     */
+    public function setCancelChecker(?callable $checker): void
+    {
+        $this->cancelChecker = $checker;
+    }
+
     public function execute(
         DeploymentPlan $plan,
     ): array {
@@ -39,6 +56,14 @@ final class DeploymentExecutor
 
         try {
             foreach ($plan->operations as $operation) {
+                $checker = $this->cancelChecker;
+
+                if ($checker !== null && $checker()) {
+                    throw new InstallationCancelledException(
+                        'Installation cancelled.'
+                    );
+                }
+
                 $this->deployFile($operation);
 
                 $done++;
@@ -55,6 +80,8 @@ final class DeploymentExecutor
                     }
                 }
             }
+        } catch (InstallationCancelledException $exception) {
+            throw $exception;
         } catch (Throwable $exception) {
             throw new DeploymentException(
                 $exception->getMessage(),

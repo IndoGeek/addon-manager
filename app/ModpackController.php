@@ -29,6 +29,7 @@ use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployme
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentExecutor;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentPlanner;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Download\DownloadManager;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\InstallationCancelledException;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\InstallationLock;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\InstallationLockedException;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\InstallationOrchestrator;
@@ -55,6 +56,8 @@ final class ModpackController extends Controller
     private const VOLUMES_ROOT = '/var/lib/pterodactyl/volumes';
 
     private const TEMPORARY_ROOT = '/tmp/modpack-installer';
+
+    private const CANCEL_FLAG_DIR = '/tmp/modpack-installer/cancel';
 
     public function metadata(Request $request): JsonResponse
     {
@@ -260,6 +263,8 @@ final class ModpackController extends Controller
                 $token,
             );
 
+            $this->clearCancelFlag($this->lockKey($server));
+
             $source = $this->installationSource($request);
 
             $progressToken = $this->progressToken($request);
@@ -273,6 +278,12 @@ final class ModpackController extends Controller
             ]);
 
             $downloader = $this->downloader();
+
+            $downloader->setCancelChecker(
+                fn (): bool => $this->wasCancelled(
+                    $this->lockKey($server),
+                ),
+            );
 
             $lastLockTouch = 0.0;
 
@@ -362,6 +373,9 @@ final class ModpackController extends Controller
                         'total_files' => $totalFiles,
                     ]);
                 },
+                fn (): bool => $this->wasCancelled(
+                    $this->lockKey($server),
+                ),
             );
 
             $result = $orchestrator->install(
@@ -397,6 +411,20 @@ final class ModpackController extends Controller
                     'record_id' => $record->id,
                 ],
             ]);
+        } catch (InstallationCancelledException $exception) {
+            if ($progressToken !== '') {
+                $this->installProgressStore()->set($progressToken, [
+                    ...($this->installProgressStore()
+                        ->get($progressToken) ?? []),
+                    'phase' => 'cancelled',
+                    'indeterminate' => false,
+                    'message' => $exception->getMessage(),
+                ]);
+            }
+
+            return response()->json([
+                'error' => 'Installation cancelled.',
+            ], 409);
         } catch (InstallationLockedException $exception) {
             return response()->json([
                 'error' => 'Another installation is already running for this server. Please wait and try again.',
@@ -420,6 +448,18 @@ final class ModpackController extends Controller
         } catch (Throwable $exception) {
             report($exception);
 
+            if ($progressToken !== '') {
+                $lastState = $this->installProgressStore()
+                    ->get($progressToken);
+
+                $this->installProgressStore()->set($progressToken, [
+                    ...($lastState ?? []),
+                    'phase' => 'failed',
+                    'indeterminate' => false,
+                    'message' => 'The installation failed.',
+                ]);
+            }
+
             return response()->json([
                 'error' => 'Unable to install the modpack.',
             ], 500);
@@ -436,6 +476,8 @@ final class ModpackController extends Controller
             if ($provider !== null && $package !== null) {
                 $provider->cleanup($package);
             }
+
+            $this->clearCancelFlag($this->lockKey($server));
         }
     }
 
@@ -463,6 +505,42 @@ final class ModpackController extends Controller
 
             return response()->json([
                 'error' => 'Unable to load the installation progress.',
+            ], 500);
+        }
+    }
+
+    public function cancelInstall(
+        Request $request,
+        Server $server,
+    ): JsonResponse {
+        try {
+            $serverId = $this->lockKey($server);
+
+            $this->requestCancel($serverId);
+
+            $progressToken = $this->optionalProgressToken($request);
+
+            if ($progressToken !== null) {
+                $progress = $this->installProgressStore();
+
+                $progress->set($progressToken, [
+                    ...($progress->get($progressToken) ?? []),
+                    'phase' => 'cancelling',
+                    'indeterminate' => false,
+                ]);
+            }
+
+            return response()->json([
+                'data' => [
+                    'cancelled' => true,
+                    'applied' => true,
+                ],
+            ]);
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return response()->json([
+                'error' => 'Unable to cancel the installation.',
             ], 500);
         }
     }
@@ -1307,12 +1385,24 @@ final class ModpackController extends Controller
 
     private function progressToken(Request $request): string
     {
-        $value = $request->query('progress_token');
+        $token = $this->optionalProgressToken($request);
 
-        if (!is_string($value) || trim($value) === '') {
+        if ($token === null) {
             throw new InvalidArgumentException(
                 'A progress token is required.',
             );
+        }
+
+        return $token;
+    }
+
+    private function optionalProgressToken(
+        Request $request,
+    ): ?string {
+        $value = $request->query('progress_token');
+
+        if (!is_string($value) || trim($value) === '') {
+            return null;
         }
 
         $token = trim($value);
@@ -1328,6 +1418,40 @@ final class ModpackController extends Controller
         }
 
         return $token;
+    }
+
+    private function requestCancel(string $serverId): void
+    {
+        if (!is_dir(self::CANCEL_FLAG_DIR)) {
+            if (
+                !@mkdir(self::CANCEL_FLAG_DIR, 0750, true)
+                && !is_dir(self::CANCEL_FLAG_DIR)
+            ) {
+                throw new RuntimeException(
+                    'Unable to create the cancellation flag directory.'
+                );
+            }
+        }
+
+        $path = self::CANCEL_FLAG_DIR . '/' . $serverId;
+
+        if (@file_put_contents($path, (string) time()) === false) {
+            throw new RuntimeException(
+                'Unable to write the cancellation flag.'
+            );
+        }
+    }
+
+    private function clearCancelFlag(string $serverId): void
+    {
+        @unlink(self::CANCEL_FLAG_DIR . '/' . $serverId);
+    }
+
+    private function wasCancelled(string $serverId): bool
+    {
+        return is_file(
+            self::CANCEL_FLAG_DIR . '/' . $serverId,
+        );
     }
 
     private function providerHttp(): ProviderHttpClient
@@ -1394,6 +1518,7 @@ final class ModpackController extends Controller
     private function orchestrator(
         ServerFileTarget $target,
         ?callable $progress = null,
+        ?callable $cancelChecker = null,
     ): InstallationOrchestrator {
         $executor = new DeploymentExecutor($target);
 
@@ -1401,7 +1526,7 @@ final class ModpackController extends Controller
             $executor->setProgressCallback($progress);
         }
 
-        return new InstallationOrchestrator(
+        $orchestrator = new InstallationOrchestrator(
             workspaceManager: new InstallationWorkspace(
                 self::TEMPORARY_ROOT,
             ),
@@ -1411,6 +1536,12 @@ final class ModpackController extends Controller
             temporaryRoot: self::TEMPORARY_ROOT,
             serverFileTarget: $target,
         );
+
+        if ($cancelChecker !== null) {
+            $orchestrator->setCancelChecker($cancelChecker);
+        }
+
+        return $orchestrator;
     }
 
     private function store(): InstallRecordStore

@@ -3,6 +3,7 @@
 namespace Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Download;
 
 use InvalidArgumentException;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\InstallationCancelledException;
 use RuntimeException;
 
 final class DownloadManager implements Downloader
@@ -15,6 +16,11 @@ final class DownloadManager implements Downloader
      * @var null|callable(int|null $downloadedBytes, int|null $totalBytes): void
      */
     private $progressCallback = null;
+
+    /**
+     * @var null|callable(): bool
+     */
+    private $cancelChecker = null;
 
     /**
      * Additional reserved/private networks that PHP's filter_var IP flags do
@@ -54,6 +60,17 @@ final class DownloadManager implements Downloader
     public function setProgressCallback(?callable $callback): void
     {
         $this->progressCallback = $callback;
+    }
+
+    /**
+     * Registers a predicate consulted mid-transfer. When it returns true the
+     * in-flight request aborts and the download is treated as cancelled.
+     *
+     * @param null|callable(): bool $checker
+     */
+    public function setCancelChecker(?callable $checker): void
+    {
+        $this->cancelChecker = $checker;
     }
 
     public function download(string $url): string
@@ -192,6 +209,12 @@ final class DownloadManager implements Downloader
                     return 1;
                 }
 
+                $checker = $this->cancelChecker;
+
+                if ($checker !== null && $checker()) {
+                    return 1;
+                }
+
                 $callback = $this->progressCallback;
 
                 if ($callback !== null) {
@@ -234,6 +257,14 @@ final class DownloadManager implements Downloader
 
         if ($success !== true) {
             if (curl_errno($curl) === CURLE_ABORTED_BY_CALLBACK) {
+                $checker = $this->cancelChecker;
+
+                if ($checker !== null && $checker()) {
+                    throw new InstallationCancelledException(
+                        'Installation cancelled.'
+                    );
+                }
+
                 throw new InvalidArgumentException(
                     'The modpack download exceeds the maximum allowed size.'
                 );

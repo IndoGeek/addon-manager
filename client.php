@@ -49,6 +49,11 @@ Route::group([
         'install',
     ]);
 
+    Route::post('/install/cancel', [
+        ModpackController::class,
+        'cancelInstall',
+    ]);
+
     Route::get('/installed', [
         ModpackController::class,
         'installedModpacks',

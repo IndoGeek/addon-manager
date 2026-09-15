@@ -126,6 +126,29 @@
   background: rgba(21, 128, 61, 0.18);
 }
 
+.modpackinstaller-status--dismissible {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.modpackinstaller-status-dismiss {
+  flex: 0 0 auto;
+  padding: 2px 10px;
+  border: 0;
+  border-radius: 6px;
+  font-size: 1rem;
+  line-height: 1.2;
+  cursor: pointer;
+  background: rgba(0, 0, 0, 0.28);
+  color: inherit;
+}
+
+.modpackinstaller-status-dismiss:hover {
+  background: rgba(0, 0, 0, 0.42);
+}
+
 .modpackinstaller-form {
   display: flex;
   flex-direction: column;
