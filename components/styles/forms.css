@@ -78,6 +78,30 @@
   background: #b91c1c;
 }
 
+.modpackinstaller-confirm-accept {
+  background: #dc2626;
+  color: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.modpackinstaller-confirm-accept:hover:not(:disabled) {
+  background: #b91c1c;
+}
+
+.modpackinstaller-confirm-stay {
+  background: #16a34a;
+  color: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.modpackinstaller-confirm-stay:hover:not(:disabled) {
+  background: #15803d;
+}
+
 .modpackinstaller-confirm-actions button:disabled {
   cursor: not-allowed;
   opacity: 0.6;

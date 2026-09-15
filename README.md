@@ -26,46 +26,31 @@ A powerful Pterodactyl Panel extension for browsing and installing Minecraft mod
 
 ## Installation
 
-### 1. Install Blueprint (if not already installed)
+> **You need `sudo` (root) access on the server running your Pterodactyl panel.**
+>
+> Full, step-by-step installation instructions are in **[INSTALLATION.md](INSTALLATION.md)** — this includes prerequisites, what the installer configures automatically, manual fallback commands, and troubleshooting.
 
-Follow the [Blueprint installation guide](https://blueprint.pterodactyl.io).
+### Quick start (recommended)
 
-### 2. Install the Modpack Installer Extension
-
-This extension is installed and built **only from inside your Pterodactyl panel directory**, exactly like any standard Blueprint extension — no separate build script is required.
+Clone this repository **into your Pterodactyl directory** and run the one-command installer:
 
 ```bash
 cd /var/www/pterodactyl
-blueprint -install https://github.com/indogeek/modpack-installer
+sudo git clone https://github.com/indogeek/modpack-installer.git
+cd /var/www/pterodactyl/modpack-installer
+sudo bash installer.sh
 ```
 
-### 3. Publish Assets
+This installs the extension at `/var/www/pterodactyl/modpack-installer/installer.sh`. It:
 
-```bash
-php artisan blueprint:publish
-php artisan view:clear
-```
+- installs missing system tools and the PHP **curl**/**:zip** extensions,
+- raises your PHP-FPM limits (`memory_limit 512M`, `max_execution_time 3600`, `upload_max_filesize`/`post_max_size 5120M`) so large modpacks (~400 MB+) don't time out mid-download,
+- installs **Blueprint** if you don't have it yet,
+- installs this extension with `blueprint -install` and publishes the panel assets.
 
-### 4. Configure API Keys (Optional)
+### Optional: CurseForge API key
 
-The extension works out-of-the-box with Modrinth. To enable CurseForge support, you'll need a CurseForge API key:
-
-1. **Get Your API Key**
-   - Visit [CurseForge Developer Portal](https://console.curseforge.com)
-   - Create a new application
-   - Copy your API key
-
-2. **Set the Environment Variable**
-   
-   Add to your `.env` file:
-   ```
-   CURSEFORGE_API_KEY=your_api_key_here
-   ```
-
-3. **Restart Your Panel**
-   ```bash
-   systemctl restart php8.2-fpm  # or your PHP version
-   ```
+Modrinth works out of the box. To enable CurseForge, set `CURSEFORGE_API_KEY` in your panel's `.env`, then run `php artisan config:cache` and restart PHP-FPM — details in **[INSTALLATION.md](INSTALLATION.md)**.
 
 ## Usage
 
@@ -98,7 +83,7 @@ The extension works out-of-the-box with Modrinth. To enable CurseForge support, 
 
 ## Development
 
-Like every Blueprint extension, **Modpack Installer is built and installed from inside your Pterodactyl directory** — run `blueprint -install` (or `blueprint -r`) as shown above. No separate build/`resync` step or private `build.sh` script is required.
+Like every Blueprint extension, **Modpack Installer is built and installed from inside your Pterodactyl directory** — run `blueprint -install` as described in **[INSTALLATION.md](INSTALLATION.md)**. No separate build/`resync` step or private `build.sh` script is required.
 
 Contributors can run the extension's manual tests:
 
@@ -169,7 +154,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 For issues, questions, or suggestions:
 - 🐛 [Report Issues](https://github.com/indogeek/modpack-installer/issues)
 - 💬 [Discussions](https://github.com/indogeek/modpack-installer/discussions)
-- 📧 Contact: support@indogeek.dev
+- 📧 Contact: tanumoy.maity12@gmail.com
 
 ---
 

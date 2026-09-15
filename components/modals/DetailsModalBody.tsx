@@ -13,6 +13,7 @@ import {
     DownloadStatIcon,
     FollowsStatIcon,
     UpdatedStatIcon,
+    WarningIcon,
 } from '../icons';
 import {
     buildCardTags,
@@ -43,6 +44,7 @@ interface DetailsModalBodyProps {
     modalInstallLoading: boolean;
     installProgress: InstallProgressData | null;
     installBlocked: boolean;
+    willReplace: boolean;
     onSelectVersion: (source: string) => void;
     onRetryVersions: () => void;
     onRetryMetadata: () => void;
@@ -64,6 +66,7 @@ export const DetailsModalBody = ({
     modalInstallLoading,
     installProgress,
     installBlocked,
+    willReplace,
     onSelectVersion,
     onRetryVersions,
     onRetryMetadata,
@@ -337,7 +340,9 @@ export const DetailsModalBody = ({
                                             ? ' modpackinstaller-modal-actions-button--success'
                                             : installBlocked
                                                 ? ' modpackinstaller-modal-actions-button--locked'
-                                                : ''
+                                                : willReplace
+                                                    ? ' modpackinstaller-install-button--warning'
+                                                    : ''
                                     }`}
                                 >
                                     {modalInstallLoading && (
@@ -365,7 +370,16 @@ export const DetailsModalBody = ({
                                                   }`
                                                 : modalResult !== null
                                                     ? 'Installed'
-                                                    : 'Install Modpack'}
+                                                    : willReplace
+                                                        ? (
+                                                            <>
+                                                                <WarningIcon />
+                                                                <span className="modpackinstaller-install-button-warning-label">
+                                                                    Warning: installing this modpack will replace your existing modpack
+                                                                </span>
+                                                            </>
+                                                        )
+                                                        : 'Install Modpack'}
                                     </span>
                                 </button>
                             </div>

@@ -21,3 +21,4 @@
 
 # Binaries
 *.sh
+!installer.sh

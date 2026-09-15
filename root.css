@@ -1508,6 +1508,30 @@
   background: #b91c1c;
 }
 
+.modpackinstaller-confirm-accept {
+  background: #dc2626;
+  color: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.modpackinstaller-confirm-accept:hover:not(:disabled) {
+  background: #b91c1c;
+}
+
+.modpackinstaller-confirm-stay {
+  background: #16a34a;
+  color: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.modpackinstaller-confirm-stay:hover:not(:disabled) {
+  background: #15803d;
+}
+
 .modpackinstaller-confirm-actions button:disabled {
   cursor: not-allowed;
   opacity: 0.6;
@@ -2149,6 +2173,25 @@
   background: #92400e;
   color: #fde68a;
   cursor: not-allowed;
+}
+
+.modpackinstaller-modal-actions
+  button.modpackinstaller-install-button--warning,
+.modpackinstaller-modal-actions
+  button.modpackinstaller-install-button--warning:hover,
+.modpackinstaller-modal-actions
+  button.modpackinstaller-install-button--warning:disabled {
+  background: #d97706;
+  color: #ffffff;
+}
+
+.modpackinstaller-install-button-warning-label {
+  display: inline;
+}
+
+.modpackinstaller-install-progress-label svg {
+  vertical-align: -2px;
+  margin-right: 4px;
 }
 
 .modpackinstaller-modal-result {

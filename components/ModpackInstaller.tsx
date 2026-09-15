@@ -59,6 +59,7 @@ import { ManualDownloadNotice } from './modals/ManualDownloadNotice';
 import { InstalledModpacksBody } from './modals/InstalledModpacksBody';
 import { DetailsModalBody } from './modals/DetailsModalBody';
 import { UninstallConfirmBody } from './modals/UninstallConfirmBody';
+import { ReplaceConfirmBody } from './modals/ReplaceConfirmBody';
 import { isActiveRunning } from './modals/ActiveInstallCard';
 
 import { CatalogToolbar } from './toolbar/CatalogToolbar';
@@ -66,7 +67,14 @@ import { FilterPanel } from './toolbar/FilterPanel';
 import { ActiveFilterChips } from './toolbar/ActiveFilterChips';
 
 import { CatalogResults } from './cards/CatalogResults';
-import { RefreshIcon, SpinnerIcon } from './icons';
+import { RefreshIcon, SpinnerIcon, WarningIcon } from './icons';
+
+// How long a freshly-started install may report no backend progress before
+// the polling loop treats it as abandoned. The install POST can take several
+// seconds to reach and be processed by the server (mobile connections,
+// replace-confirmation flow), so an 'idle' poll in this window just means
+// the first progress snapshot has not landed yet — the card must stay alive.
+const IDLE_GRACE_MS = 30000;
 
 export default () => {
     const server = getServerIdentifier();
@@ -152,6 +160,16 @@ export default () => {
 
     const [pendingUninstall, setPendingUninstall] =
         useState<InstallRecordData | null>(null);
+
+    const [replaceConfirmOpen, setReplaceConfirmOpen] = useState(false);
+
+    const pendingReplaceContinuation =
+        useRef<(() => void) | null>(null);
+
+    const skipReplaceCheck = useRef(false);
+
+    const hasInstalledModpack =
+        installed !== null && installed.length > 0;
 
     const [installedOpen, setInstalledOpen] = useState(false);
 
@@ -1097,7 +1115,21 @@ export default () => {
         record: ActiveInstallRecord,
     ) => {
         if (state.phase === 'idle') {
-            clearActiveInstall();
+            // 'idle' means the backend has no progress snapshot for the token
+            // yet. Immediately after starting an install this is expected:
+            // the install POST may still be in flight / being processed, so a
+            // poll can win the race against the first store write. Only treat
+            // an empty store as an abandoned install once the local record is
+            // well past its start; otherwise keep the card alive and keep
+            // polling so the running install resurfaces when it lands.
+            const startedAt = new Date(record.started_at).getTime();
+            const ageMs = Number.isNaN(startedAt)
+                ? Number.POSITIVE_INFINITY
+                : Date.now() - startedAt;
+
+            if (ageMs >= IDLE_GRACE_MS) {
+                clearActiveInstall();
+            }
             return;
         }
 
@@ -1318,6 +1350,32 @@ export default () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [server]);
 
+    const requestReplaceConfirmation = (continuation: () => void) => {
+        pendingReplaceContinuation.current = continuation;
+        setReplaceConfirmOpen(true);
+    };
+
+    const confirmReplaceInstall = () => {
+        const continuation = pendingReplaceContinuation.current;
+
+        pendingReplaceContinuation.current = null;
+        setReplaceConfirmOpen(false);
+
+        if (continuation === null) {
+            return;
+        }
+
+        skipReplaceCheck.current = true;
+
+        continuation();
+    };
+
+    const cancelReplaceInstall = () => {
+        pendingReplaceContinuation.current = null;
+        skipReplaceCheck.current = false;
+        setReplaceConfirmOpen(false);
+    };
+
     const installModalModpack = async () => {
         if (!server) {
             setModalStatus({
@@ -1346,6 +1404,13 @@ export default () => {
         if (modalInstallLoading || activeRunning) {
             return;
         }
+
+        if (!skipReplaceCheck.current && hasInstalledModpack) {
+            requestReplaceConfirmation(installModalModpack);
+            return;
+        }
+
+        skipReplaceCheck.current = false;
 
         const token = beginActiveInstall({
             source: modalVersionSource,
@@ -1401,6 +1466,19 @@ export default () => {
                 return;
             }
 
+            // Network errors (timeout, closed tab/connection dropped) or 5xx
+            // from the reverse proxy / php-fpm. The request may still be
+            // running server-side, so do not tear down the active install;
+            // the polling loop resurfaces progress, completion, or an 'idle'
+            // cleanup on its next tick.
+            if (
+                !requestError.response ||
+                (requestError.response?.status ?? 0) >= 500
+            ) {
+                return;
+            }
+
+            // Definitive pre-start rejection (4xx, e.g. 422 validation).
             const message =
                 requestError.response?.data?.error ||
                 'Unable to install the modpack.';
@@ -1531,6 +1609,13 @@ export default () => {
             return;
         }
 
+        if (!skipReplaceCheck.current && hasInstalledModpack) {
+            requestReplaceConfirmation(installManualSource);
+            return;
+        }
+
+        skipReplaceCheck.current = false;
+
         const token = beginActiveInstall({
             source: selectedSource,
             provider: metadata?.source.split('://')[0] ?? '',
@@ -1580,6 +1665,19 @@ export default () => {
                 return;
             }
 
+            // Network errors (timeout, closed tab/connection dropped) or 5xx
+            // from the reverse proxy / php-fpm. The request may still be
+            // running server-side, so do not tear down the active install;
+            // the polling loop resurfaces progress, completion, or an 'idle'
+            // cleanup on its next tick.
+            if (
+                !requestError.response ||
+                (requestError.response?.status ?? 0) >= 500
+            ) {
+                return;
+            }
+
+            // Definitive pre-start rejection (4xx, e.g. 422 validation).
             const message =
                 requestError.response?.data?.error ||
                 'Unable to install the modpack.';
@@ -1798,7 +1896,9 @@ export default () => {
                                             ? ' modpackinstaller-modal-actions-button--success'
                                             : activeRunning
                                                 ? ' modpackinstaller-modal-actions-button--locked'
-                                                : ''
+                                                : hasInstalledModpack
+                                                    ? ' modpackinstaller-install-button--warning'
+                                                    : ''
                                     }`}
                                 >
                                     {installLoading && (
@@ -1826,7 +1926,16 @@ export default () => {
                                                   }`
                                                 : result !== null
                                                     ? 'Installed'
-                                                    : 'Install this modpack'}
+                                                    : hasInstalledModpack
+                                                        ? (
+                                                            <>
+                                                                <WarningIcon />
+                                                                <span className="modpackinstaller-install-button-warning-label">
+                                                                    Warning: installing this modpack will replace your existing modpack
+                                                                </span>
+                                                            </>
+                                                        )
+                                                        : 'Install this modpack'}
                                     </span>
                                 </button>
                             </div>
@@ -1924,6 +2033,7 @@ export default () => {
                         modalInstallLoading={modalInstallLoading}
                         installProgress={installProgress}
                         installBlocked={activeRunning}
+                        willReplace={hasInstalledModpack}
                         onSelectVersion={selectModalVersion}
                         onRetryVersions={retryModalVersions}
                         onRetryMetadata={retryModalMetadata}
@@ -1947,6 +2057,18 @@ export default () => {
                         setPendingUninstall(null);
                         uninstallInstalledModpack(record);
                     }}
+                />
+            </Modal>
+
+            <Modal
+                open={replaceConfirmOpen}
+                onClose={cancelReplaceInstall}
+                labelledBy="modpackinstaller-replace-title"
+                title="Replace installed modpack"
+            >
+                <ReplaceConfirmBody
+                    onCancel={cancelReplaceInstall}
+                    onConfirm={confirmReplaceInstall}
                 />
             </Modal>
         </div>

@@ -69,8 +69,20 @@ final class FakeDownloader implements Downloader
 
     public int $calls = 0;
 
-    public function __construct(private readonly string $archivePath)
-    {
+    /** @var array<string, string> */
+    private array $routes;
+
+    /** @var array<string, Throwable> */
+    private array $failures;
+
+    /** @param array<string, string> $routes @param array<string, Throwable> $failures */
+    public function __construct(
+        private readonly string $archivePath,
+        array $routes = [],
+        array $failures = [],
+    ) {
+        $this->routes = $routes;
+        $this->failures = $failures;
     }
 
     public function download(string $url): string
@@ -78,7 +90,26 @@ final class FakeDownloader implements Downloader
         $this->url = $url;
         $this->calls++;
 
-        return $this->archivePath;
+        if (isset($this->failures[$url])) {
+            throw $this->failures[$url];
+        }
+
+        return $this->routes[$url] ?? $this->archivePath;
+    }
+
+    public int $offsetBytes = 0;
+
+    public ?int $offsetTotal = null;
+
+    public function setProgressOffset(int $completedBytes, ?int $totalBytes): void
+    {
+        $this->offsetBytes = $completedBytes;
+        $this->offsetTotal = $totalBytes;
+    }
+
+    public function isCancelled(): bool
+    {
+        return false;
     }
 }
 
@@ -413,6 +444,277 @@ if (is_file($package->archivePath)) {
 }
 
 pass('cleanup removes temporary package archive');
+
+$indexModPath = $temporaryRoot . '/index-mods.mrpack';
+$oneJar = $temporaryRoot . '/index-one.jar';
+$threeJar = $temporaryRoot . '/index-three.jar';
+$indexTomlPath = $temporaryRoot . '/index-server.toml';
+
+file_put_contents($oneJar, 'one-downloaded');
+file_put_contents($threeJar, 'three-downloaded');
+file_put_contents($indexTomlPath, 'index-server-version');
+
+buildZip($indexModPath, [
+    'modrinth.index.json' => json_encode([
+        'formatVersion' => 1,
+        'files' => [
+            [
+                'path' => 'mods/one.jar',
+                'downloads' => ['https://cdn.example/one.jar'],
+                'env' => ['server' => 'supported'],
+            ],
+            [
+                'path' => 'mods/three.jar',
+                'downloads' => ['https://cdn.example/three.jar'],
+            ],
+            [
+                'path' => 'mods/clientonly.jar',
+                'downloads' => ['https://cdn.example/clientonly.jar'],
+                'env' => ['server' => 'unsupported'],
+            ],
+            [
+                'path' => 'config/server.toml',
+                'downloads' => ['https://cdn.example/index-server.toml'],
+            ],
+        ],
+    ]),
+    'overrides/config/server.toml' => 'overrides-version',
+]);
+
+$http = new FakeProviderHttpClient([
+    $projectResponse,
+    $versionsResponse,
+]);
+$downloader = new FakeDownloader(
+    $indexModPath,
+    [
+        'https://cdn.example/one.jar' => $oneJar,
+        'https://cdn.example/three.jar' => $threeJar,
+        'https://cdn.example/clientonly.jar' => $temporaryRoot . '/clientonly.jar',
+        'https://cdn.example/index-server.toml' => $indexTomlPath,
+    ],
+);
+$provider = new ModrinthProvider(
+    $http,
+    $downloader,
+    $temporaryRoot,
+);
+
+$package = $provider->getPackage('modrinth://prominence-2-rpg');
+
+$zip = new ZipArchive();
+$zip->open($package->archivePath);
+$names = [];
+for ($index = 0; $index < $zip->numFiles; $index++) {
+    $names[] = $zip->statIndex($index)['name'];
+}
+$one = $zip->getFromName('mods/one.jar');
+$three = $zip->getFromName('mods/three.jar');
+$indexServerToml = $zip->getFromName('config/server.toml');
+$zip->close();
+
+sort($names);
+
+$expected = ['config/server.toml', 'mods/one.jar', 'mods/three.jar'];
+
+if ($names !== $expected) {
+    throw new RuntimeException(
+        'Unexpected index-mod archive contents: ' . implode(',', $names),
+    );
+}
+
+if ($one !== 'one-downloaded') {
+    throw new RuntimeException('Index mod content was not preserved.');
+}
+
+if ($three !== 'three-downloaded') {
+    throw new RuntimeException('Env-less index file was not installed.');
+}
+
+if ($indexServerToml !== 'overrides-version') {
+    throw new RuntimeException('Embedded overrides should beat index files for the same path.');
+}
+
+if ($downloader->calls !== 3) {
+    throw new RuntimeException('Unexpected downloader call count: ' . $downloader->calls);
+}
+
+$provider->cleanup($package);
+
+if (is_file($oneJar) || is_file($threeJar)) {
+    throw new RuntimeException('Downloaded index files were not cleaned up.');
+}
+
+pass('index-file mods resolved, env-filtered and merged with overrides precedence');
+
+$embeddedModsPath = $temporaryRoot . '/embedded-mods.mrpack';
+buildZip($embeddedModsPath, [
+    'modrinth.index.json' => json_encode([
+        'formatVersion' => 1,
+    ]),
+    'mods/embedded.jar' => 'embedded-bytes',
+    'client-overrides/client.txt' => 'client',
+]);
+
+$http = new FakeProviderHttpClient([
+    $projectResponse,
+    $versionsResponse,
+]);
+$provider = new ModrinthProvider(
+    $http,
+    new FakeDownloader($embeddedModsPath),
+    $temporaryRoot,
+);
+
+$package = $provider->getPackage('modrinth://prominence-2-rpg');
+
+$zip = new ZipArchive();
+$zip->open($package->archivePath);
+$embedded = $zip->getFromName('mods/embedded.jar');
+$zip->close();
+
+if ($embedded !== 'embedded-bytes') {
+    throw new RuntimeException('Embedded mods directory was not preserved.');
+}
+
+$provider->cleanup($package);
+
+pass('embedded mods directory preserved in server archive');
+
+$malformedPath = $temporaryRoot . '/malformed-index.mrpack';
+buildZip($malformedPath, [
+    'modrinth.index.json' => '{not valid json',
+    'overrides/config/x.toml' => 'x',
+]);
+
+$http = new FakeProviderHttpClient([
+    $projectResponse,
+    $versionsResponse,
+]);
+$provider = new ModrinthProvider(
+    $http,
+    new FakeDownloader($malformedPath),
+    $temporaryRoot,
+);
+
+try {
+    $provider->getPackage('modrinth://prominence-2-rpg');
+    throw new RuntimeException('Malformed index manifest was accepted.');
+} catch (UnsupportedModpackPackageException $exception) {
+    if (!str_contains($exception->getMessage(), 'malformed')) {
+        throw new RuntimeException('Unexpected malformed-index error message.');
+    }
+}
+
+pass('malformed modrinth.index.json rejected loudly');
+
+$missingIndexPath = $temporaryRoot . '/missing-index.mrpack';
+buildZip($missingIndexPath, [
+    'overrides/config/x.toml' => 'x',
+]);
+
+$http = new FakeProviderHttpClient([
+    $projectResponse,
+    $versionsResponse,
+]);
+$provider = new ModrinthProvider(
+    $http,
+    new FakeDownloader($missingIndexPath),
+    $temporaryRoot,
+);
+
+try {
+    $provider->getPackage('modrinth://prominence-2-rpg');
+    throw new RuntimeException('mrpack without an index manifest was accepted.');
+} catch (UnsupportedModpackPackageException $exception) {
+    if (!str_contains($exception->getMessage(), 'manifest')) {
+        throw new RuntimeException('Unexpected missing-index error message.');
+    }
+}
+
+pass('mrpack without modrinth.index.json rejected loudly');
+
+$failIndexPath = $temporaryRoot . '/fail-download.mrpack';
+buildZip($failIndexPath, [
+    'modrinth.index.json' => json_encode([
+        'formatVersion' => 1,
+        'files' => [
+            [
+                'path' => 'mods/fail.jar',
+                'downloads' => ['https://cdn.example/fail.jar'],
+            ],
+        ],
+    ]),
+]);
+
+$http = new FakeProviderHttpClient([
+    $projectResponse,
+    $versionsResponse,
+]);
+$downloader = new FakeDownloader(
+    $failIndexPath,
+    [],
+    ['https://cdn.example/fail.jar' => new RuntimeException('mirror exploded')],
+);
+$provider = new ModrinthProvider(
+    $http,
+    $downloader,
+    $temporaryRoot,
+);
+
+try {
+    $provider->getPackage('modrinth://prominence-2-rpg');
+    throw new RuntimeException('Index file download failure was swallowed.');
+} catch (RuntimeException $exception) {
+    if (!str_contains($exception->getMessage(), 'mirror exploded')) {
+        throw new RuntimeException('Unexpected download failure error message.');
+    }
+}
+
+$remainingBins = [];
+
+foreach (scandir($temporaryRoot) ?: [] as $entry) {
+    if (str_ends_with($entry, '.bin')) {
+        $remainingBins[] = $entry;
+    }
+}
+
+if ($remainingBins !== []) {
+    throw new RuntimeException('Scratch files survived a failed normalization.');
+}
+
+pass('index file download failure propagates and leaves no scratch files');
+
+$noUrlPath = $temporaryRoot . '/no-url.mrpack';
+buildZip($noUrlPath, [
+    'modrinth.index.json' => json_encode([
+        'formatVersion' => 1,
+        'files' => [
+            ['path' => 'mods/nourl.jar', 'downloads' => []],
+        ],
+    ]),
+]);
+
+$http = new FakeProviderHttpClient([
+    $projectResponse,
+    $versionsResponse,
+]);
+$provider = new ModrinthProvider(
+    $http,
+    new FakeDownloader($noUrlPath),
+    $temporaryRoot,
+);
+
+try {
+    $provider->getPackage('modrinth://prominence-2-rpg');
+    throw new RuntimeException('Index file without a download URL was accepted.');
+} catch (UnsupportedModpackPackageException $exception) {
+    if (!str_contains($exception->getMessage(), 'downloadable URL')) {
+        throw new RuntimeException('Unexpected no-URL error message.');
+    }
+}
+
+pass('index file without a download URL rejected loudly');
 
 $noContentPath = $temporaryRoot . '/no-content.mrpack';
 buildZip($noContentPath, [

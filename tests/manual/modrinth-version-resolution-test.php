@@ -79,6 +79,21 @@ final class FakeDownloader implements Downloader
 
         return $this->archivePath;
     }
+
+    public int $offsetBytes = 0;
+
+    public ?int $offsetTotal = null;
+
+    public function setProgressOffset(int $completedBytes, ?int $totalBytes): void
+    {
+        $this->offsetBytes = $completedBytes;
+        $this->offsetTotal = $totalBytes;
+    }
+
+    public function isCancelled(): bool
+    {
+        return false;
+    }
 }
 
 function buildZip(string $path, array $files): void

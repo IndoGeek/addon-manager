@@ -5,6 +5,7 @@ namespace Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Providers;
 use InvalidArgumentException;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Models\ModpackMetadata;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Download\Downloader;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\InstallationCancelledException;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Provider\ProviderHttpClient;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Provider\ProviderHttpException;
 use RuntimeException;
@@ -14,6 +15,28 @@ use ZipArchive;
 final class ModrinthProvider implements ModpackProvider
 {
     private const API_BASE = 'https://api.modrinth.com/v2';
+
+    private const INDEX_FILE = 'modrinth.index.json';
+
+    /**
+     * Share of the download progress band reserved for the mrpack archive
+     * itself. The archive is anchored to a virtual total (archive size
+     * divided by this slice) so that its phase fills 0..~(slice*85)% instead
+     * of spiking toward 85% and dropping when buildServerArchive re-anchors
+     * on the real network footprint (mrpack bytes plus every index mod).
+     */
+    private const PROGRESS_ARCHIVE_SLICE = 0.12;
+
+    /**
+     * Winning source for a given relative server path: later entries override
+     * earlier ones (e.g. server-overrides/config.toml beats overrides/...).
+     */
+    private const ENTRY_PRIORITIES = [
+        'index' => 0,
+        'mods' => 1,
+        'overrides' => 2,
+        'server-overrides' => 3,
+    ];
 
     /**
      * @var array<string, true> Paths of temporary archives awaiting cleanup.
@@ -120,6 +143,28 @@ final class ModrinthProvider implements ModpackProvider
         if ($url === '') {
             throw new InvalidArgumentException(
                 'The Modrinth version file does not have a download URL.',
+            );
+        }
+
+        // Anchor the whole acquisition (mrpack archive plus its index mod
+        // files) to a single running total so the progress bar never resets
+        // between parts. For an mrpack the primary file is only a fraction of
+        // what gets fetched: buildServerArchive re-anchors on the exact
+        // footprint once the index is parsed. Anchoring the raw archive size
+        // would make the bar spike toward 85% while only the archive is in
+        // flight and then drop on that re-anchor, so scale it to a virtual
+        // total that reserves the rest of the band for the index files.
+        $archiveSize = max(0, (int) ($file['size'] ?? 0));
+
+        if ($extension === 'mrpack') {
+            $this->downloader->setProgressOffset(
+                0,
+                max(1, (int) round($archiveSize / self::PROGRESS_ARCHIVE_SLICE)),
+            );
+        } else {
+            $this->downloader->setProgressOffset(
+                0,
+                $archiveSize,
             );
         }
 
@@ -422,43 +467,34 @@ final class ModrinthProvider implements ModpackProvider
         }
 
         try {
-            $content = [];
+            $content = $this->collectArchiveContent($source);
 
-            for ($index = 0; $index < $source->numFiles; $index++) {
-                $entry = $source->statIndex($index);
-
-                if ($entry === false) {
-                    continue;
-                }
-
-                $name = (string) ($entry['name'] ?? '');
-
-                if ($name === '' || str_ends_with($name, '/')) {
-                    continue;
-                }
-
-                $payload = $this->serverEntryName($name);
-
-                if ($payload === null) {
-                    continue;
-                }
-
-                if (
-                    $payload['priority'] === 'server-overrides'
-                    || !isset($content[$payload['relative']])
-                ) {
-                    $content[$payload['relative']] = [
-                        'archiveEntry' => $name,
-                        'priority' => $payload['priority'],
-                    ];
-                }
-            }
+            $this->mergeIndexFiles($source, $content);
 
             if ($content === []) {
                 throw new UnsupportedModpackPackageException(
-                    'The Modrinth modpack contains no server content to install (no overrides or server-overrides directory).',
+                    'The Modrinth modpack contains no server content to install (no overrides, server-overrides, mods, or index modpack files).',
                 );
             }
+
+            // Re-anchor cumulative progress on the whole network footprint:
+            // the downloaded mrpack bytes plus every index-file mod still to
+            // fetch. Offsets only ever grow, so the bar moves forward without
+            // resetting between the hundreds of per-mod downloads.
+            $archiveBytes = max(0, (int) @filesize($archivePath));
+
+            foreach ($content as $payload) {
+                if ($payload['archiveEntry'] === null) {
+                    $archiveBytes += max(0, (int) ($payload['bytes'] ?? 0));
+                }
+            }
+
+            $networkBytesDone = max(0, (int) @filesize($archivePath));
+
+            $this->downloader->setProgressOffset(
+                $networkBytesDone,
+                max($networkBytesDone, $archiveBytes),
+            );
 
             $root = rtrim($this->temporaryRoot, DIRECTORY_SEPARATOR);
 
@@ -483,49 +519,97 @@ final class ModrinthProvider implements ModpackProvider
             }
 
             // Source entries are streamed into scratch files and added to the
-            // normalized archive via addFile() so a single large override file
-            // never has to be decompressed fully in memory. A fresh scratch
-            // file is used per entry because ZipArchive reads it lazily when
-            // the archive is closed.
+            // normalized archive via addFile() so a single large file (an
+            // override or an index-file mod) never has to be decompressed
+            // fully in memory. Index-file sources are downloaded on the fly
+            // with the injected Downloader and streamed the same way. A fresh
+            // scratch file is used per entry because ZipArchive reads it
+            // lazily when the archive is closed.
             $scratchPaths = [];
+            $downloadedTemps = [];
 
             try {
                 foreach ($content as $relative => $payload) {
-                    $stream = $source->getStream(
-                        $payload['archiveEntry'],
-                    );
-
-                    if ($stream === false) {
-                        continue;
+                    if ($this->downloader->isCancelled()) {
+                        throw new InstallationCancelledException(
+                            'Installation cancelled.'
+                        );
                     }
 
+                    $stream = null;
+                    $scratch = null;
+
                     try {
+                        if ($payload['archiveEntry'] !== null) {
+                            $stream = $source->getStream(
+                                $payload['archiveEntry'],
+                            );
+
+                            if ($stream === false) {
+                                throw new RuntimeException(
+                                    'Unable to read an entry from the modpack archive.',
+                                );
+                            }
+                        } else {
+                            $this->downloader->setProgressOffset(
+                                $networkBytesDone,
+                                max($networkBytesDone, $archiveBytes),
+                            );
+
+                            $downloadPath = $this->downloader->download(
+                                (string) $payload['downloadUrl'],
+                            );
+
+                            $downloadedTemps[] = $downloadPath;
+
+                            $networkBytesDone += max(
+                                0,
+                                (int) ($payload['bytes'] ?? 0),
+                            );
+
+                            $stream = @fopen($downloadPath, 'rb');
+
+                            if ($stream === false) {
+                                throw new RuntimeException(
+                                    'Unable to read a downloaded modpack file.',
+                                );
+                            }
+                        }
+
                         $scratchPath = $root
                             . '/'
                             . bin2hex(random_bytes(16))
                             . '.bin';
 
-                        $scratch = fopen($scratchPath, 'wb');
+                        $scratch = @fopen($scratchPath, 'wb');
 
                         if ($scratch === false) {
-                            continue;
+                            throw new RuntimeException(
+                                'Unable to create a scratch file for the normalized archive.',
+                            );
                         }
 
-                        try {
-                            if (stream_copy_to_stream($stream, $scratch) === false) {
-                                continue;
-                            }
-                        } finally {
-                            fclose($scratch);
+                        if (stream_copy_to_stream($stream, $scratch) === false) {
+                            throw new RuntimeException(
+                                'Unable to copy a modpack file into the normalized archive.',
+                            );
                         }
 
                         $scratchPaths[] = $scratchPath;
 
-                        if (!$output->addFile($scratchPath, $relative)) {
-                            continue;
+                        if ($output->addFile($scratchPath, $relative) === false) {
+                            throw new RuntimeException(
+                                'Unable to add a modpack file to the normalized archive.',
+                            );
                         }
                     } finally {
-                        fclose($stream);
+                        if ($scratch !== null) {
+                            fclose($scratch);
+                        }
+
+                        if ($stream !== null) {
+                            fclose($stream);
+                        }
                     }
                 }
             } finally {
@@ -534,12 +618,182 @@ final class ModrinthProvider implements ModpackProvider
                 foreach ($scratchPaths as $scratchPath) {
                     @unlink($scratchPath);
                 }
+
+                foreach ($downloadedTemps as $downloadPath) {
+                    @unlink($downloadPath);
+                }
             }
 
             return $outputPath;
         } finally {
             $source->close();
         }
+    }
+
+    /**
+     * Collects server-deployable entries embedded in the archive payload
+     * itself (overrides, server-overrides and top-level mods), keeping the
+     * highest-precedence source for every relative path.
+     *
+     * @return array<string, array{archiveEntry: string, downloadUrl: null, priority: string, bytes: int}>
+     */
+    private function collectArchiveContent(ZipArchive $source): array
+    {
+        $content = [];
+
+        for ($index = 0; $index < $source->numFiles; $index++) {
+            $entry = $source->statIndex($index);
+
+            if ($entry === false) {
+                throw new UnsupportedModpackPackageException(
+                    'The modpack archive contains an unreadable entry.',
+                );
+            }
+
+            $name = (string) ($entry['name'] ?? '');
+
+            if ($name === '' || str_ends_with($name, '/')) {
+                continue;
+            }
+
+            $payload = $this->serverEntryName($name);
+
+            if ($payload === null) {
+                continue;
+            }
+
+            // server-overrides must win over overrides for the same path, so
+            // candidates are compared by their precedence instead of taken on
+            // first-come.
+            if (
+                $this->shouldReplace($content[$payload['relative']] ?? null, $payload['priority'])
+            ) {
+                $content[$payload['relative']] = [
+                    'archiveEntry' => $name,
+                    'downloadUrl' => null,
+                    'priority' => $payload['priority'],
+                    'bytes' => 0,
+                ];
+            }
+        }
+
+        return $content;
+    }
+
+    /**
+     * Resolves server-required files referenced by modrinth.index.json. The
+     * mrpack format keeps mods outside the archive and lists each of them as
+     * an external download, so installing a Modrinth pack without resolving
+     * these would deploy a mod-less server. Files whose environment explicitly
+     * excludes the server are skipped.
+     *
+     * Malformed or unresolvable manifests fail loudly (never silently skip)
+     * so a partial install is never reported as complete.
+     *
+     * @param array<string, array{archiveEntry: string|null, downloadUrl: string|null, priority: string, bytes: int}> $content
+     */
+    private function mergeIndexFiles(ZipArchive $source, array &$content): void
+    {
+        $rawIndex = $source->getFromName(self::INDEX_FILE);
+
+        if ($rawIndex === false) {
+            throw new UnsupportedModpackPackageException(
+                'The Modrinth modpack does not contain a modrinth.index.json manifest.',
+            );
+        }
+
+        $decoded = json_decode($rawIndex, true);
+
+        if (!is_array($decoded)) {
+            throw new UnsupportedModpackPackageException(
+                'The Modrinth modpack contains a malformed modrinth.index.json manifest.',
+            );
+        }
+
+        $files = $decoded['files'] ?? [];
+
+        if (!is_array($files)) {
+            throw new UnsupportedModpackPackageException(
+                'The Modrinth modpack contains an invalid modrinth.index.json manifest.',
+            );
+        }
+
+        foreach ($files as $file) {
+            if (!is_array($file)) {
+                throw new UnsupportedModpackPackageException(
+                    'The Modrinth modpack contains an invalid modrinth.index.json file entry.',
+                );
+            }
+
+            if (($file['env']['server'] ?? '') === 'unsupported') {
+                continue;
+            }
+
+            $relative = (string) ($file['path'] ?? '');
+
+            if ($relative === '' || !$this->isSafeRelativePath($relative)) {
+                throw new UnsupportedModpackPackageException(
+                    'The Modrinth modpack contains an invalid file path.',
+                );
+            }
+
+            $url = $this->firstDownloadUrl($file['downloads'] ?? null);
+
+            if ($url === null) {
+                throw new UnsupportedModpackPackageException(
+                    'The Modrinth modpack lists a file without a downloadable URL.',
+                );
+            }
+
+            // Index files carry the lowest precedence, so an embedded copy of
+            // the same path (overrides/mods) always wins.
+            if (
+                $this->shouldReplace($content[$relative] ?? null, 'index')
+            ) {
+                $content[$relative] = [
+                    'archiveEntry' => null,
+                    'downloadUrl' => $url,
+                    'priority' => 'index',
+                    'bytes' => max(0, (int) ($file['fileSize'] ?? 0)),
+                ];
+            }
+        }
+    }
+
+    /**
+     * @param array{priority: string}|null $existing
+     */
+    private function shouldReplace(?array $existing, string $priority): bool
+    {
+        if ($existing === null) {
+            return true;
+        }
+
+        return self::ENTRY_PRIORITIES[$priority]
+            > self::ENTRY_PRIORITIES[$existing['priority']];
+    }
+
+    private function firstDownloadUrl(mixed $downloads): ?string
+    {
+        if (!is_array($downloads)) {
+            return null;
+        }
+
+        foreach ($downloads as $candidate) {
+            if (!is_string($candidate) || $candidate === '') {
+                continue;
+            }
+
+            $scheme = strtolower(
+                (string) (parse_url($candidate, PHP_URL_SCHEME) ?? ''),
+            );
+
+            if ($scheme === 'http' || $scheme === 'https') {
+                return $candidate;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -558,6 +812,9 @@ final class ModrinthProvider implements ModpackProvider
         } elseif (str_starts_with($name, 'server-overrides/')) {
             $priority = 'server-overrides';
             $relative = substr($name, strlen('server-overrides/'));
+        } elseif (str_starts_with($name, 'mods/')) {
+            $priority = 'mods';
+            $relative = $name;
         }
 
         if ($priority === null || $relative === null || $relative === '') {

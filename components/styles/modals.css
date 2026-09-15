@@ -363,6 +363,25 @@
   cursor: not-allowed;
 }
 
+.modpackinstaller-modal-actions
+  button.modpackinstaller-install-button--warning,
+.modpackinstaller-modal-actions
+  button.modpackinstaller-install-button--warning:hover,
+.modpackinstaller-modal-actions
+  button.modpackinstaller-install-button--warning:disabled {
+  background: #d97706;
+  color: #ffffff;
+}
+
+.modpackinstaller-install-button-warning-label {
+  display: inline;
+}
+
+.modpackinstaller-install-progress-label svg {
+  vertical-align: -2px;
+  margin-right: 4px;
+}
+
 .modpackinstaller-modal-result {
   margin-top: 4px;
   padding-top: 16px;

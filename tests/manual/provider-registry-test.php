@@ -48,6 +48,15 @@ final class StubDownloader implements Downloader
         throw new RuntimeException('Unexpected download.');
     }
 
+    public function setProgressOffset(int $completedBytes, ?int $totalBytes): void
+    {
+    }
+
+    public function isCancelled(): bool
+    {
+        return false;
+    }
+
     public function markForCleanup(string $path): void
     {
     }

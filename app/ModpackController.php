@@ -287,6 +287,8 @@ final class ModpackController extends Controller
 
             $lastLockTouch = 0.0;
 
+            $lastPercent = 0.0;
+
             $downloader->setProgressCallback(
                 static function (
                     ?int $downloadedBytes,
@@ -296,6 +298,7 @@ final class ModpackController extends Controller
                     $progressToken,
                     $lock,
                     &$lastLockTouch,
+                    &$lastPercent,
                 ): void {
                     $now = microtime(true);
 
@@ -318,6 +321,14 @@ final class ModpackController extends Controller
                             min(1.0, $downloadedBytes / $totalBytes) * 85,
                         );
                     }
+
+                    // Re-anchoring between acquisition phases (e.g. the
+                    // mrpack archive vs the parsed index footprint) can make
+                    // the raw fraction dip momentarily. Clamp to the highest
+                    // percent seen so far so the bar is strictly monotonic.
+                    $percent = (int) max($lastPercent, $percent);
+
+                    $lastPercent = $percent;
 
                     $progress->set($progressToken, [
                         'phase' => 'download',
@@ -388,19 +399,29 @@ final class ModpackController extends Controller
                 'indeterminate' => false,
             ]);
 
-            $metadata = $this->installMetadata(
-                $provider,
-                $package->source,
-            );
+            try {
+                $metadata = $this->installMetadata(
+                    $provider,
+                    $package->source,
+                );
 
-            $record = $this->buildInstallRecord(
-                server: $server,
-                installedSource: $package->source,
-                metadata: $metadata,
-                result: $result,
-            );
+                $record = $this->buildInstallRecord(
+                    server: $server,
+                    installedSource: $package->source,
+                    metadata: $metadata,
+                    result: $result,
+                );
 
-            $this->store()->save($record);
+                $this->store()->save($record);
+            } catch (Throwable $exception) {
+                // The deployment itself succeeded, so a failure while recording
+                // it (metadata lookup, record store) must not leave newly
+                // deployed files stranded without a record. Best-effort remove
+                // exactly the files this install created.
+                $this->rollbackDeployedFiles($server, $result);
+
+                throw $exception;
+            }
 
             return response()->json([
                 'data' => [
@@ -438,10 +459,30 @@ final class ModpackController extends Controller
                 'error' => $exception->getMessage(),
             ], 422);
         } catch (WingsConnectionException $exception) {
+            if ($progressToken !== '') {
+                $this->installProgressStore()->set($progressToken, [
+                    ...($this->installProgressStore()
+                        ->get($progressToken) ?? []),
+                    'phase' => 'failed',
+                    'indeterminate' => false,
+                    'message' => 'Unable to reach the server node. The installation failed.',
+                ]);
+            }
+
             return response()->json([
                 'error' => 'Unable to reach the server node. Please try again later.',
             ], 503);
         } catch (WingsHttpException $exception) {
+            if ($progressToken !== '') {
+                $this->installProgressStore()->set($progressToken, [
+                    ...($this->installProgressStore()
+                        ->get($progressToken) ?? []),
+                    'phase' => 'failed',
+                    'indeterminate' => false,
+                    'message' => 'The server node could not complete the operation. The installation failed.',
+                ]);
+            }
+
             return response()->json([
                 'error' => 'The server node could not complete the operation. Please try again later.',
             ], 503);
@@ -1482,6 +1523,35 @@ final class ModpackController extends Controller
         );
 
         return $selector->forServer($server);
+    }
+
+    /**
+     * Removes the files a just-completed deployment created when the install
+     * could not be recorded. Mirrors the orchestrator rollback for the new-file
+     * case; previously existing files are left untouched.
+     */
+    private function rollbackDeployedFiles(
+        Server $server,
+        InstallationResult $result,
+    ): void {
+        try {
+            $target = $this->serverTarget($server);
+        } catch (Throwable) {
+            return;
+        }
+
+        foreach ($result->created as $relativePath) {
+            try {
+                if (
+                    $target->exists($relativePath)
+                    && !$target->isDirectory($relativePath)
+                ) {
+                    $target->delete($relativePath);
+                }
+            } catch (Throwable) {
+                // Best-effort cleanup must never mask the original failure.
+            }
+        }
     }
 
     private function targetMode(): string

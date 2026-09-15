@@ -13,6 +13,13 @@ final class DownloadManager implements Downloader
     private const MAX_REDIRECTS = 5;
 
     /**
+     * Total transfer attempts per hop, including the first. A mirror or
+     * transport glitch can kill a large download mid-body, so a bounded
+     * retry is worth more than surface diagnostic-only errors.
+     */
+    private const MAX_ATTEMPTS = 3;
+
+    /**
      * @var null|callable(int|null $downloadedBytes, int|null $totalBytes): void
      */
     private $progressCallback = null;
@@ -21,6 +28,17 @@ final class DownloadManager implements Downloader
      * @var null|callable(): bool
      */
     private $cancelChecker = null;
+
+    /**
+     * Bytes already accounted for by earlier downloads in the same logical
+     * operation, plus the operation-wide total when one has been anchored with
+     * setProgressOffset(). While set, progress callbacks receive cumulative
+     * values so a multi-part download (modpack archive plus its mod files)
+     * renders as one smooth, monotonic progress bar instead of resetting.
+     */
+    private int $progressOffsetBytes = 0;
+
+    private ?int $progressOffsetTotal = null;
 
     /**
      * Additional reserved/private networks that PHP's filter_var IP flags do
@@ -73,6 +91,35 @@ final class DownloadManager implements Downloader
         $this->cancelChecker = $checker;
     }
 
+    /**
+     * Anchors progress reporting to a running total shared across several
+     * downloads. See the Downloader interface for semantics.
+     */
+    public function setProgressOffset(int $completedBytes, ?int $totalBytes): void
+    {
+        $this->progressOffsetBytes = max(0, $completedBytes);
+
+        $this->progressOffsetTotal = $totalBytes === null
+            ? null
+            : max(0, $totalBytes);
+    }
+
+    public function isCancelled(): bool
+    {
+        $checker = $this->cancelChecker;
+
+        return $checker !== null && $checker();
+    }
+
+    private function ensureNotCancelled(): void
+    {
+        if ($this->isCancelled()) {
+            throw new InstallationCancelledException(
+                'Installation cancelled.'
+            );
+        }
+    }
+
     public function download(string $url): string
     {
         $this->ensureTemporaryRoot();
@@ -90,14 +137,37 @@ final class DownloadManager implements Downloader
         try {
             $current = $url;
             $hops = 0;
+            $attemptsLeft = self::MAX_ATTEMPTS;
 
             while (true) {
+                $this->ensureNotCancelled();
+
                 // Give every hop its own freshly truncated slot so a single
                 // hop body is exactly what ends up in the destination file.
                 rewind($handle);
                 ftruncate($handle, 0);
 
-                [$status, $headers] = $this->performRequest($current, $handle);
+                try {
+                    [$status, $headers] = $this->performRequest($current, $handle);
+                } catch (RuntimeException $exception) {
+                    if (
+                        $exception instanceof InstallationCancelledException
+                        || $attemptsLeft <= 1
+                    ) {
+                        throw $exception;
+                    }
+
+                    $attemptsLeft--;
+
+                    // Consult the cancel flag before sleeping so a cancel
+                    // requested during the backoff aborts promptly instead of
+                    // after the pause.
+                    $this->ensureNotCancelled();
+
+                    usleep(1_000_000);
+
+                    continue;
+                }
 
                 if ($status >= 200 && $status <= 299) {
                     break;
@@ -168,7 +238,7 @@ final class DownloadManager implements Downloader
         $handle,
     ): array {
         $parts = $this->validateUrl($url);
-        $ip = $this->resolveSafeAddress($parts['host']);
+        $resolveEntries = $this->resolveEntries($parts);
 
         $curl = curl_init();
 
@@ -194,9 +264,7 @@ final class DownloadManager implements Downloader
             CURLOPT_SSL_VERIFYPEER => true,
             CURLOPT_SSL_VERIFYHOST => 2,
             CURLOPT_USERAGENT => 'ModpackInstaller/1.0',
-            CURLOPT_RESOLVE => [
-                $parts['host'] . ':' . self::portFor($parts) . ':' . $ip,
-            ],
+            CURLOPT_RESOLVE => $resolveEntries,
             CURLOPT_NOPROGRESS => false,
             CURLOPT_XFERINFOFUNCTION => function (
                 $curl,
@@ -223,13 +291,25 @@ final class DownloadManager implements Downloader
                     if (($now - $lastProgressReport) >= 0.4) {
                         $lastProgressReport = $now;
 
+                        $globalTotal = $this->progressOffsetTotal;
+
                         try {
-                            $callback(
-                                (int) floor($downloaded),
-                                $downloadSize > 0
-                                    ? (int) floor($downloadSize)
-                                    : null,
-                            );
+                            if ($globalTotal !== null && $globalTotal > 0) {
+                                $done = $this->progressOffsetBytes
+                                    + (int) floor($downloaded);
+
+                                $callback(
+                                    min($done, $globalTotal),
+                                    $globalTotal,
+                                );
+                            } else {
+                                $callback(
+                                    (int) floor($downloaded),
+                                    $downloadSize > 0
+                                        ? (int) floor($downloadSize)
+                                        : null,
+                                );
+                            }
                         } catch (\Throwable) {
                             // Progress reporting must never abort a download.
                         }
@@ -256,7 +336,9 @@ final class DownloadManager implements Downloader
         );
 
         if ($success !== true) {
-            if (curl_errno($curl) === CURLE_ABORTED_BY_CALLBACK) {
+            $errno = curl_errno($curl);
+
+            if ($errno === CURLE_ABORTED_BY_CALLBACK) {
                 $checker = $this->cancelChecker;
 
                 if ($checker !== null && $checker()) {
@@ -270,8 +352,10 @@ final class DownloadManager implements Downloader
                 );
             }
 
+            $this->recordTransferFailure($curl, $parts['host'], $url);
+
             throw new RuntimeException(
-                'Modpack download failed: '
+                'Modpack download failed (curl error ' . $errno . '): '
                 . $this->sanitizedCurlError($curl, $url)
             );
         }
@@ -405,12 +489,45 @@ final class DownloadManager implements Downloader
         ];
     }
 
-    private function resolveSafeAddress(string $host): string
+    /**
+     * Builds CURLOPT_RESOLVE entries for every verified public IPv4 address of
+     * the download host. Pinning several addresses (instead of a single
+     * resolved IP) lets libcurl fail over between CDN edges, which prevents a
+     * single throttled or flaky edge from aborting a large transfer.
+     *
+     * IPv6 (AAAA) addresses are deliberately not pinned. When libcurl is given
+     * a bond for an address family the host cannot route, it aborts the whole
+     * connect instead of falling back to the pinned IPv4 address, so dual
+     * stack hosts are pinned by their IPv4 addresses only.
+     *
+     * @param array{scheme: string, host: string, port?: int} $parts
+     *
+     * @return list<string>
+     */
+    private function resolveEntries(array $parts): array
+    {
+        $entries = [];
+
+        foreach ($this->resolvePublicAddresses($parts['host']) as $ip) {
+            $entries[] = $parts['host']
+                . ':' . self::portFor($parts)
+                . ':' . $ip;
+        }
+
+        return $entries;
+    }
+
+    /**
+     * Resolves a host to its verified public addresses, preferring IPv4.
+     *
+     * @return list<string>
+     */
+    private function resolvePublicAddresses(string $host): array
     {
         if (filter_var($host, FILTER_VALIDATE_IP)) {
             $this->assertPublicAddress($host);
 
-            return $host;
+            return [$host];
         }
 
         $records = dns_get_record(
@@ -424,6 +541,9 @@ final class DownloadManager implements Downloader
             );
         }
 
+        $ipv4 = [];
+        $ipv6 = [];
+
         foreach ($records as $record) {
             $ip = $record['ip'] ?? $record['ipv6'] ?? null;
 
@@ -433,16 +553,84 @@ final class DownloadManager implements Downloader
 
             try {
                 $this->assertPublicAddress($ip);
-
-                return $ip;
             } catch (InvalidArgumentException) {
                 continue;
             }
+
+            if (str_contains($ip, ':')) {
+                $ipv6[$ip] = true;
+            } else {
+                $ipv4[$ip] = true;
+            }
+        }
+
+        if ($ipv4 !== []) {
+            return array_keys($ipv4);
+        }
+
+        if ($ipv6 !== []) {
+            return array_keys($ipv6);
         }
 
         throw new InvalidArgumentException(
             'The download host resolves only to private or reserved addresses.'
         );
+    }
+
+    /**
+     * Writes a structured diagnostic line before a transfer failure is
+     * rethrown so production panels can see exactly which curl error killed
+     * the download instead of only a generic "Unable to install the modpack".
+     */
+    private function recordTransferFailure(
+        $curl,
+        string $host,
+        string $url,
+    ): void {
+        $expected = curl_getinfo($curl, CURLINFO_CONTENT_LENGTH_DOWNLOAD);
+
+        $details = [
+            'event' => 'download_failure',
+            'errno' => curl_errno($curl),
+            'error' => trim((string) curl_error($curl)),
+            'host' => $host,
+            'has_query' => parse_url($url, PHP_URL_QUERY) !== false,
+            'http_status' => (int) curl_getinfo($curl, CURLINFO_RESPONSE_CODE),
+            'downloaded_bytes' => (int) curl_getinfo($curl, CURLINFO_SIZE_DOWNLOAD),
+            'expected_bytes' => $expected >= 0 ? (int) $expected : null,
+            'speed_bytes_per_second' => (int) curl_getinfo($curl, CURLINFO_SPEED_DOWNLOAD),
+            'elapsed_seconds' => round((float) curl_getinfo($curl, CURLINFO_TOTAL_TIME), 2),
+            'disk_free_bytes' => $this->temporaryDiskFree(),
+            'memory_used_bytes' => memory_get_usage(true),
+            'memory_peak_bytes' => memory_get_peak_usage(true),
+            'memory_limit' => ini_get('memory_limit'),
+            'php_version' => PHP_VERSION,
+        ];
+
+        @error_log(
+            'modpackinstaller download failure: '
+            . (string) json_encode($details)
+        );
+
+        @error_log(
+            'modpackinstaller download failure (human readable): '
+            . 'errno=' . (string) $details['errno']
+            . ' host=' . $host
+            . ' status=' . (string) $details['http_status']
+            . ' downloaded=' . (string) $details['downloaded_bytes']
+            . ' expected=' . (string) ($details['expected_bytes'] ?? -1)
+            . ' disk_free=' . (string) ($details['disk_free_bytes'] ?? -1)
+            . ' memory_limit=' . (string) $details['memory_limit']
+            . ' memory_used=' . (string) $details['memory_used_bytes']
+            . ' error_message=' . (string) $details['error']
+        );
+    }
+
+    private function temporaryDiskFree(): ?int
+    {
+        $free = @disk_free_space($this->temporaryRoot);
+
+        return $free === false ? null : (int) $free;
     }
 
     private function assertPublicAddress(string $ip): void
