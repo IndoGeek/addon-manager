@@ -114,6 +114,36 @@ final class WingsServerFileTarget implements ServerFileTarget
         $this->forgetListingsFrom($path);
     }
 
+    public function isEmptyDirectory(string $relativePath): bool
+    {
+        $path = ServerRelativePath::normalize($relativePath);
+
+        return $this->entryType($path) === 'dir'
+            && $this->listing($path) === [];
+    }
+
+    public function removeDirectory(string $relativePath): void
+    {
+        $path = ServerRelativePath::normalize($relativePath);
+
+        if ($this->entryType($path) !== 'dir') {
+            return;
+        }
+
+        if ($this->listing($path) !== []) {
+            throw new RuntimeException(
+                "Cannot remove non-empty directory through file target: {$relativePath}"
+            );
+        }
+
+        $this->client->deleteFiles(
+            $this->parentOf($path),
+            [basename($path)],
+        );
+
+        $this->forgetListingsFrom($path);
+    }
+
     public function ensureDirectory(string $relativePath): void
     {
         $this->ensureDirectoryInternal(

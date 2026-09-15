@@ -35,6 +35,12 @@ export interface InstallResponse {
     data: InstallationResult;
 }
 
+export interface RecordIntegrity {
+    status: 'ok' | 'degraded';
+    missing: string[];
+    missing_count: number;
+}
+
 export interface InstallRecordData {
     id: string;
     server_uuid: string;
@@ -54,6 +60,7 @@ export interface InstallRecordData {
         created: string[];
         overwritten: string[];
     };
+    integrity?: RecordIntegrity;
 }
 
 export interface InstalledModpacksResponse {
@@ -80,6 +87,16 @@ export interface UpdateResponse {
         created: number;
         overwritten: number;
         backed_up: number;
+    };
+}
+
+export interface RestoreResponse {
+    data: {
+        id: string;
+        display_name: string;
+        version: string;
+        restored: number;
+        requested: number;
     };
 }
 

@@ -12,9 +12,12 @@ use Throwable;
  *
  * Each candidate path is re-validated as a server-relative path immediately
  * before deletion (defense in depth against a corrupted or tampered store).
- * Paths that are missing are tolerated deterministically, and directories are
- * never deleted: only files are removed, so unrelated server structure,
- * worlds, logs and configuration are untouched.
+ * Paths that are missing are tolerated deterministically.
+ *
+ * After each file is removed, its parent directories are pruned upward: a
+ * directory is removed only when it is empty at that moment, so unrelated
+ * files and directories created by the user (worlds, logs, config) are never
+ * touched. Pruning stops at the first non-empty directory.
  */
 final class OwnershipRemover
 {
@@ -63,6 +66,8 @@ final class OwnershipRemover
                 $this->serverFileTarget->delete($relativePath);
 
                 $deleted[] = $relativePath;
+
+                $this->pruneEmptyParents($relativePath);
             } catch (Throwable $exception) {
                 $errors[] = "Unable to remove owned file: {$relativePath}";
             }
@@ -73,5 +78,47 @@ final class OwnershipRemover
             'missing' => $missing,
             'errors' => $errors,
         ];
+    }
+
+    /**
+     * Removes the parent chain of a deleted file while every directory stays
+     * empty. Best-effort: a directory that cannot be removed, or that still
+     * holds user content, simply halts the walk upward.
+     */
+    private function pruneEmptyParents(string $relativePath): void
+    {
+        $parent = $this->normalizedParent($relativePath);
+
+        while ($parent !== null) {
+            if (
+                !$this->serverFileTarget->isDirectory($parent)
+                || !$this->serverFileTarget->isEmptyDirectory($parent)
+            ) {
+                return;
+            }
+
+            try {
+                $this->serverFileTarget->removeDirectory($parent);
+            } catch (Throwable) {
+                return;
+            }
+
+            $parent = $this->normalizedParent($parent);
+        }
+    }
+
+    private function normalizedParent(string $relativePath): ?string
+    {
+        $parent = dirname($relativePath);
+
+        if ($parent === '.' || $parent === '' || $parent === $relativePath) {
+            return null;
+        }
+
+        try {
+            return ServerRelativePath::normalize($parent);
+        } catch (InvalidArgumentException) {
+            return null;
+        }
     }
 }

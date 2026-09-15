@@ -98,6 +98,14 @@
   background: #15803d;
 }
 
+.modpackinstaller-icon-button--yellow {
+  background: #d97706;
+}
+
+.modpackinstaller-icon-button--yellow:hover:not(:disabled) {
+  background: #b45309;
+}
+
 .modpackinstaller-icon-button--red {
   background: #dc2626;
 }

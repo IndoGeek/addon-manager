@@ -35,6 +35,7 @@ use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installa
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\InstallationResult;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\InstallationWorkspace;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Management\InstallRecord;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Management\InstallIntegrityVerifier;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Management\InstallRecordStore;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Management\OwnershipRemover;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\ModpackProviderRegistry;
@@ -343,11 +344,39 @@ final class ModpackController extends Controller
         try {
             $records = $this->store()->all((string) $server->uuid);
 
+            $target = $this->serverTarget($server);
+
+            $verifier = new InstallIntegrityVerifier();
+
+            $data = [];
+
+            foreach ($records as $record) {
+                if ($verifier->isCompletelyGone($record, $target)) {
+                    $this->store()->delete(
+                        (string) $server->uuid,
+                        $record->id,
+                    );
+
+                    continue;
+                }
+
+                $item = $record->toArray();
+
+                $missing = $verifier->missingFiles($record, $target);
+
+                $item['integrity'] = [
+                    'status' => $missing === []
+                        ? 'ok'
+                        : 'degraded',
+                    'missing' => $missing,
+                    'missing_count' => count($missing),
+                ];
+
+                $data[] = $item;
+            }
+
             return response()->json([
-                'data' => array_map(
-                    static fn (InstallRecord $record): array => $record->toArray(),
-                    $records,
-                ),
+                'data' => $data,
             ]);
         } catch (Throwable $exception) {
             report($exception);
@@ -610,6 +639,134 @@ final class ModpackController extends Controller
 
             return response()->json([
                 'error' => 'Unable to update the modpack.',
+            ], 500);
+        } finally {
+            if ($lock !== null) {
+                try {
+                    $this->installationLock()->release($lock, $token);
+                } catch (Throwable) {
+                    // Releasing the lock must never mask the outcome.
+                }
+            }
+
+            if ($provider !== null && $package !== null) {
+                $provider->cleanup($package);
+            }
+        }
+    }
+
+    public function restoreModpack(
+        Request $request,
+        Server $server,
+        string $id,
+    ): JsonResponse {
+        $provider = null;
+        $package = null;
+        $lock = null;
+        $record = null;
+        $token = bin2hex(random_bytes(16));
+
+        try {
+            $id = $this->validateRecordId($id);
+
+            $lock = $this->installationLock()->acquire(
+                $this->lockKey($server),
+                $token,
+            );
+
+            $record = $this->store()->find(
+                (string) $server->uuid,
+                $id,
+            );
+
+            if ($record === null) {
+                return response()->json([
+                    'error' => 'The installed modpack was not found.',
+                ], 404);
+            }
+
+            if ($record->status !== InstallRecord::STATUS_INSTALLED) {
+                return response()->json([
+                    'error' => 'The installed modpack is not in an active state.',
+                ], 409);
+            }
+
+            $target = $this->serverTarget($server);
+
+            $missing = (new InstallIntegrityVerifier())->missingFiles(
+                $record,
+                $target,
+            );
+
+            if ($missing === []) {
+                return response()->json([
+                    'error' => 'The modpack files are intact. Nothing to restore.',
+                ], 409);
+            }
+
+            $provider = $this->providerRegistry()->resolve($record->source);
+
+            $package = $provider->getPackage($record->source);
+
+            $result = $this->orchestrator($target)->restore(
+                archivePath: $package->archivePath,
+                paths: $missing,
+            );
+
+            return response()->json([
+                'data' => [
+                    'id' => $record->id,
+                    'display_name' => $record->displayName,
+                    'version' => $record->version,
+                    'restored' => $result->createdCount(),
+                    'requested' => count($missing),
+                ],
+            ]);
+        } catch (InstallationLockedException $exception) {
+            return response()->json([
+                'error' => 'Another installation operation is already running for this server. Please wait and try again.',
+            ], 503);
+        } catch (InvalidArgumentException $exception) {
+            if (
+                $provider instanceof ManualDownloadProvider
+                && $record !== null
+            ) {
+                try {
+                    $manualDownload = $provider->manualDownloadInfoFor(
+                        $record->source,
+                    );
+                } catch (Throwable) {
+                    $manualDownload = null;
+                }
+
+                if ($manualDownload !== null) {
+                    return response()->json([
+                        'error' => $exception->getMessage(),
+                        'manual_download' => $manualDownload,
+                    ], 422);
+                }
+            }
+
+            return response()->json([
+                'error' => $exception->getMessage(),
+            ], 422);
+        } catch (UnsupportedModpackPackageException $exception) {
+            return response()->json([
+                'error' => $exception->getMessage(),
+            ], 422);
+        } catch (WingsConnectionException $exception) {
+            return response()->json([
+                'error' => 'Unable to reach the server node. Please try again later.',
+            ], 503);
+        } catch (WingsHttpException $exception) {
+            return response()->json([
+                'error' => 'The server node could not complete the operation. Please try again later.',
+            ], 503);
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return response()->json([
+                'error' => 'Unable to restore the missing modpack files.',
             ], 500);
         } finally {
             if ($lock !== null) {

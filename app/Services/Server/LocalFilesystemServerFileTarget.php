@@ -102,6 +102,38 @@ final class LocalFilesystemServerFileTarget implements ServerFileTarget
         }
     }
 
+    public function isEmptyDirectory(string $relativePath): bool
+    {
+        $path = $this->resolve($relativePath);
+
+        if (!is_dir($path)) {
+            return false;
+        }
+
+        $entries = scandir($path);
+
+        if ($entries === false) {
+            return false;
+        }
+
+        return count($entries) <= 2;
+    }
+
+    public function removeDirectory(string $relativePath): void
+    {
+        $path = $this->resolve($relativePath);
+
+        if (!is_dir($path)) {
+            return;
+        }
+
+        if (!@rmdir($path)) {
+            throw new RuntimeException(
+                "Unable to remove directory: {$relativePath}"
+            );
+        }
+    }
+
     public function ensureDirectory(string $relativePath): void
     {
         $path = $this->resolve($relativePath);

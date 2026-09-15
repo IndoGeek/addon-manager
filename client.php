@@ -59,6 +59,11 @@ Route::group([
         'updateModpack',
     ]);
 
+    Route::post('/installed/{id}/restore', [
+        ModpackController::class,
+        'restoreModpack',
+    ]);
+
     Route::post('/installed/{id}/uninstall', [
         ModpackController::class,
         'uninstall',

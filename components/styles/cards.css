@@ -524,6 +524,19 @@
   opacity: 0.7;
 }
 
+.modpackinstaller-installed-warning {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 0;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(220, 38, 38, 0.12);
+  color: #f87171;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
 .modpackinstaller-installed-actions {
   flex: 0 0 auto;
   display: flex;

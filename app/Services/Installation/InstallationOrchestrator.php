@@ -5,6 +5,8 @@ namespace Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\In
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\BackupManager;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentException;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentExecutor;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentOperation;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentPlan;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Server\ServerFileTarget;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentPlanner;
 use RuntimeException;
@@ -97,6 +99,80 @@ final class InstallationOrchestrator
 
             if ($backupDirectory !== null) {
                 $this->removeDirectory($backupDirectory);
+            }
+        }
+    }
+
+    /**
+     * Re-deploys only the given relative paths from an archive. Used to fill
+     * in files that were deleted out-of-band without touching the files that
+     * are still intact.
+     *
+     * @param list<string> $paths relative paths to restore
+     */
+    public function restore(
+        string $archivePath,
+        array $paths,
+    ): InstallationResult {
+        $workspace = null;
+        $deployed = [];
+
+        try {
+            $workspace = $this->workspaceManager->prepare($archivePath);
+
+            $plan = $this->planner->plan($workspace);
+
+            $wanted = array_fill_keys(
+                array_values(array_unique($paths)),
+                true,
+            );
+
+            $operations = array_values(array_filter(
+                $plan->operations,
+                static fn (DeploymentOperation $operation): bool =>
+                    isset($wanted[$operation->relativePath]),
+            ));
+
+            if ($operations === []) {
+                return new InstallationResult(
+                    created: [],
+                    overwritten: [],
+                    backedUp: [],
+                );
+            }
+
+            $deployed = $this->executor->execute(
+                new DeploymentPlan($operations),
+            );
+
+            return new InstallationResult(
+                created: $deployed,
+                overwritten: [],
+                backedUp: [],
+            );
+        } catch (Throwable $exception) {
+            if ($exception instanceof DeploymentException) {
+                $deployed = array_merge(
+                    $deployed,
+                    $exception->deployed(),
+                );
+            }
+
+            $rollbackErrors = $this->rollback([], $deployed);
+
+            if ($rollbackErrors !== []) {
+                throw new RuntimeException(
+                    'Restore failed and rollback was incomplete: '
+                    . implode('; ', $rollbackErrors),
+                    0,
+                    $exception,
+                );
+            }
+
+            throw $exception;
+        } finally {
+            if ($workspace !== null) {
+                $this->workspaceManager->cleanup($workspace);
             }
         }
     }

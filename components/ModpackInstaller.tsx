@@ -44,6 +44,7 @@ import {
     ModpackMetadata,
     MultiFilterKey,
     ProvidersResponse,
+    RestoreResponse,
     StatusMessage,
     UninstallResponse,
     UpdateResponse,
@@ -524,6 +525,58 @@ export default () => {
                 message:
                     requestError.response?.data?.error ||
                     'Unable to uninstall the modpack.',
+            });
+        } finally {
+            if (alive.current) {
+                setLifecycleRecordId(null);
+            }
+        }
+    };
+
+    const restoreInstalledModpack = async (
+        record: InstallRecordData,
+    ) => {
+        if (!server) {
+            setInstalledStatus({
+                kind: 'error',
+                message: 'Unable to determine the current server.',
+            });
+            return;
+        }
+
+        if (lifecycleRecordId !== null) {
+            return;
+        }
+
+        setLifecycleRecordId(record.id);
+        setInstalledStatus(null);
+
+        try {
+            await axios.post<RestoreResponse>(
+                `${API_BASE}/servers/${server}/installed/${record.id}/restore`,
+            );
+
+            if (!alive.current) {
+                return;
+            }
+
+            setInstalledStatus(null);
+            refreshInstalled();
+        } catch (requestError: any) {
+            if (!alive.current) {
+                return;
+            }
+
+            const message =
+                requestError.response?.data?.error ||
+                'Unable to restore the missing modpack files.';
+
+            setInstalledStatus({
+                kind: 'error',
+                message:
+                    requestError.response?.data?.manual_download
+                        ? 'This modpack requires a manual download to restore.'
+                        : message,
             });
         } finally {
             if (alive.current) {
@@ -1338,6 +1391,7 @@ export default () => {
                     lifecycleRecordId={lifecycleRecordId}
                     onRefresh={refreshInstalled}
                     onUpdate={updateInstalledModpack}
+                    onRestore={restoreInstalledModpack}
                     onUninstall={(record) =>
                         setPendingUninstall(record)
                     }
