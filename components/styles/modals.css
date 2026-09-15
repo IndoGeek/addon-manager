@@ -1,122 +1,324 @@
+/*
+ * modals.css — modal overlay, modal chrome, details modal content.
+ *
+ * SOURCE file — root.css is generated from these files by
+ * tools/build-css.mjs (run by build.sh). Do NOT edit root.css directly.
+ */
+
 .modpackinstaller-modal-overlay {
-    position: fixed;
-    inset: 0;
-    z-index: 1000;
-    display: flex;
-    align-items: flex-start;
-    justify-content: center;
-    padding: 32px 16px;
-    overflow-y: auto;
-    background: rgba(0, 0, 0, 0.6);
-    animation: modpackinstaller-fade-in 0.18s ease-out;
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 32px 16px;
+  overflow-y: auto;
+  background: rgba(0, 0, 0, 0.6);
+  animation: modpackinstaller-fade-in 0.18s ease-out;
 }
 
 .modpackinstaller-modal-overlay--out {
-    animation: modpackinstaller-fade-out 0.2s ease-in forwards;
+  animation: modpackinstaller-fade-out 0.2s ease-in forwards;
 }
 
 .modpackinstaller-modal {
-    width: 100%;
-    max-width: 640px;
-    max-height: calc(100vh - 64px);
-    overflow-y: auto;
-    box-sizing: border-box;
-    padding: 20px;
-    border: 1px solid rgba(127, 127, 127, 0.25);
-    border-radius: 10px;
-    background: rgba(18, 18, 18, 0.98);
-    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
-    animation: modpackinstaller-slide-up 0.2s ease-out;
+  width: 100%;
+  max-width: 640px;
+  max-height: calc(100vh - 64px);
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: 20px;
+  border: 1px solid rgba(127, 127, 127, 0.25);
+  border-radius: 10px;
+  background: rgba(18, 18, 18, 0.98);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  animation: modpackinstaller-slide-up 0.2s ease-out;
 }
 
 .modpackinstaller-modal--out {
-    animation: modpackinstaller-slide-down 0.2s ease-in forwards;
+  animation: modpackinstaller-slide-down 0.2s ease-in forwards;
 }
 
-.modpackinstaller-modal[aria-busy='true'] .modpackinstaller-version-option:not(.modpackinstaller-version-option--selected) {
-    cursor: wait;
-    opacity: 0.6;
+.modpackinstaller-modal[aria-busy="true"]
+  .modpackinstaller-version-option:not(
+    .modpackinstaller-version-option--selected
+  ) {
+  cursor: wait;
+  opacity: 0.6;
 }
 
 .modpackinstaller-modal-header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 16px;
-    margin-bottom: 16px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
 }
 
 .modpackinstaller-modal-header h3 {
-    margin: 0;
-    overflow-wrap: anywhere;
-    font-size: 1.25rem;
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 1.25rem;
 }
 
 .modpackinstaller-modal-header-actions {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
 }
 
-.modpackinstaller-modal-header-actions > button:not(.modpackinstaller-modal-close) {
-    padding: 8px 14px;
-    border: 0;
-    border-radius: 6px;
-    font-size: 0.9rem;
-    cursor: pointer;
+.modpackinstaller-modal-header-actions
+  > button:not(.modpackinstaller-modal-close) {
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  cursor: pointer;
 }
 
-.modpackinstaller-modal-header-actions > button:not(.modpackinstaller-modal-close):disabled {
-    cursor: wait;
-    opacity: 0.6;
+.modpackinstaller-modal-header-actions
+  > button:not(.modpackinstaller-modal-close):disabled {
+  cursor: wait;
+  opacity: 0.6;
 }
 
 .modpackinstaller-modal-close {
-    flex: 0 0 auto;
-    width: 36px;
-    height: 36px;
-    padding: 0;
-    border: 0;
-    border-radius: 6px;
-    font-size: 1.4rem;
-    line-height: 1;
-    cursor: pointer;
-    opacity: 0.8;
-    background: rgba(127, 127, 127, 0.15);
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.8;
+  background: rgba(127, 127, 127, 0.15);
 }
 
 .modpackinstaller-modal-close:hover,
 .modpackinstaller-modal-close:focus-visible {
-    opacity: 1;
+  opacity: 1;
 }
 
-.modpackinstaller-manual-download {
-    margin-top: 20px;
-    padding: 16px;
-    border: 1px solid rgba(200, 150, 40, 0.4);
-    border-radius: 8px;
-    background: rgba(200, 150, 40, 0.08);
+.modpackinstaller-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
-.modpackinstaller-manual-download h4 {
-    margin-top: 0;
-    color: #f2c14e;
+.modpackinstaller-modal-item {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
 }
 
-.modpackinstaller-manual-download p {
-    margin: 0 0 12px;
+.modpackinstaller-modal-item > .modpackinstaller-card-image,
+.modpackinstaller-modal-item > .modpackinstaller-card-image--fallback {
+  flex: 0 0 96px;
+  width: 96px;
+  height: 96px;
+  border-radius: 8px;
+  object-fit: cover;
+  background: rgba(127, 127, 127, 0.1);
 }
 
-.modpackinstaller-manual-download .modpackinstaller-details {
-    margin-bottom: 12px;
+.modpackinstaller-modal-item-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
-.modpackinstaller-manual-download .modpackinstaller-manual-download-link {
-    margin: 0 0 6px;
+.modpackinstaller-modal-link {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  padding: 10px 16px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-decoration: none;
+  background: #2563eb;
+  color: #fff;
+  transition: background 0.2s ease;
 }
 
-.modpackinstaller-manual-download-link a {
-    color: #6cb6ff;
-    overflow-wrap: anywhere;
+.modpackinstaller-modal-link:hover {
+  background: #1d4ed8;
+}
+
+.modpackinstaller-modal-link:focus-visible {
+  outline: 2px solid rgba(37, 99, 235, 0.6);
+  outline-offset: 2px;
+}
+
+.modpackinstaller-modal-summary {
+  display: block;
+  -webkit-line-clamp: unset;
+  overflow: visible;
+  margin-top: 12px;
+}
+
+.modpackinstaller-modal-stats {
+  border-top: 0;
+  justify-content: flex-start;
+}
+
+.modpackinstaller-modal-filters {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid rgba(127, 127, 127, 0.15);
+  border-radius: 8px;
+}
+
+.modpackinstaller-modal-filters > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.modpackinstaller-modal-filters label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  opacity: 0.8;
+}
+
+.modpackinstaller-modal-filters select {
+  box-sizing: border-box;
+  padding: 9px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.2);
+  color: inherit;
+}
+
+.modpackinstaller-modal-versions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.modpackinstaller-modal-versions-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.modpackinstaller-modal-versions-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  opacity: 0.85;
+}
+
+.modpackinstaller-modal-versions-count {
+  font-size: 0.8rem;
+  opacity: 0.7;
+}
+
+.modpackinstaller-version-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.modpackinstaller-version-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid rgba(127, 127, 127, 0.15);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.1);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.modpackinstaller-version-option:hover,
+.modpackinstaller-version-option:focus-visible {
+  border-color: rgba(127, 127, 127, 0.35);
+}
+
+.modpackinstaller-version-option--selected {
+  border-color: rgba(108, 182, 255, 0.6);
+  background: rgba(108, 182, 255, 0.12);
+}
+
+.modpackinstaller-version-option-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.modpackinstaller-version-option-meta {
+  font-size: 0.8rem;
+  opacity: 0.65;
+}
+
+.modpackinstaller-modal-selected {
+  margin-top: 4px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.modpackinstaller-modal-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.modpackinstaller-modal-actions button {
+  width: 100%;
+  padding: 12px 16px;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+  background: #2563eb;
+  color: #fff;
+  font-weight: 600;
+  transition: background 0.2s ease;
+}
+
+.modpackinstaller-modal-actions button:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+
+.modpackinstaller-modal-actions button:focus-visible {
+  outline: 2px solid rgba(37, 99, 235, 0.6);
+  outline-offset: 2px;
+}
+
+.modpackinstaller-modal-actions button:disabled {
+  cursor: not-allowed;
+  background: #9ca3af;
+  color: #e5e7eb;
+  opacity: 1;
+}
+
+.modpackinstaller-modal-actions
+  button.modpackinstaller-modal-actions-button--success,
+.modpackinstaller-modal-actions
+  button.modpackinstaller-modal-actions-button--success:hover,
+.modpackinstaller-modal-actions
+  button.modpackinstaller-modal-actions-button--success:disabled {
+  background: #16a34a;
+  cursor: default;
+}
+
+.modpackinstaller-modal-result {
+  margin-top: 4px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
 }

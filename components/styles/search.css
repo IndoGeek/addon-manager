@@ -1,105 +1,193 @@
+/*
+ * search.css — browser toolbar, search box, controls row, pagination.
+ *
+ * SOURCE file — root.css is generated from these files by
+ * tools/build-css.mjs (run by build.sh). Do NOT edit root.css directly.
+ */
+
 .modpackinstaller-browser-toolbar {
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-    margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 4px;
 }
 
 .modpackinstaller-search {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    flex: 1 1 100%;
-    min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1 1 100%;
+  min-width: 0;
 }
 
 .modpackinstaller-search > label {
-    font-size: 0.85rem;
-    font-weight: 600;
-    opacity: 0.8;
+  font-size: 0.85rem;
+  font-weight: 600;
+  opacity: 0.8;
 }
 
 .modpackinstaller-controls-row {
-    display: flex;
-    align-items: center;
-    flex-wrap: nowrap;
-    gap: 8px;
-    width: 100%;
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 8px;
+  width: 100%;
 }
 
 .modpackinstaller-search-box {
-    display: flex;
-    align-items: center;
-    flex: 1 1 auto;
-    min-width: 0;
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    border-radius: 8px;
-    background: rgba(0, 0, 0, 0.2);
-    overflow: hidden;
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.2);
+  overflow: hidden;
 }
 
 .modpackinstaller-search-box input {
-    flex: 1 1 auto;
-    min-width: 0;
-    box-sizing: border-box;
-    padding: 9px 12px;
-    border: 0;
-    background: transparent;
-    color: inherit;
-    font-size: 0.95rem;
+  flex: 1 1 auto;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 9px 12px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 0.95rem;
 }
 
 .modpackinstaller-search-box input:focus {
-    outline: none;
+  outline: none;
 }
 
 .modpackinstaller-search-box:focus-within {
-    border-color: rgba(108, 182, 255, 0.55);
+  border-color: rgba(108, 182, 255, 0.55);
 }
 
 .modpackinstaller-search-box input:disabled {
-    cursor: not-allowed;
-    opacity: 0.6;
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 .modpackinstaller-search-clear {
-    flex: 0 0 auto;
-    width: 34px;
-    height: 38px;
-    padding: 0;
-    border: 0;
-    background: transparent;
-    color: inherit;
-    font-size: 1.1rem;
-    line-height: 1;
-    cursor: pointer;
-    opacity: 0.7;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 38px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.7;
 }
 
 .modpackinstaller-search-clear:hover {
-    opacity: 1;
+  opacity: 1;
 }
 
 .modpackinstaller-search-go {
-    flex: 0 0 auto;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 40px;
-    height: 38px;
-    padding: 0;
-    border: 0;
-    border-left: 1px solid rgba(255, 255, 255, 0.12);
-    background: rgba(255, 255, 255, 0.06);
-    color: #ffffff;
-    cursor: pointer;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 38px;
+  padding: 0;
+  border: 0;
+  border-left: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  color: #ffffff;
+  cursor: pointer;
 }
 
 .modpackinstaller-search-go:hover:not(:disabled) {
-    background: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.12);
 }
 
 .modpackinstaller-search-go:disabled {
-    cursor: wait;
-    opacity: 0.6;
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.modpackinstaller-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 18px 0;
+}
+
+.modpackinstaller-pagination-results {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.modpackinstaller-pagination-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.modpackinstaller-pagination-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: inherit;
+  cursor: pointer;
+  transition:
+    background 0.12s ease,
+    opacity 0.12s ease;
+}
+
+.modpackinstaller-pagination-button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.modpackinstaller-pagination-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.modpackinstaller-pagination-page {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 0 8px;
+  color: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+@media (max-width: 500px) {
+  .modpackinstaller-pagination {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .modpackinstaller-pagination-results {
+    align-self: flex-start;
+  }
+
+  .modpackinstaller-pagination-actions {
+    justify-content: flex-end;
+  }
 }

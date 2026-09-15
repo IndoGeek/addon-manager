@@ -52,6 +52,20 @@ unless you are debugging build.sh itself.
 **Symptom:** build succeeds, browser shows old layout/styles; zooming out
 "fixes" the layout; mobile is vertically stretched.
 
+**Root cause (hit #2, stale TSX):** webpack resolves the extension TSX
+through `resources/scripts/blueprint/extensions/modpackinstaller` →
+`.blueprint/extensions/modpackinstaller/components` — the **installed** tree.
+Before 2026-09-15, build.sh only synced the repo into `.blueprint/dev`, which
+webpack never reads — so TSX edits shipped as exit-0 builds with the old UI
+(CSS updated, components didn't; the mismatch makes it extra confusing).
+build.sh now mirrors `components/` into the installed tree at step 3/5. If
+bundle JS changes don't appear, diff the installed copy:
+
+```bash
+diff components/cards/CatalogCard.tsx \
+  /var/www/pterodactyl/.blueprint/extensions/modpackinstaller/components/cards/CatalogCard.tsx
+```
+
 **Root cause (hit #1, hit it twice already):** the CSS the browser uses is
 `resources/scripts/blueprint/css/imported/modpackinstaller.css` — a **plain
 file copy** of `root.css`. `sync.sh` does NOT update it and the webpack build
@@ -178,7 +192,7 @@ Order of investigation (from actual experience — do not skip ahead):
    `.modpackinstaller-controls-row`, `.modpackinstaller-search-box`,
    `.modpackinstaller-installed-toggle`, `.modpackinstaller-toolbar-row`,
    `.modpackinstaller-filters-toggle`, `.modpackinstaller-view-toggle button`.
-3. Specificity traps to remember inside `root.css`:
+3. Specificity traps to remember inside the CSS sources (`components/styles/`):
    - `.modpackinstaller-card button` (0,1,1) **beats** `.installed-toggle`
      (0,1,0). Avoid class+element rules that touch buttons/inputs inside the
      card — they will override the compact toolbar styles on mobile.
@@ -188,13 +202,28 @@ Order of investigation (from actual experience — do not skip ahead):
 5. Test at 375 / 390 / 430 / 768 px + desktop; check for horizontal overflow
    with `document.documentElement.scrollWidth > window.innerWidth` in console.
 
-### 1.8 CSS changes to root.css aren't enough / split-file confusion
+### 1.8 CSS architecture (modular sources → generated root.css)
 
-- `components/styles/*.css` (base/search/buttons/...) is an internal
-  organization used by nothing at runtime; `root.css` is the live stylesheet
-  injected through the panel build. If you edit a file under
-  `components/styles/` and nothing happens — that's why. Keep `root.css` and
-  the split files in sync, or treat `root.css` as the single source.
+- `components/styles/*.css` (base/search/buttons/toolbar/filters/cards/
+  forms/modals/animations/responsive) are the **source files**. They are
+  concatenated, in the import order declared in `components/styles/index.css`,
+  into `root.css` by `tools/build-css.mjs`.
+- `root.css` is **GENERATED — never edit it by hand** (it carries a guard
+  banner saying so). It exists only because conf.yml's `dashboard.css` entry
+  and the panel's CSS import expect a single file.
+- Regenerate manually with `node tools/build-css.mjs`; `build.sh` runs it
+  automatically as step 1 before every deploy.
+- conf.yml's `dashboard.css: root.css` entry also serves the admin page, so a
+  regenerated root.css refreshes both dashboard and admin styles after
+  deploy.
+
+The same modular rule applies to the TSX: `ModpackInstaller.tsx` is a thin
+page entry owning state + data fetching only; all UI lives in
+`components/toolbar/*`, `components/cards/*`, `components/modals/*`,
+`components/common/*`, `components/icons/*`, `components/types/*`,
+`components/utils/*`. The panel resolves the route against the filename
+`ModpackInstaller`, so that file must stay at `components/` — everything else
+can move freely.
 
 ### 1.9 Icons/fonts load, page half-broken, 404s in console
 
@@ -571,7 +600,10 @@ Paste this when something feels wrong; the output answers 90% of questions:
 
 ```bash
 echo "=== repo git state ==="; git -C /home/tanmay/Code/modpack-installer status --short
-echo "=== CSS import == root.css? ==="
+echo "=== root.css up to date with sources? ==="
+node /home/tanmay/Code/modpack-installer/tools/build-css.mjs
+git -C /home/tanmay/Code/modpack-installer status --short root.css
+echo "=== CSS import == generated root.css? ==="
 diff <(sha256sum < /home/tanmay/Code/modpack-installer/root.css) \
      <(sha256sum < /var/www/pterodactyl/resources/scripts/blueprint/css/imported/modpackinstaller.css) \
   && echo MATCH || echo STALE

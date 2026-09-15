@@ -1,0 +1,244 @@
+/*
+ * toolbar.css — provider/sort dropdowns, filters toggle, view toggle,
+ * the toolbar row that holds them, and the active-filter chips.
+ *
+ * SOURCE file — root.css is generated from these files by
+ * tools/build-css.mjs (run by build.sh). Do NOT edit root.css directly.
+ */
+
+.modpackinstaller-toolbar-row {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+@media (max-width: 480px) {
+  .modpackinstaller-toolbar-row {
+    gap: 8px;
+  }
+}
+
+.modpackinstaller-dropdown {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  position: relative;
+}
+
+.modpackinstaller-dropdown > label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  opacity: 0.8;
+}
+
+.modpackinstaller-dropdown-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 180px;
+  box-sizing: border-box;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.2);
+  color: inherit;
+  cursor: pointer;
+}
+
+@media (max-width: 768px) {
+  .modpackinstaller-dropdown-trigger {
+    min-width: 160px;
+  }
+}
+
+@media (max-width: 480px) {
+  .modpackinstaller-dropdown-trigger {
+    min-width: 120px;
+  }
+}
+
+.modpackinstaller-dropdown-trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.modpackinstaller-dropdown-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.modpackinstaller-dropdown-caret {
+  flex: 0 0 auto;
+  opacity: 0.6;
+}
+
+.modpackinstaller-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  min-width: 100%;
+  max-height: 260px;
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: 6px;
+  border: 1px solid rgba(127, 127, 127, 0.25);
+  border-radius: 8px;
+  background: rgba(20, 20, 20, 0.98);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  animation: modpackinstaller-pop-in 0.14s ease-out;
+}
+
+.modpackinstaller-dropdown-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.modpackinstaller-dropdown-option:hover,
+.modpackinstaller-dropdown-option:focus-visible {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.modpackinstaller-dropdown-option--active {
+  background: #16a34a;
+}
+
+.modpackinstaller-dropdown-option:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.modpackinstaller-dropdown-option small {
+  font-size: 0.75rem;
+  opacity: 0.65;
+}
+
+.modpackinstaller-filters-toggle {
+  position: relative;
+  flex: 0 0 auto;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: #16a34a;
+  color: #ffffff;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.modpackinstaller-filters-toggle:hover:not(:disabled) {
+  background: #15803d;
+}
+
+.modpackinstaller-filters-toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.modpackinstaller-filters-toggle[aria-expanded="true"] {
+  background: #15803d;
+}
+
+.modpackinstaller-filters-toggle[aria-expanded="true"]:hover {
+  background: #15803d;
+}
+
+.modpackinstaller-view-toggle {
+  display: inline-flex;
+  flex: 0 0 auto;
+  flex-shrink: 0;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.modpackinstaller-view-toggle button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  height: 38px; /* + 1px wrapper border top/bottom = 40px, matches dropdowns */
+  padding: 0 12px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.7;
+  transition: background 0.12s ease, opacity 0.12s ease;
+}
+
+.modpackinstaller-view-toggle button:hover {
+  background: rgba(255, 255, 255, 0.08);
+  opacity: 1;
+}
+
+.modpackinstaller-view-toggle button.modpackinstaller-view-toggle--active {
+  background: #16a34a;
+  opacity: 1;
+}
+
+@media (max-width: 700px) {
+  .modpackinstaller-toolbar-row .modpackinstaller-filters-toggle {
+    margin-left: auto;
+  }
+}
+
+.modpackinstaller-active-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.modpackinstaller-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.modpackinstaller-chip button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.modpackinstaller-chip button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}

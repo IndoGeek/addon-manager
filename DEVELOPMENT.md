@@ -94,8 +94,8 @@ Run every meaningful change against:
 3. `git diff --check` (whitespace hygiene).
 4. If the frontend changed: a strict TypeScript check of
    `components/ModpackInstaller.tsx` (e.g. `tsc --noEmit` with
-   `jsx: react-jsx` and `@types/react`), since the panel build is deferred to
-   deployment.
+   `jsx: react-jsx` and `@types/react`), plus `components/index.ts` to catch
+   errors in every module, since the panel build is deferred to deployment.
 5. Deployment compatibility, then build and deploy the frontend:
    ```bash
    ./build.sh
@@ -103,13 +103,14 @@ Run every meaningful change against:
    `build.sh` performs the full pipeline:
    1. `./sync.sh` — rsyncs the repository into
       `/var/www/pterodactyl/.blueprint/dev` (owned by `www-data`).
-   2. Copies `root.css` into
+   2. Regenerates `root.css` from the modular sources in
+      `components/styles/` via `tools/build-css.mjs`, then copies it into
       `/var/www/pterodactyl/resources/scripts/blueprint/css/imported/modpackinstaller.css`,
       which the panel's webpack build imports through
       `resources/scripts/index.tsx` -> `blueprint/css/extensions.css`.
       This step is essential: the imported CSS file is a plain copy, not a
       symlink, so a stale copy ships old styles to the browser even though
-      the build succeeds.
+      the build succeeds. Edit the modular sources, never `root.css`.
    3. Temporarily takes ownership of `public/assets` and
       `.build-cache.json` (they are `www-data`-owned; only `rsync`,
       `chown`, and `rm` are passwordless in sudoers), then runs

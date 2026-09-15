@@ -1,87 +1,94 @@
-@keyframes modpackinstaller-fade-in {
-    from {
-        opacity: 0;
-    }
+/*
+ * animations.css — keyframes and reduced-motion handling.
+ *
+ * SOURCE file — root.css is generated from these files by
+ * tools/build-css.mjs (run by build.sh). Do NOT edit root.css directly.
+ */
 
-    to {
-        opacity: 1;
-    }
+@keyframes modpackinstaller-fade-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
 }
 
 @keyframes modpackinstaller-fade-out {
-    from {
-        opacity: 1;
-    }
+  from {
+    opacity: 1;
+  }
 
-    to {
-        opacity: 0;
-    }
+  to {
+    opacity: 0;
+  }
 }
 
 @keyframes modpackinstaller-slide-up {
-    from {
-        transform: translateY(12px) scale(0.98);
-        opacity: 0;
-    }
+  from {
+    transform: translateY(12px) scale(0.98);
+    opacity: 0;
+  }
 
-    to {
-        transform: translateY(0) scale(1);
-        opacity: 1;
-    }
+  to {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
 }
 
 @keyframes modpackinstaller-slide-down {
-    from {
-        transform: translateY(0) scale(1);
-        opacity: 1;
-    }
+  from {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
 
-    to {
-        transform: translateY(12px) scale(0.98);
-        opacity: 0;
-    }
+  to {
+    transform: translateY(12px) scale(0.98);
+    opacity: 0;
+  }
 }
 
 @keyframes modpackinstaller-pop-in {
-    from {
-        opacity: 0;
-        transform: translateY(-4px);
-    }
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
 
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @keyframes modpackinstaller-panel-in {
-    from {
-        opacity: 0;
-        transform: translateY(-6px);
-    }
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
 
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @keyframes modpackinstaller-spin {
-    from {
-        transform: rotate(0deg);
-    }
+  from {
+    transform: rotate(0deg);
+  }
 
-    to {
-        transform: rotate(360deg);
-    }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .modpackinstaller-modal-overlay,
-    .modpackinstaller-modal,
-    .modpackinstaller-dropdown-menu,
-    .modpackinstaller-filter-panel,
-    .modpackinstaller-icon-spinner {
-        animation: none;
-    }
+  .modpackinstaller-modal-overlay,
+  .modpackinstaller-modal,
+  .modpackinstaller-dropdown-menu,
+  .modpackinstaller-filter-panel,
+  .modpackinstaller-icon-spinner {
+    animation: none;
+  }
 }

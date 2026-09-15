@@ -1,83 +1,188 @@
-@media (max-width: 768px) {
-    .modpackinstaller-root {
-        padding: 16px;
-    }
+/*
+ * responsive.css — mobile/tablet overrides. Kept last so later rules win
+ * at equal specificity (see DEV.md 1.7 on media-query order).
+ *
+ * SOURCE file — root.css is generated from these files by
+ * tools/build-css.mjs (run by build.sh). Do NOT edit root.css directly.
+ */
 
-    .modpackinstaller-controls-row {
-        flex-direction: row;
-        align-items: center;
-    }
+/* Tablet: keep the catalog grid at exactly 2 columns. */
+@media (max-width: 1024px) {
+  .modpackinstaller-catalog-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 
-    .modpackinstaller-install-toggle {
-        justify-content: center;
-    }
+  /* Mid-size list rows: slightly slimmer than desktop. */
+  .modpackinstaller-catalog-card--list {
+    gap: 9px;
+    padding: 7px;
+  }
 
-    .modpackinstaller-installed-item {
-        flex-wrap: wrap;
-    }
-
-    .modpackinstaller-installed-actions {
-        width: 100%;
-        justify-content: flex-end;
-    }
-
-    .modpackinstaller-confirm-actions {
-        flex-direction: column-reverse;
-    }
-
-    .modpackinstaller-confirm-actions button {
-        width: 100%;
-    }
-
-    .modpackinstaller-catalog-grid {
-        grid-template-columns: 1fr;
-    }
-
-    .modpackinstaller-catalog-card--list {
-        flex-direction: column;
-    }
-
-    .modpackinstaller-pagination {
-        flex-direction: column;
-        align-items: flex-start;
-    }
-
-    .modpackinstaller-pagination-actions {
-        width: 100%;
-    }
-
-    .modpackinstaller-pagination-actions button {
-        flex: 1 1 auto;
-    }
-
-    .modpackinstaller-dropdown-trigger {
-        min-width: 140px;
-    }
-
-    .modpackinstaller-modal-overlay {
-        padding: 8px;
-    }
-
-    .modpackinstaller-modal {
-        padding: 16px;
-    }
-
-    .modpackinstaller-modal-header {
-        flex-direction: column;
-    }
+  .modpackinstaller-catalog-card--list .modpackinstaller-card-media {
+    flex: 0 0 64px;
+  }
 }
 
-@media (max-width: 500px) {
-    .modpackinstaller-pagination {
-        align-items: stretch;
-        flex-direction: column;
-    }
+@media (max-width: 768px) {
+  .modpackinstaller-root {
+    padding: 16px;
+  }
 
-    .modpackinstaller-pagination-results {
-        align-self: flex-start;
-    }
+  .modpackinstaller-controls-row {
+    flex-direction: row;
+    align-items: center;
+  }
 
-    .modpackinstaller-pagination-actions {
-        justify-content: flex-end;
-    }
+  .modpackinstaller-install-toggle {
+    justify-content: center;
+  }
+
+  .modpackinstaller-installed-item {
+    flex-wrap: wrap;
+  }
+
+  .modpackinstaller-installed-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .modpackinstaller-confirm-actions {
+    flex-direction: column-reverse;
+  }
+
+  .modpackinstaller-confirm-actions button {
+    width: 100%;
+  }
+
+  .modpackinstaller-details {
+    grid-template-columns: 1fr;
+  }
+
+  /* Catalog cards stay a 2-per-row grid on every screen size. */
+  .modpackinstaller-catalog-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .modpackinstaller-catalog-card--list {
+    flex-direction: row;
+    flex-wrap: nowrap;
+    gap: 8px;
+    padding: 6px;
+  }
+
+  .modpackinstaller-catalog-list
+    .modpackinstaller-card-logo
+    .modpackinstaller-card-image,
+  .modpackinstaller-catalog-list
+    .modpackinstaller-card-logo
+    .modpackinstaller-card-image--fallback {
+    width: 100%;
+    height: 100%;
+    flex: 1 1 auto;
+    min-height: 48px;
+    border-radius: 6px;
+  }
+
+  .modpackinstaller-catalog-card--list .modpackinstaller-card-media {
+    flex: 0 0 60px;
+  }
+
+  /* Buttons stay square, column-stacked and level with the image. */
+  .modpackinstaller-catalog-card--list .modpackinstaller-catalog-card-actions {
+    flex-direction: column;
+    gap: 5px;
+    margin-left: auto;
+    align-self: flex-start;
+  }
+
+  .modpackinstaller-catalog-card--list .modpackinstaller-card-action-icon {
+    width: 28px;
+    height: 28px;
+    min-width: 28px;
+    min-height: 28px;
+  }
+
+  .modpackinstaller-catalog-card--list .modpackinstaller-card-action-icon svg {
+    width: 13px;
+    height: 13px;
+  }
+
+  .modpackinstaller-catalog-card--list
+    .modpackinstaller-catalog-card-author {
+    display: none;
+  }
+
+  .modpackinstaller-catalog-card--list
+    .modpackinstaller-catalog-card-summary {
+    -webkit-line-clamp: 2;
+    font-size: 0.7rem;
+  }
+
+  .modpackinstaller-catalog-card--list
+    .modpackinstaller-catalog-card-title h4 {
+    font-size: 0.85rem;
+  }
+
+  /* Smaller grid cards on narrow screens. */
+  .modpackinstaller-catalog-card--grid .modpackinstaller-card-banner {
+    height: 84px;
+  }
+
+  .modpackinstaller-catalog-card--grid .modpackinstaller-catalog-card-content {
+    padding: 10px;
+  }
+
+  .modpackinstaller-catalog-card--grid .modpackinstaller-catalog-card-title h4 {
+    font-size: 0.9rem;
+  }
+
+  .modpackinstaller-pagination {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .modpackinstaller-pagination-actions {
+    width: 100%;
+  }
+
+  .modpackinstaller-pagination-actions button {
+    flex: 1 1 auto;
+  }
+
+  .modpackinstaller-view-toggle {
+    margin-left: 0;
+  }
+
+  .modpackinstaller-dropdown-trigger {
+    min-width: 140px;
+  }
+
+  .modpackinstaller-modal-overlay {
+    padding: 8px;
+  }
+
+  .modpackinstaller-modal {
+    padding: 16px;
+  }
+
+  .modpackinstaller-modal-item {
+    flex-direction: column;
+  }
+
+  .modpackinstaller-modal-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .modpackinstaller-modal-header {
+    flex-direction: column;
+  }
+
+  .modpackinstaller-filter-groups {
+    grid-template-columns: 1fr;
+  }
+
+  .modpackinstaller-filter-options {
+    grid-template-columns: 1fr 1fr;
+  }
 }

@@ -8,6 +8,8 @@ import {
     DownloadStatIcon,
     FollowsStatIcon,
     UpdatedStatIcon,
+    OpenIcon,
+    ViewIcon,
 } from '../icons';
 
 export const CatalogCard = ({
@@ -22,6 +24,27 @@ export const CatalogCard = ({
     disabled: boolean;
 }) => {
     const tags = buildCardTags(item);
+
+    const statItems = [
+        item.downloads !== null && (
+            <span key="downloads" title="Downloads">
+                <DownloadStatIcon />
+                {formatCount(item.downloads)}
+            </span>
+        ),
+        item.follows !== null && (
+            <span key="follows" title="Follows">
+                <FollowsStatIcon />
+                {formatCount(item.follows)}
+            </span>
+        ),
+        item.updated_at && (
+            <span key="updated" title="Last updated">
+                <UpdatedStatIcon />
+                {formatUpdated(item.updated_at)}
+            </span>
+        ),
+    ].filter(Boolean) as React.ReactNode[];
 
     return (
         <article
@@ -50,56 +73,70 @@ export const CatalogCard = ({
                     <span className="modpackinstaller-catalog-card-author">
                         {item.author || 'Unknown author'}
                     </span>
-                </div>
+                    </div>
 
                 <p className="modpackinstaller-catalog-card-summary">
                     {item.summary || 'No description available.'}
                 </p>
 
-                {tags.length > 0 && <PillTags tags={tags} />}
+                {view === 'grid' && tags.length > 0 && (
+                    <PillTags tags={tags} />
+                )}
 
-                <div className="modpackinstaller-catalog-card-stats">
-                    {item.downloads !== null && (
-                        <span title="Downloads">
-                            <DownloadStatIcon />
-                            {formatCount(item.downloads)}
-                        </span>
-                    )}
+                {view === 'grid' && (
+                    <div className="modpackinstaller-catalog-card-stats">
+                        {statItems}
+                    </div>
+                )}
 
-                    {item.follows !== null && (
-                        <span title="Follows">
-                            <FollowsStatIcon />
-                            {formatCount(item.follows)}
-                        </span>
-                    )}
+                {view === 'list' && (tags.length > 0
+                    || statItems.length > 0) && (
+                    <div className="modpackinstaller-catalog-card-meta">
+                        {tags.length > 0 && <PillTags tags={tags} />}
 
-                    {item.updated_at && (
-                        <span title="Last updated">
-                            <UpdatedStatIcon />
-                            {formatUpdated(item.updated_at)}
-                        </span>
-                    )}
-                </div>
+                        {statItems.length > 0 && (
+                            <div className="modpackinstaller-catalog-card-stats">
+                                {statItems}
+                            </div>
+                        )}
+                    </div>
+                )}
 
                 <div className="modpackinstaller-catalog-card-actions">
                     <button
                         type="button"
-                        className="modpackinstaller-card-action-open"
+                        className={`modpackinstaller-card-action-open${
+                            view === 'list'
+                                ? ' modpackinstaller-card-action-icon'
+                                : ''
+                        }`}
                         onClick={() => onOpen(item)}
                         disabled={disabled}
+                        aria-label="Open modpack"
+                        title="Open"
                     >
-                        Open
+                        {view === 'list'
+                            ? <OpenIcon />
+                            : 'Open'}
                     </button>
 
                     {item.project_url && (
                         <a
-                            className="modpackinstaller-card-action-details"
+                            className={`modpackinstaller-card-action-details${
+                                view === 'list'
+                                    ? ' modpackinstaller-card-action-icon'
+                                    : ''
+                            }`}
                             href={item.project_url}
                             target="_blank"
                             rel="noopener noreferrer"
                             referrerPolicy="no-referrer"
+                            aria-label="View on provider page"
+                            title="View"
                         >
-                            Details
+                            {view === 'list'
+                                ? <ViewIcon />
+                                : 'Details'}
                         </a>
                     )}
                 </div>
