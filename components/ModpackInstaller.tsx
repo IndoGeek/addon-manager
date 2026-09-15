@@ -228,10 +228,7 @@ export default () => {
         value: provider.name,
         label: provider.available
             ? provider.label
-            : `${provider.label} (not available)`,
-        detail: provider.available
-            ? undefined
-            : provider.unavailable_reason ?? undefined,
+            : `${provider.label} (unavailable)`,
         disabled: !provider.available,
     }));
 

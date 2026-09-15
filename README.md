@@ -1,8 +1,8 @@
-[![Minecraft](https://img.shields.io/badge/Minecraft-1.16.5+-62B47A?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48cmVjdCB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iIzYyQjQ3QSIvPjwvc3ZnPg==)](https://www.minecraft.net)
-[![Downloads](https://img.shields.io/github/downloads/indogeek/modpack-installer/total?style=for-the-badge&logo=github&color=1f6feb)](https://github.com/indogeek/modpack-installer/releases)
-[![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)](LICENSE)
-[![CurseForge](https://img.shields.io/badge/CurseForge-Supported-orange?style=for-the-badge&logo=curseforge)](https://www.curseforge.com)
-[![Modrinth](https://img.shields.io/badge/Modrinth-Supported-green?style=for-the-badge&logo=modrinth)](https://modrinth.com)
+[![Pterodactyl 1.8+](data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNDYiIGhlaWdodD0iMjYiIHJvbGU9ImltZyI+CiAgPHJlY3QgeD0iMSIgeT0iMSIgd2lkdGg9IjE0NCIgaGVpZ2h0PSIyNCIgcng9IjUiIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iMC44NSIgc3Ryb2tlPSIjZDBkN2RlIiBzdHJva2Utd2lkdGg9IjEiLz4KICA8Y2lyY2xlIGN4PSIxMiIgY3k9IjEzIiByPSI0IiBmaWxsPSIjNmU1NmNmIi8+CiAgPHRleHQgeD0iMjIiIHk9IjE3IiBmb250LWZhbWlseT0iU2Vnb2UgVUksSGVsdmV0aWNhLEFyaWFsLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTIiIGZvbnQtd2VpZ2h0PSI2MDAiIGZpbGw9IiMyNDI5MmYiPlB0ZXJvZGFjdHlsIDEuOCs8L3RleHQ+Cjwvc3ZnPg==)](https://pterodactyl.io)
+[![Modrinth](data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4OSIgaGVpZ2h0PSIyNiIgcm9sZT0iaW1nIj4KICA8cmVjdCB4PSIxIiB5PSIxIiB3aWR0aD0iODciIGhlaWdodD0iMjQiIHJ4PSI1IiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9IjAuODUiIHN0cm9rZT0iI2QwZDdkZSIgc3Ryb2tlLXdpZHRoPSIxIi8+CiAgPGNpcmNsZSBjeD0iMTIiIGN5PSIxMyIgcj0iNCIgZmlsbD0iIzFCRDk2QSIvPgogIDx0ZXh0IHg9IjIyIiB5PSIxNyIgZm9udC1mYW1pbHk9IlNlZ29lIFVJLEhlbHZldGljYSxBcmlhbCxzYW5zLXNlcmlmIiBmb250LXNpemU9IjEyIiBmb250LXdlaWdodD0iNjAwIiBmaWxsPSIjMjQyOTJmIj5Nb2RyaW50aDwvdGV4dD4KPC9zdmc+)](https://modrinth.com)
+[![CurseForge](data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMDMiIGhlaWdodD0iMjYiIHJvbGU9ImltZyI+CiAgPHJlY3QgeD0iMSIgeT0iMSIgd2lkdGg9IjEwMSIgaGVpZ2h0PSIyNCIgcng9IjUiIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iMC44NSIgc3Ryb2tlPSIjZDBkN2RlIiBzdHJva2Utd2lkdGg9IjEiLz4KICA8Y2lyY2xlIGN4PSIxMiIgY3k9IjEzIiByPSI0IiBmaWxsPSIjRjE2NDM2Ii8+CiAgPHRleHQgeD0iMjIiIHk9IjE3IiBmb250LWZhbWlseT0iU2Vnb2UgVUksSGVsdmV0aWNhLEFyaWFsLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTIiIGZvbnQtd2VpZ2h0PSI2MDAiIGZpbGw9IiMyNDI5MmYiPkN1cnNlRm9yZ2U8L3RleHQ+Cjwvc3ZnPg==)](https://www.curseforge.com)
+[![MIT License](data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMTAiIGhlaWdodD0iMjYiIHJvbGU9ImltZyI+CiAgPHJlY3QgeD0iMSIgeT0iMSIgd2lkdGg9IjEwOCIgaGVpZ2h0PSIyNCIgcng9IjUiIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iMC44NSIgc3Ryb2tlPSIjZDBkN2RlIiBzdHJva2Utd2lkdGg9IjEiLz4KICA8Y2lyY2xlIGN4PSIxMiIgY3k9IjEzIiByPSI0IiBmaWxsPSIjMjQyOTJGIi8+CiAgPHRleHQgeD0iMjIiIHk9IjE3IiBmb250LWZhbWlseT0iU2Vnb2UgVUksSGVsdmV0aWNhLEFyaWFsLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTIiIGZvbnQtd2VpZ2h0PSI2MDAiIGZpbGw9IiMyNDI5MmYiPk1JVCBMaWNlbnNlPC90ZXh0Pgo8L3N2Zz4=)](LICENSE)
+[![GitHub Releases](data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMzkiIGhlaWdodD0iMjYiIHJvbGU9ImltZyI+CiAgPHJlY3QgeD0iMSIgeT0iMSIgd2lkdGg9IjEzNyIgaGVpZ2h0PSIyNCIgcng9IjUiIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iMC44NSIgc3Ryb2tlPSIjZDBkN2RlIiBzdHJva2Utd2lkdGg9IjEiLz4KICA8Y2lyY2xlIGN4PSIxMiIgY3k9IjEzIiByPSI0IiBmaWxsPSIjNTc2MDZBIi8+CiAgPHRleHQgeD0iMjIiIHk9IjE3IiBmb250LWZhbWlseT0iU2Vnb2UgVUksSGVsdmV0aWNhLEFyaWFsLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTIiIGZvbnQtd2VpZ2h0PSI2MDAiIGZpbGw9IiMyNDI5MmYiPkdpdEh1YiBSZWxlYXNlczwvdGV4dD4KPC9zdmc+)](https://github.com/indogeek/modpack-installer/releases)
 
 # Modpack Installer
 
@@ -22,7 +22,7 @@ A powerful Pterodactyl Panel extension for browsing and installing Minecraft mod
 - **Pterodactyl Panel** v1.8+
 - **Blueprint** (Pterodactyl extension framework)
 - **PHP** 8.1+
-- **Node.js** 18+ (for development/building)
+- **Node.js** 18+ (used by Blueprint to compile frontend assets during install)
 
 ## Installation
 
@@ -31,6 +31,8 @@ A powerful Pterodactyl Panel extension for browsing and installing Minecraft mod
 Follow the [Blueprint installation guide](https://blueprint.pterodactyl.io).
 
 ### 2. Install the Modpack Installer Extension
+
+This extension is installed and built **only from inside your Pterodactyl panel directory**, exactly like any standard Blueprint extension — no separate build script is required.
 
 ```bash
 cd /var/www/pterodactyl
@@ -96,19 +98,9 @@ The extension works out-of-the-box with Modrinth. To enable CurseForge support, 
 
 ## Development
 
-### Build CSS
+Like every Blueprint extension, **Modpack Installer is built and installed from inside your Pterodactyl directory** — run `blueprint -install` (or `blueprint -r`) as shown above. No separate build/`resync` step or private `build.sh` script is required.
 
-```bash
-node tools/build-css.mjs
-```
-
-### Deploy Changes
-
-```bash
-./build.sh
-```
-
-### Run Tests
+Contributors can run the extension's manual tests:
 
 ```bash
 php tests/manual/catalog-service-test.php
