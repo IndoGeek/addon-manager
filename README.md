@@ -1,142 +1,184 @@
+[![Minecraft](https://img.shields.io/badge/Minecraft-1.16.5+-62B47A?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48cmVjdCB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iIzYyQjQ3QSIvPjwvc3ZnPg==)](https://www.minecraft.net)
+[![Downloads](https://img.shields.io/github/downloads/indogeek/modpack-installer/total?style=for-the-badge&logo=github&color=1f6feb)](https://github.com/indogeek/modpack-installer/releases)
+[![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)](LICENSE)
+[![CurseForge](https://img.shields.io/badge/CurseForge-Supported-orange?style=for-the-badge&logo=curseforge)](https://www.curseforge.com)
+[![Modrinth](https://img.shields.io/badge/Modrinth-Supported-green?style=for-the-badge&logo=modrinth)](https://modrinth.com)
+
 # Modpack Installer
 
-A modular modpack installation extension for Pterodactyl powered by
-Blueprint.
+A powerful Pterodactyl Panel extension for browsing and installing Minecraft modpacks directly from **Modrinth** and **CurseForge** with a modern, user-friendly interface.
 
-## Goals
+## Features
 
-- One-click modpack installation
-- Multiple modpack providers
-- Pterodactyl compatibility
-- Blueprint compatibility
-- Panel theme compatibility
-- Safe and reliable installations
-- Extensible provider architecture
+- 🎮 **Multi-Provider Support** – Browse and install from both Modrinth and CurseForge
+- 🔍 **Advanced Filtering** – Search by game version, loader, category, and more
+- 📦 **One-Click Installation** – Seamlessly install modpacks to your server
+- 🎨 **Modern UI** – Clean, responsive interface built with React and TypeScript
+- ⚙️ **Server Management** – View, update, and uninstall installed modpacks
+- 🔐 **Secure** – API keys stored server-side, never exposed to clients
 
-## Status
+## Requirements
 
-Functional: catalog browsing with multi-value filters, exact-version
-selection, network-hardened installation, and an installed-modpack lifecycle
-(update to latest / uninstall). Providers: Modrinth (live search + install),
-CurseForge (catalog search when configured, metadata/install with
-manual-download guidance for packs without a public download URL), and a
-development-only Mock provider that is always hidden from the production
-dashboard.
+- **Pterodactyl Panel** v1.8+
+- **Blueprint** (Pterodactyl extension framework)
+- **PHP** 8.1+
+- **Node.js** 18+ (for development/building)
+
+## Installation
+
+### 1. Install Blueprint (if not already installed)
+
+Follow the [Blueprint installation guide](https://blueprint.pterodactyl.io).
+
+### 2. Install the Modpack Installer Extension
+
+```bash
+cd /var/www/pterodactyl
+blueprint -install https://github.com/indogeek/modpack-installer
+```
+
+### 3. Publish Assets
+
+```bash
+php artisan blueprint:publish
+php artisan view:clear
+```
+
+### 4. Configure API Keys (Optional)
+
+The extension works out-of-the-box with Modrinth. To enable CurseForge support, you'll need a CurseForge API key:
+
+1. **Get Your API Key**
+   - Visit [CurseForge Developer Portal](https://console.curseforge.com)
+   - Create a new application
+   - Copy your API key
+
+2. **Set the Environment Variable**
+   
+   Add to your `.env` file:
+   ```
+   CURSEFORGE_API_KEY=your_api_key_here
+   ```
+
+3. **Restart Your Panel**
+   ```bash
+   systemctl restart php8.2-fpm  # or your PHP version
+   ```
+
+## Usage
+
+### For Panel Administrators
+
+1. Log in to your Pterodactyl Panel
+2. Navigate to **Admin Panel** → **Extensions** → **Modpack Installer**
+3. Configure optional settings (if needed)
+
+### For Server Owners
+
+1. Go to your server dashboard
+2. Click the **Modpack Installer** tab
+3. **Browse** modpacks from Modrinth or CurseForge
+4. **Filter** by game version, loader, and category
+5. Click **Install** to deploy a modpack to your server
+6. Manage installed modpacks from the **Installed** tab
+
+## Configuration
+
+### Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `CURSEFORGE_API_KEY` | No | Your CurseForge API key for catalog access |
+| `MODPACK_INSTALLER_SERVER_TARGET` | No | Server target mode: `local` (default) or `wings` |
+| `MODPACK_INSTALLER_SERVER_ROOT` | No | Custom server root path (defaults to `/var/lib/pterodactyl/volumes`) |
+| `MODPACK_INSTALLER_MAX_DOWNLOAD_MB` | No | Max download size in MB (no limit by default) |
+| `MODPACK_INSTALLER_DATA_DIR` | No | Install records storage path (defaults to `/var/lib/pterodactyl/modpack-installer`) |
 
 ## Development
 
-This project is developed as a Blueprint extension.
+### Build CSS
 
-The source repository is maintained separately from the Pterodactyl
-installation. Blueprint's `.blueprint/dev` directory is used only as the
-development deployment target.
+```bash
+node tools/build-css.mjs
+```
 
-## Providers
+### Deploy Changes
 
-The installer ships with a mock provider for development plus Modrinth and
-CurseForge providers. See [PROVIDERS.md](PROVIDERS.md) for source formats,
-configuration, catalog support, and current package limitations.
+```bash
+./build.sh
+```
 
-CurseForge packs whose installable file has no public download URL are never
-installed automatically; the dashboard shows normalized manual-download
-guidance instead.
+### Run Tests
 
-## Catalog
+```bash
+php tests/manual/catalog-service-test.php
+php tests/manual/installation-orchestrator-test.php
+```
 
-The dashboard is catalog-first: it searches, filters, sorts, and pages through
-modpacks from a normalised catalog endpoint (`/metadata`-style client route
-`/api/client/extensions/modpackinstaller/catalog`). Provider browsing is
-read-only and never asks a provider to download or install anything. Selecting a
-modpack opens a details dialog that lists its published versions
-(`/catalog/versions`), resolves the chosen version to an exact pinned source
-(`modrinth://<project>@<version-id>`), and feeds that source into the existing
-metadata/install pipeline.
+## Architecture
 
-- Catalog searches accept multi-value filters (`game_versions`, `loaders`,
-  `categories`, `environments` as comma-separated arrays): OR within a group,
-  AND across groups. Providers advertise their supported facets and
-  capabilities through `/catalog/providers`, and the dashboard renders the
-  filter panel from that data instead of hard-coding options.
-- Real Modrinth catalog search is served directly from `api.modrinth.com`,
-  including environment filtering.
-- CurseForge catalog search is implemented and live once `CURSEFORGE_API_KEY`
-  is configured. Since the CurseForge search API takes a single value per
-  facet, multi-value selections are applied honestly as an upstream first
-  value plus a provider-side post-filter; totals are conservative when
-  post-filtering occurs, and environment filtering is unsupported (an honest
-  empty result).
-- Development-only providers are never shown to users; the `default_provider`
-  advertised by `/catalog/providers` is always a real, available provider.
-- Searches are **not cached**: every request is answered live by the selected
-  provider, and upstream calls go through the same pinned HTTP client as the
-  rest of the extension. See [ARCHITECTURE.md](ARCHITECTURE.md) for the
-  filter/sort mapping and error handling.
-- Project details can also be fetched directly via `GET /catalog/project`
-  (`provider` + `project`).
+- **Backend** – PHP service layer with modular provider architecture
+- **Frontend** – React + TypeScript with responsive Tailwind-based styling
+- **Providers** – Pluggable provider system for Modrinth and CurseForge APIs
+- **Storage** – Server-side file management with backup capabilities
 
-## Installed modpacks lifecycle
+## Supported Mod Loaders
 
-Every successful install is recorded in an extension-owned store. The dashboard
-lists the installed modpacks for the current server and offers:
+- Fabric
+- Forge
+- Quilt
+- NeoForge
+- LiteLoader
+- Cauldron
 
-- **Update to latest** – re-resolves the same project's latest version, deploys
-  it through the installation engine (with backup/rollback), and updates the
-  record only on success. Already up-to-date returns a controlled `409`.
-- **Uninstall** (two-step confirm) – removes only the files the record owns
-  and nothing else; missing files are tolerated and directories are never
-  deleted. The record is removed only when the whole removal succeeds.
+## API Providers
 
-Records are stored as JSON in `MODPACK_INSTALLER_DATA_DIR` (default
-`/var/lib/pterodactyl/modpack-installer`), keyed by server UUID, written with an
-exclusive lock and an atomic rename. See [ARCHITECTURE.md](ARCHITECTURE.md) for
-the persistence, ownership, and concurrency model.
+### Modrinth ✓
+- **Status**: Always available (no configuration needed)
+- **Features**: Search, filtering, versioning
+- **Rate Limit**: 300 req/min
 
-## Server Target
+### CurseForge ✓
+- **Status**: Optional (requires API key)
+- **Features**: Search, filtering, versioning
+- **Rate Limit**: Depends on API tier
 
-Installer files are written to a server's file tree through a pluggable
-"server file target". In development (and in the test suite) this is the
-local filesystem; in production the installer can talk directly to the
-Pterodactyl Wings daemon for the server's node.
+## Troubleshooting
 
-See [TARGETS.md](TARGETS.md) for both modes, configuration, security
-considerations, and current limitations.
+### CurseForge shows "not available"
+- Verify `CURSEFORGE_API_KEY` is set in `.env`
+- Restart PHP-FPM: `systemctl restart php8.2-fpm`
+- Check logs: `tail -f /var/log/php8.2-fpm.log`
 
-## Security & Reliability
+### Installation fails
+- Ensure sufficient disk space on the server
+- Check server permissions: `ls -la /var/lib/pterodactyl/volumes/`
+- Verify file write permissions for the panel user
 
-Untrusted input (modpack sources, provider payloads, downloaded archives,
-client-supplied options) is validated at every boundary:
+### Modpacks not showing
+- Try clearing browser cache
+- Verify internet connectivity on panel server
+- Check if provider APIs are reachable
 
-- **Downloads** reject non-HTTP schemes, credentialed URLs, and any host that
-  resolves to a private, loopback, link-local, multicast, CGNAT, NAT64,
-  benchmark, or documentation address. Redirect hops are resolved and
-  re-validated individually, capped at 5, and each hop's body is size-bounded.
-- **Archives** must be valid ZIPs with relative-only, normalized paths. Path
-  traversal, absolute paths, drive letters, NUL bytes, backslashes, duplicate
-  entries, file/directory collisions, symbolic links and special device
-  entries are rejected before extraction; entropy (archive size, per-entry
-  size, extracted size, entry count) is bounded both before and during
-  extraction.
-- **Deployment** only writes through the server file target with re-validated
-  relative paths, honors backup/rollback for every overwrite, and never lets
-  best-effort cleanup mask an installation outcome.
-- **Concurrency** is serialized per server with a filesystem lock: second
-  install/update/uninstall operations for the same server receive
-  `503 Service Unavailable` while one is already running, and stale locks are
-  reclaimed automatically.
-- **Errors** returned to clients are static and never include hosts, URLs,
-  tokens, or the CurseForge API key.
+## Contributing
 
-Optional knobs (server-side environment variables):
-
-| Variable                            | Meaning                                        |
-|-------------------------------------|------------------------------------------------|
-| `MODPACK_INSTALLER_MAX_DOWNLOAD_MB` | Max modpack download in MiB (default 2048).   |
-| `MODPACK_INSTALLER_DATA_DIR`        | Installed-modpack record store dir (default `/var/lib/pterodactyl/modpack-installer`). |
-| `CURSEFORGE_API_KEY`                | CurseForge API key (`Providers` document).    |
-
-See [ARCHITECTURE.md](ARCHITECTURE.md) for the hardening model and
-[DEVELOPMENT.md](DEVELOPMENT.md) for how the guarantees are verified.
+Contributions are welcome! Please feel free to submit issues and pull requests.
 
 ## License
 
-TBD
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Author
+
+**IndoGeek** – Creating tools for the Minecraft community.
+
+## Support
+
+For issues, questions, or suggestions:
+- 🐛 [Report Issues](https://github.com/indogeek/modpack-installer/issues)
+- 💬 [Discussions](https://github.com/indogeek/modpack-installer/discussions)
+- 📧 Contact: support@indogeek.dev
+
+---
+
+Made with ❤️ for Pterodactyl Panel

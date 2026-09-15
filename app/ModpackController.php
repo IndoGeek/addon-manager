@@ -9,11 +9,8 @@ use Pterodactyl\Http\Controllers\Controller;
 use Pterodactyl\Models\Server;
 use RuntimeException;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Providers\Catalog\CurseForgeCatalogProvider;
-use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Providers\Catalog\MockCatalogProvider;
-use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Providers\Catalog\ModrinthCatalogProvider;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Providers\CurseForgeProvider;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Providers\ManualDownloadProvider;
-use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Providers\MockModpackProvider;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Providers\ModrinthProvider;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Providers\ModpackProvider;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Providers\UnsupportedModpackPackageException;
@@ -946,7 +943,6 @@ final class ModpackController extends Controller
     {
         return new CatalogService(
             new CatalogProviderRegistry([
-                new MockCatalogProvider(),
                 new ModrinthCatalogProvider(
                     $this->providerHttp(),
                 ),

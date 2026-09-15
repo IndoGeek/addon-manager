@@ -206,7 +206,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
             return null;
         }
 
-        return 'The CurseForge catalog is not configured. Set the CURSEFORGE_API_KEY server-side environment variable.';
+        return 'CurseForge is not available. Please add your API key to the .env file.';
     }
 
     /**
@@ -948,7 +948,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
     {
         if (!$this->available()) {
             throw new CatalogUnavailableException(
-                'The CurseForge catalog is not configured. Set the CURSEFORGE_API_KEY server-side environment variable.',
+                'CurseForge is not available. Please add your API key to the .env file.',
             );
         }
     }
