@@ -26,9 +26,16 @@ use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Provider
  * The CurseForge search API accepts a single value per filter group. When the
  * user selects multiple values, the first value is applied upstream and the
  * remaining values are applied as a provider-side filter on the fetched page
- * (never on the frontend). Because the true filtered total cannot be known, the
- * pagination total is then reported conservatively: only the items we can
- * actually produce are counted, so the UI never over-claims pages.
+ * (never on the frontend).
+ *
+ * Pagination is page-fill based: upstream search pages are scanned from index
+ * 0 in fixed-size blocks, projects are classified and accepted/rejected, and
+ * the accepted stream is then sliced to the requested page plus offset. This
+ * keeps every result page full (no collapsed totals from locally filtering a
+ * single upstream page) and makes projects on later upstream pages reachable.
+ * The reported total is the exact accepted count when the scan exhausts the
+ * upstream corpus, otherwise the original CurseForge totalCount is preserved
+ * as the defensible bound; both are surfaced separately in the result.
  */
 final class CurseForgeCatalogProvider implements CatalogProvider
 {
@@ -43,6 +50,38 @@ final class CurseForgeCatalogProvider implements CatalogProvider
     private const MAX_UPSTREAM_LIMIT = 50;
 
     private const MAX_SEARCH_INDEX = 10_000;
+
+    /**
+     * Upstream search blocks are always requested at this page size and then
+     * sliced locally, so a single request fills a full result page while
+     * projects further down the sorted upstream corpus stay reachable.
+     */
+    private const SCAN_PAGE_SIZE = 50;
+
+    /**
+     * Upper bound on the number of upstream search blocks scanned to satisfy a
+     * single request. Prevents a pathological acceptance rate or a very deep
+     * page from ballooning the request count; the scan simply stops early.
+     */
+    private const MAX_SCAN_BLOCKS = 40;
+
+    /**
+     * Project classification buckets exposed through diagnostics.
+     *
+     * (a) a dedicated server pack is referenced; (b) no server pack is
+     * referenced but a publicly downloadable main archive exists and may be
+     * usable for a server install; (c) compatibility is unknown because no
+     * definitive file data could be resolved; (d) the project is client-only,
+     * identified by having files but not a single server-pack or publically
+     * downloadable main archive.
+     */
+    private const CLASS_SERVER_PACK = 'server_pack';
+
+    private const CLASS_MAIN_ARCHIVE = 'main_archive';
+
+    private const CLASS_UNKNOWN = 'unknown';
+
+    private const CLASS_CLIENT_ONLY = 'client_only';
 
     private const MODPACK_URL_BASE = 'https://www.curseforge.com/minecraft/modpacks/';
 
@@ -245,9 +284,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
             return $this->emptyResult($query);
         }
 
-        $index = $query->offset();
-
-        if ($index + $query->limit > self::MAX_SEARCH_INDEX) {
+        if ($query->offset() > self::MAX_SEARCH_INDEX) {
             throw new InvalidArgumentException(
                 'The requested page is out of range for the CurseForge catalog.',
             );
@@ -256,8 +293,6 @@ final class CurseForgeCatalogProvider implements CatalogProvider
         $parameters = [
             'gameId' => self::GAME_ID,
             'classId' => self::MODPACK_CLASS_ID,
-            'index' => $index,
-            'pageSize' => $query->limit,
             'sortField' => $this->sortField($query->sort),
             'sortOrder' => 'desc',
         ];
@@ -286,26 +321,125 @@ final class CurseForgeCatalogProvider implements CatalogProvider
             $parameters['categoryId'] = $categoryId;
         }
 
-        $payload = $this->requestSearch($parameters);
-
-        $items = $this->mapSearchItems($payload['data']);
-
         $needsPostFilter = count($query->gameVersions) > 1
             || count($query->loaders) > 1
             || count($query->categories) > 1;
 
-        if ($needsPostFilter) {
-            $items = $this->postFilterItems($query, $items);
+        $accepted = [];
+        $inspected = 0;
+        $excluded = 0;
+        $exclusionReasons = [];
+        $classCounts = [
+            self::CLASS_SERVER_PACK => 0,
+            self::CLASS_MAIN_ARCHIVE => 0,
+            self::CLASS_UNKNOWN => 0,
+            self::CLASS_CLIENT_ONLY => 0,
+        ];
+        $sourcePages = 0;
+        $upstreamTotal = null;
+        $upstreamCount = 0;
+        $scanIndex = 0;
+        $exhausted = false;
+
+        $needed = $query->offset() + $query->limit;
+
+        while (count($accepted) < $needed) {
+            if (
+                $sourcePages >= self::MAX_SCAN_BLOCKS
+                || $scanIndex > self::MAX_SEARCH_INDEX
+            ) {
+                break;
+            }
+
+            $block = $parameters;
+            $block['index'] = $scanIndex;
+            $block['pageSize'] = self::SCAN_PAGE_SIZE;
+
+            $payload = $this->requestSearch($block);
+
+            $sourcePages++;
+
+            $total = $this->intOrNull(
+                $payload['pagination']['totalCount'] ?? null,
+            );
+
+            if ($upstreamTotal === null && $total !== null) {
+                $upstreamTotal = $total;
+            }
+
+            $entries = $payload['data'];
+
+            $upstreamCount += count($entries);
+
+            $items = $this->mapSearchItems($entries);
+
+            if ($needsPostFilter) {
+                $items = $this->postFilterItems($query, $items);
+            }
+
+            $inspected += count($items);
+
+            [$batch, $batchExcluded, $batchReasons, $batchClasses]
+                = $this->classifyItems($items);
+
+            $excluded += $batchExcluded;
+
+            foreach ($batchReasons as $reason => $count) {
+                $exclusionReasons[$reason] = ($exclusionReasons[$reason] ?? 0)
+                    + $count;
+            }
+
+            foreach ($batchClasses as $class => $count) {
+                $classCounts[$class] = ($classCounts[$class] ?? 0) + $count;
+            }
+
+            foreach ($batch as $item) {
+                $accepted[] = $item;
+            }
+
+            if (count($entries) < self::SCAN_PAGE_SIZE) {
+                $exhausted = true;
+
+                break;
+            }
+
+            $scanIndex += self::SCAN_PAGE_SIZE;
         }
 
-        $total = $needsPostFilter
-            ? $index + count($items)
-            : ($this->intOrNull(
-                $payload['pagination']['totalCount'] ?? null,
-            ) ?? 0);
+        $acceptedCount = count($accepted);
+
+        $filteredTotal = $exhausted ? $acceptedCount : null;
+
+        $total = $exhausted
+            ? $acceptedCount
+            : ($upstreamTotal ?? 0);
+
+        $moreSourcePages = $sourcePages > 1;
+
+        $diagnostics = [
+            'original_api_result_count' => $upstreamCount,
+            'inspected' => $inspected,
+            'accepted' => $acceptedCount,
+            'excluded' => $excluded,
+            'exclusion_reasons' => $exclusionReasons,
+            'classification' => $classCounts,
+            'upstream_total' => $upstreamTotal,
+            'source_pages' => $sourcePages,
+            'more_source_pages' => $moreSourcePages,
+            'page_filled' => $acceptedCount >= $needed,
+            'scan_exhausted' => $exhausted,
+        ];
+
+        $this->logDiagnostics($query, $diagnostics);
+
+        $pageItems = array_slice(
+            $accepted,
+            $query->offset(),
+            $query->limit,
+        );
 
         return new CatalogResult(
-            items: $items,
+            items: $pageItems,
             pagination: new CatalogPagination(
                 $query->page,
                 $query->limit,
@@ -318,6 +452,9 @@ final class CurseForgeCatalogProvider implements CatalogProvider
             appliedLoaders: $query->loaders,
             appliedCategories: $query->categories,
             appliedEnvironments: $query->environments,
+            upstreamTotal: $upstreamTotal,
+            filteredTotal: $filteredTotal,
+            diagnostics: $diagnostics,
         );
     }
 
@@ -349,6 +486,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
         $files = $this->requestAllFiles($query->project, $parameters);
 
         $versions = [];
+        $seenFileIds = [];
 
         foreach ($files as $file) {
             if (!is_array($file)) {
@@ -361,13 +499,21 @@ final class CurseForgeCatalogProvider implements CatalogProvider
                 continue;
             }
 
-            $fileId = (string) ($file['id'] ?? '');
+            $installFile = $this->resolveInstallableFile($file, $query->project);
 
-            if ($fileId === '') {
+            if ($installFile === null) {
                 continue;
             }
 
-            $versions[] = $this->mapVersion($query, $file);
+            $fileId = (string) ($installFile['id'] ?? '');
+
+            if ($fileId === '' || isset($seenFileIds[$fileId])) {
+                continue;
+            }
+
+            $seenFileIds[$fileId] = true;
+
+            $versions[] = $this->mapVersion($query, $installFile);
         }
 
         usort($versions, static function (
@@ -471,6 +617,370 @@ final class CurseForgeCatalogProvider implements CatalogProvider
                 $item,
             ),
         ));
+    }
+/**
+     * Classifies a set of mapped items against their resolved file data.
+     * Projects whose bulk /mods resolution is missing are treated as
+     * compatibility-unknown and kept; only projects definitively classified as
+     * client-only are excluded. The distribution across the four compatibility
+     * buckets and the exclusion reasons are returned so the caller can surface
+     * them in diagnostics.
+     *
+     * @param array<int, CatalogItem> $items
+     *
+     * @return array{0: array<int, CatalogItem>, 1: int, 2: array<string, int>, 3: array<string, int>}
+     */
+    private function classifyItems(array $items): array
+    {
+        if ($items === []) {
+            return [[], 0, [], []];
+        }
+
+        $ids = [];
+
+        foreach ($items as $item) {
+            if (ctype_digit($item->providerProjectId)) {
+                $ids[] = (int) $item->providerProjectId;
+            }
+        }
+
+        if ($ids === []) {
+            return [[], 0, [], []];
+        }
+
+        $projects = $this->fetchProjects($ids);
+
+        $accepted = [];
+        $excluded = 0;
+        $reasons = [];
+        $classCounts = [
+            self::CLASS_SERVER_PACK => 0,
+            self::CLASS_MAIN_ARCHIVE => 0,
+            self::CLASS_UNKNOWN => 0,
+            self::CLASS_CLIENT_ONLY => 0,
+        ];
+
+        foreach ($items as $item) {
+            $project = $projects[$item->providerProjectId] ?? null;
+
+            $class = $this->classifyProject($project);
+
+            $classCounts[$class] = ($classCounts[$class] ?? 0) + 1;
+
+            if ($class === self::CLASS_CLIENT_ONLY) {
+                $excluded++;
+
+                $reasons['no_server_or_public_archive']
+                    = ($reasons['no_server_or_public_archive'] ?? 0) + 1;
+
+                continue;
+            }
+
+            $accepted[] = $item;
+        }
+
+        return [$accepted, $excluded, $reasons, $classCounts];
+    }
+
+    /**
+     * Fetches the given projects through the bulk /mods endpoint, keyed by
+     * numeric string id. Projects missing from the response are kept as
+     * compatibility-unknown (they are excluded by classifyProject, not
+     * silently dropped by the HTTP layer).
+     *
+     * @param array<int, int> $ids
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    private function fetchProjects(array $ids): array
+    {
+        try {
+            $response = $this->http->post(
+                self::API_BASE . '/mods',
+                body: ['modIds' => $ids],
+                headers: $this->headers(),
+            );
+
+            if (
+                !is_array($response->body)
+                || !is_array($response->body['data'] ?? null)
+            ) {
+                throw new CatalogProviderException(
+                    'The modpack catalog provider returned an invalid response.',
+                );
+            }
+
+            $projects = [];
+
+            foreach ($response->body['data'] as $mod) {
+                if (!is_array($mod)) {
+                    continue;
+                }
+
+                $id = (string) ($mod['id'] ?? '');
+
+                if ($id !== '') {
+                    $projects[$id] = $mod;
+                }
+            }
+
+            return $projects;
+        } catch (InvalidArgumentException $exception) {
+            throw $exception;
+        } catch (CatalogProviderException $exception) {
+            throw $exception;
+        } catch (ProviderHttpException $exception) {
+            throw $this->requestFailure($exception);
+        }
+    }
+
+    /**
+     * Resolves a project's server installability by inspecting its public
+     * metadata and the latest file list returned by the bulk /mods endpoint.
+     *
+     *  - server_pack: a dedicated server pack is referenced by a file
+     *    (isServerPack or serverPackFileId).
+     *  - main_archive: no server pack reference, but a publicly downloadable
+     *    main release archive exists and may be usable for a server install.
+     *  - unknown: no file data was resolvable (missing bulk detail or an empty
+     *    file list). Kept, since compatibility cannot be judged either way.
+     *  - client_only: files exist but none references a server pack and none
+     *    is a publicly downloadable main archive.
+     *
+     * @param array<string, mixed>|null $project
+     */
+    private function classifyProject(?array $project): string
+    {
+        if ($project === null) {
+            return self::CLASS_UNKNOWN;
+        }
+
+        $files = $this->arrayOf($project['latestFiles'] ?? []);
+
+        foreach ($files as $file) {
+            if (!is_array($file)) {
+                continue;
+            }
+
+            if (
+                $this->fileReferencesServerPack($file)
+                || $this->isServerPack($file)
+            ) {
+                return self::CLASS_SERVER_PACK;
+            }
+        }
+
+        foreach ($files as $file) {
+            if (
+                !is_array($file)
+                || !$this->isMainArchive($file)
+                || !$this->isPubliclyDownloadable($file)
+            ) {
+                continue;
+            }
+
+            return self::CLASS_MAIN_ARCHIVE;
+        }
+
+        return $files === []
+            ? self::CLASS_UNKNOWN
+            : self::CLASS_CLIENT_ONLY;
+    }
+
+    /**
+     * Whether the given file references a dedicated server pack that must be
+     * installed alongside it.
+     *
+     * @param array<string, mixed> $file
+     */
+    private function fileReferencesServerPack(array $file): bool
+    {
+        $serverPackFileId = $this->intOrNull(
+            $file['serverPackFileId'] ?? null,
+        );
+
+        return $serverPackFileId !== null && $serverPackFileId > 0;
+    }
+
+    /**
+     * Whether the given file is itself a server pack.
+     *
+     * @param array<string, mixed> $file
+     */
+    private function isServerPack(array $file): bool
+    {
+        return ($file['isServerPack'] ?? false) === true;
+    }
+
+    /**
+     * Whether the file is a primary (non-alternate) archive rather than an
+     * alternate payload such as a source or server-dedicated download.
+     *
+     * @param array<string, mixed> $file
+     */
+    private function isMainArchive(array $file): bool
+    {
+        $isAlternate = $this->intOrNull($file['isAlternate'] ?? null);
+
+        return !($isAlternate === 1 || ($file['isAlternate'] ?? false) === true);
+    }
+
+    /**
+     * A file is server installable when it explicitly points at a CurseForge
+     * server pack (serverPackFileId) or is itself marked as a server pack.
+     * Client packs have neither and only install on the client.
+     *
+     * @param array<string, mixed> $file
+     */
+    private function isServerInstallableFile(array $file): bool
+    {
+        return $this->fileReferencesServerPack($file)
+            || $this->isServerPack($file);
+    }
+
+    /**
+     * Resolves a file into the archive a server installation should deploy.
+     *
+     *  - A file that is itself a dedicated server pack is used directly.
+     *  - A main file that references a dedicated server pack is resolved to
+     *    that server pack; the client zip is never presented as the
+     *    installable version when a dedicated server pack exists.
+     *  - A publicly downloadable main archive with no dedicated server pack is
+     *    kept as a client pack, which the installation service resolves
+     *    through the CurseForge modpack manifest (mod files, overrides).
+     *
+     * @param array<string, mixed> $file
+     * @param array<string, array<string, mixed>> $serverPackCache
+     *
+     * @return array<string, mixed>|null
+     */
+    private function resolveInstallableFile(
+        array $file,
+        string $project,
+    ): ?array {
+        if ($this->isServerPack($file)) {
+            return $file;
+        }
+
+        if ($this->fileReferencesServerPack($file)) {
+            $serverPack = $this->fetchServerPackFile($project, $file);
+
+            if ($serverPack !== null) {
+                return $serverPack;
+            }
+        }
+
+        if (!$this->isMainArchive($file)) {
+            return null;
+        }
+
+        return $file;
+    }
+
+    /**
+     * Fetches the dedicated server pack referenced by a main file. Returns
+     * null when the reference is absent, no longer exists, or is no longer
+     * publicly downloadable so callers can fall back to the main archive.
+     *
+     * @param array<string, mixed> $file
+     *
+     * @return array<string, mixed>|null
+     */
+    private function fetchServerPackFile(
+        string $project,
+        array $file,
+    ): ?array {
+        $serverPackFileId = $this->intOrNull(
+            $file['serverPackFileId'] ?? null,
+        );
+
+        if ($serverPackFileId === null || $serverPackFileId <= 0) {
+            return null;
+        }
+
+        try {
+            $response = $this->http->get(
+                self::API_BASE
+                    . '/mods/'
+                    . $project
+                    . '/files/'
+                    . $serverPackFileId,
+                headers: $this->headers(),
+            );
+
+            if (
+                !is_array($response->body)
+                || !is_array($response->body['data'] ?? null)
+            ) {
+                throw new CatalogProviderException(
+                    'The modpack catalog provider returned an invalid response.',
+                );
+            }
+
+            $serverPack = $response->body['data'];
+        } catch (ProviderHttpException $exception) {
+            if ($exception->status() === 404) {
+                return null;
+            }
+
+            throw $this->requestFailure(
+                'Failed to fetch the server pack.',
+                $exception,
+            );
+        }
+
+        if (!$this->isPubliclyDownloadable($serverPack)) {
+            return null;
+        }
+
+        return $serverPack;
+    }
+
+    /**
+     * Emits a structured diagnostics line for the given search so filtering
+     * decisions are auditable in the panel's error log.
+     *
+     * @param array<string, mixed> $diagnostics
+     */
+    private function logDiagnostics(
+        CatalogSearchQuery $query,
+        array $diagnostics,
+    ): void {
+        $reasonSummary = [];
+
+        foreach (($diagnostics['exclusion_reasons'] ?? []) as $reason => $count) {
+            $reasonSummary[] = "{$reason}:{$count}";
+        }
+
+        $classSummary = [];
+
+        foreach (($diagnostics['classification'] ?? []) as $class => $count) {
+            $classSummary[] = "{$class}:{$count}";
+        }
+
+        $line = sprintf(
+            '[modpackinstaller] CurseForge search page=%d limit=%d query=%s '
+                . 'original_api_result_count=%d inspected=%d accepted=%d '
+                . 'excluded=%d exclusion_reasons=%s classification=%s '
+                . 'upstream_total=%s source_pages=%d more_source_pages=%d '
+                . 'page_filled=%d scan_exhausted=%d',
+            $query->page,
+            $query->limit,
+            json_encode($query->query),
+            $diagnostics['original_api_result_count'] ?? 0,
+            $diagnostics['inspected'] ?? 0,
+            $diagnostics['accepted'] ?? 0,
+            $diagnostics['excluded'] ?? 0,
+            implode(',', $reasonSummary),
+            implode(',', $classSummary),
+            json_encode($diagnostics['upstream_total'] ?? null),
+            $diagnostics['source_pages'] ?? 0,
+            (int) ($diagnostics['more_source_pages'] ?? false),
+            (int) ($diagnostics['page_filled'] ?? false),
+            (int) ($diagnostics['scan_exhausted'] ?? false),
+        );
+
+        @error_log($line);
     }
 
     /**
@@ -829,16 +1339,22 @@ final class CurseForgeCatalogProvider implements CatalogProvider
             $file['gameVersions'] ?? [],
         );
 
+        $version = $this->stringOrNull($file['displayName'] ?? null)
+            ?? $this->stringOrNull($file['fileName'] ?? null)
+            ?? $id;
+
+        if ($this->isServerPack($file) && stripos($version, 'server pack') === false) {
+            $version .= ' (Server Pack)';
+        }
+
         return new CatalogVersion(
             provider: $this->name(),
             projectId: $query->project,
             projectSlug: null,
             projectName: null,
             versionId: $id,
-            versionNumber: $this->stringOrNull($file['displayName'] ?? null)
-                ?? $this->stringOrNull($file['fileName'] ?? null)
-                ?? $id,
-            versionName: $this->stringOrNull($file['displayName'] ?? null),
+            versionNumber: $version,
+            versionName: $version,
             gameVersions: $gameVersions,
             loaders: $loaders,
             datePublished: $this->stringOrNull($file['fileDate'] ?? null),

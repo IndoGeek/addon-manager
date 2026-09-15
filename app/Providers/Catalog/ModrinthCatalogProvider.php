@@ -192,6 +192,10 @@ final class ModrinthCatalogProvider implements CatalogProvider
                 continue;
             }
 
+            if ($this->versionIsClientOnly($entry)) {
+                continue;
+            }
+
             $versions[] = $this->mapVersion($query, $entry);
         }
 
@@ -282,6 +286,30 @@ final class ModrinthCatalogProvider implements CatalogProvider
             ['draft', 'scheduled', 'unlisted', 'withheld'],
             true,
         );
+    }
+
+    /**
+     * Whether a search hit can only run on the client. The server_side flag
+     * is 'unsupported' exactly for client-only packs; required/optional are
+     * both server installable.
+     *
+     * @param array<string, mixed> $hit
+     */
+    private function hitIsClientOnly(array $hit): bool
+    {
+        return $this->stringOrNull($hit['server_side'] ?? null)
+            === 'unsupported';
+    }
+
+    /**
+     * Whether a version only runs on the client.
+     *
+     * @param array<string, mixed> $version
+     */
+    private function versionIsClientOnly(array $version): bool
+    {
+        return $this->stringOrNull($version['environment'] ?? null)
+            === 'client_only';
     }
 
     /**
@@ -392,14 +420,23 @@ final class ModrinthCatalogProvider implements CatalogProvider
     }
 
     /**
-     * Serializes the validated filters into Modrinth facet groups. Each filter
-     * group becomes its own facet group: values within a group are OR'ed by
-     * Modrinth, groups are AND'ed together. Empty groups are omitted.
+     * Serializes the validated filters into Modrinth facet groups. Every filter
+     * group becomes a facet group, plus an unconditional server_side rule so
+     * the catalogue only carries packs that can run on a server. The OR group
+     * is not perfectly reliable (a few client-only packs still leak), so hits
+     * are additionally guarded client-side in mapPayload().
+     *
+     * Values within a group are OR'ed by Modrinth, groups are AND'ed together.
+     * Empty groups are omitted.
      */
     private function buildFacets(CatalogSearchQuery $query): string
     {
         $facets = [
             ['project_type:modpack'],
+            [
+                'server_side:required',
+                'server_side:optional',
+            ],
         ];
 
         if ($query->gameVersions !== []) {
@@ -463,7 +500,15 @@ final class ModrinthCatalogProvider implements CatalogProvider
                 );
             }
 
+            if ($this->hitIsClientOnly($hit)) {
+                continue;
+            }
+
             $items[] = $this->mapHit($hit);
+        }
+
+        if (count($items) < count($hits)) {
+            $total = $query->offset() + count($items);
         }
 
         return new CatalogResult(

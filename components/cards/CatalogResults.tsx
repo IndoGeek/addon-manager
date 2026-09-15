@@ -10,6 +10,7 @@ interface CatalogResultsProps {
     catalogError: string | null;
     view: 'grid' | 'list';
     processing: boolean;
+    providerLabels: Record<string, string>;
     onRetry: () => void;
     onOpenDetails: (item: CatalogItem) => void;
     onPage: (page: number) => void;
@@ -22,6 +23,7 @@ export const CatalogResults = ({
     catalogError,
     view,
     processing,
+    providerLabels,
     onRetry,
     onOpenDetails,
     onPage,
@@ -82,6 +84,7 @@ export const CatalogResults = ({
                                     key={`${item.provider}:${item.provider_project_id}`}
                                     item={item}
                                     view={view}
+                                    providerLabels={providerLabels}
                                     onOpen={onOpenDetails}
                                     disabled={processing || searching}
                                 />

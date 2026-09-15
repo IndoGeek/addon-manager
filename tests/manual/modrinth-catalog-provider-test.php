@@ -63,6 +63,24 @@ final class FakeProviderHttpClient implements ProviderHttpClient
 
         return $handler;
     }
+
+    public function post(
+        string $url,
+        array $body = [],
+        array $headers = [],
+    ): ProviderHttpResponse {
+        $handler = array_shift($this->handlers);
+
+        if ($handler instanceof Throwable) {
+            throw $handler;
+        }
+
+        if (!$handler instanceof ProviderHttpResponse) {
+            throw new RuntimeException('Unexpected fake HTTP handler.');
+        }
+
+        return $handler;
+    }
 }
 
 function pass(string $name): void
@@ -190,6 +208,7 @@ if ($request['url'] !== 'https://api.modrinth.com/v2/search') {
 
 $expectedFacets = json_encode([
     ['project_type:modpack'],
+    ['server_side:required', 'server_side:optional'],
     ['versions:1.21.1'],
     ['categories:fabric'],
     ['categories:adventure'],
@@ -243,6 +262,7 @@ if ($multiRequest === null) {
 
 if (($multiRequest['query']['facets'] ?? null) !== json_encode([
     ['project_type:modpack'],
+    ['server_side:required', 'server_side:optional'],
     ['versions:1.21.1', 'versions:1.20.1'],
     ['categories:fabric', 'categories:neoforge'],
     ['categories:adventure', 'categories:technology'],
@@ -254,6 +274,64 @@ if (($multiRequest['query']['facets'] ?? null) !== json_encode([
 }
 
 pass('multi-value filters map to separate ANDed facet groups');
+
+$http = new FakeProviderHttpClient([
+    new ProviderHttpResponse(200, [
+        'hits' => [
+            [
+                'project_id' => 'srv001',
+                'slug' => 'server-pack',
+                'title' => 'Server Pack',
+                'client_side' => 'unsupported',
+                'server_side' => 'required',
+                'categories' => ['fabric'],
+                'display_categories' => ['fabric'],
+                'versions' => ['1.21.1'],
+                'downloads' => 10,
+                'project_type' => 'modpack',
+            ],
+            [
+                'project_id' => 'cli002',
+                'slug' => 'client-only-pack',
+                'title' => 'Client Only Pack',
+                'client_side' => 'required',
+                'server_side' => 'unsupported',
+                'categories' => ['forge'],
+                'display_categories' => [],
+                'versions' => ['1.21.1'],
+                'downloads' => 99,
+                'project_type' => 'modpack',
+            ],
+        ],
+        'total_hits' => 500,
+    ]),
+]);
+$provider = new ModrinthCatalogProvider($http);
+
+$serverOnly = $provider->search(new CatalogSearchQuery(
+    provider: 'modrinth',
+    limit: 50,
+));
+
+if (count($serverOnly->items) !== 1) {
+    throw new RuntimeException('Client-only search hits must be removed.');
+}
+
+if (($serverOnly->items[0]->slug ?? '') !== 'server-pack') {
+    throw new RuntimeException('Server-capable hit must be kept.');
+}
+
+if ($serverOnly->items[0]->environment !== 'server') {
+    throw new RuntimeException('Server-only hit environment label mismatch.');
+}
+
+if ($serverOnly->pagination->total !== 1) {
+    throw new RuntimeException(
+        'Filtered search must report a conservative total.',
+    );
+}
+
+pass('search removes hits that only run on the client');
 
 $items = $result->items;
 

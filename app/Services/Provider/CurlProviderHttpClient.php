@@ -24,8 +24,29 @@ final class CurlProviderHttpClient implements ProviderHttpClient
     ): ProviderHttpResponse {
         $this->assertHttpUrl($url);
 
-        $target = $this->appendQuery($url, $query);
+        return $this->execute(
+            $this->appendQuery($url, $query),
+            $headers,
+        );
+    }
 
+    public function post(
+        string $url,
+        array $body = [],
+        array $headers = [],
+    ): ProviderHttpResponse {
+        $this->assertHttpUrl($url);
+
+        $headers[] = 'Content-Type: application/json';
+
+        return $this->execute($url, $headers, $body);
+    }
+
+    private function execute(
+        string $target,
+        array $headers,
+        array $body = [],
+    ): ProviderHttpResponse {
         $curl = curl_init();
 
         if ($curl === false) {
@@ -34,7 +55,7 @@ final class CurlProviderHttpClient implements ProviderHttpClient
             );
         }
 
-        curl_setopt_array($curl, [
+        $options = [
             CURLOPT_URL => $target,
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_FOLLOWLOCATION => false,
@@ -56,7 +77,14 @@ final class CurlProviderHttpClient implements ProviderHttpClient
             ): int {
                 return $downloaded > $this->maxResponseBytes ? 1 : 0;
             },
-        ]);
+        ];
+
+        if ($body !== []) {
+            $options[CURLOPT_POST] = true;
+            $options[CURLOPT_POSTFIELDS] = json_encode($body);
+        }
+
+        curl_setopt_array($curl, $options);
 
         $raw = curl_exec($curl);
 

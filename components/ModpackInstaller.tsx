@@ -292,6 +292,14 @@ export default () => {
         disabled: !provider.available,
     }));
 
+    const providerLabels: Record<string, string> =
+        Object.fromEntries(
+            (providers ?? []).map((provider) => [
+                provider.name,
+                provider.label,
+            ]),
+        );
+
     const catalogBusy =
         searching || visibleProviders.length === 0;
 
@@ -1772,6 +1780,7 @@ export default () => {
                     catalogError={catalogError}
                     view={view}
                     processing={processing}
+                    providerLabels={providerLabels}
                     onRetry={() =>
                         runSearch({
                             ...filtersRef.current,
@@ -1849,7 +1858,9 @@ export default () => {
                                     <h4>{metadata.name}</h4>
 
                                     <span className="modpackinstaller-catalog-card-provider">
-                                        {metadata.source.split('://')[0]}
+                                        {providerLabels[
+                                            metadata.source.split('://')[0]
+                                        ] ?? metadata.source.split('://')[0]}
                                     </span>
                                 </div>
 
@@ -1999,6 +2010,7 @@ export default () => {
                     activeInstall={activeInstall}
                     activeProgress={activeProgress}
                     outcomeBanner={outcomeBanner}
+                    providerLabels={providerLabels}
                     onCancelActive={cancelActiveInstall}
                     onDismissOutcome={dismissOutcome}
                     onRefresh={refreshInstalled}

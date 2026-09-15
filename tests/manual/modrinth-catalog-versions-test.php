@@ -62,6 +62,24 @@ final class FakeProviderHttpClient implements ProviderHttpClient
 
         return $handler;
     }
+
+    public function post(
+        string $url,
+        array $body = [],
+        array $headers = [],
+    ): ProviderHttpResponse {
+        $handler = array_shift($this->handlers);
+
+        if ($handler instanceof Throwable) {
+            throw $handler;
+        }
+
+        if (!$handler instanceof ProviderHttpResponse) {
+            throw new RuntimeException('Unexpected fake HTTP handler.');
+        }
+
+        return $handler;
+    }
 }
 
 function pass(string $name): void
@@ -209,6 +227,68 @@ if ($second->projectSlug !== null || $second->projectName !== null) {
 }
 
 pass('nullable fields mapped defensively');
+
+$http = new FakeProviderHttpClient([
+    new ProviderHttpResponse(200, [
+        [
+            'id' => 'env001',
+            'version_number' => '1.0.0',
+            'name' => 'Both sides',
+            'game_versions' => ['1.21.1'],
+            'loaders' => ['fabric'],
+            'date_published' => '2025-02-01T10:00:00Z',
+            'downloads' => 3,
+            'status' => 'listed',
+            'environment' => 'client_and_server',
+        ],
+        [
+            'id' => 'env002',
+            'version_number' => '1.1.0',
+            'name' => 'Server only',
+            'game_versions' => ['1.21.1'],
+            'loaders' => ['fabric'],
+            'date_published' => '2025-02-02T10:00:00Z',
+            'downloads' => 4,
+            'status' => 'listed',
+            'environment' => 'server_only',
+        ],
+        [
+            'id' => 'env003',
+            'version_number' => '1.2.0',
+            'name' => 'Client only',
+            'game_versions' => ['1.21.1'],
+            'loaders' => ['fabric'],
+            'date_published' => '2025-02-03T10:00:00Z',
+            'downloads' => 5,
+            'status' => 'listed',
+            'environment' => 'client_only',
+        ],
+    ]),
+]);
+$provider = new ModrinthCatalogProvider($http);
+
+$filtered = $provider->versions(new CatalogVersionQuery(
+    project: 'env-pack',
+));
+
+if (count($filtered) !== 2) {
+    throw new RuntimeException(
+        'Client-only versions should not be listed.',
+    );
+}
+
+$envIds = array_map(
+    static fn ($version): string => $version->versionId,
+    $filtered,
+);
+
+sort($envIds);
+
+if ($envIds !== ['env001', 'env002']) {
+    throw new RuntimeException('Wrong versions after environment filter.');
+}
+
+pass('versions filter out client-only releases');
 
 $http = new FakeProviderHttpClient([
     new ProviderHttpResponse(200, []),

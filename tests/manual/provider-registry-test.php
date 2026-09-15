@@ -39,6 +39,14 @@ final class StubProviderHttpClient implements ProviderHttpClient
     ): ProviderHttpResponse {
         throw new ProviderHttpException('Unexpected HTTP request.', 500);
     }
+
+    public function post(
+        string $url,
+        array $body = [],
+        array $headers = [],
+    ): ProviderHttpResponse {
+        throw new ProviderHttpException('Unexpected HTTP request.', 500);
+    }
 }
 
 final class StubDownloader implements Downloader

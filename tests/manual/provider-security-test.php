@@ -60,6 +60,24 @@ final class FakeProviderHttpClient implements ProviderHttpClient
 
         return $handler;
     }
+
+    public function post(
+        string $url,
+        array $body = [],
+        array $headers = [],
+    ): ProviderHttpResponse {
+        $handler = array_shift($this->handlers);
+
+        if ($handler instanceof Throwable) {
+            throw $handler;
+        }
+
+        if (!$handler instanceof ProviderHttpResponse) {
+            throw new RuntimeException('Unexpected fake HTTP handler.');
+        }
+
+        return $handler;
+    }
 }
 
 final class FakeDownloader implements Downloader

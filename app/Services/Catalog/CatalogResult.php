@@ -25,6 +25,9 @@ final readonly class CatalogResult
         public array $appliedLoaders = [],
         public array $appliedCategories = [],
         public array $appliedEnvironments = [],
+        public ?int $upstreamTotal = null,
+        public ?int $filteredTotal = null,
+        public array $diagnostics = [],
     ) {
     }
 
@@ -48,6 +51,9 @@ final readonly class CatalogResult
                 'environments' => $this->appliedEnvironments,
             ],
             'sort' => $this->sort,
+            'upstream_total' => $this->upstreamTotal,
+            'filtered_total' => $this->filteredTotal,
+            'diagnostics' => $this->diagnostics,
         ];
     }
 }

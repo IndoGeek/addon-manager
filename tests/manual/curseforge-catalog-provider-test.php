@@ -25,6 +25,7 @@ use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Providers\Catalog
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogProjectQuery;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogSearchQuery;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogUnavailableException;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogVersionQuery;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Provider\ProviderHttpClient;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Provider\ProviderHttpException;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Provider\ProviderHttpResponse;
@@ -47,6 +48,30 @@ final class FakeProviderHttpClient implements ProviderHttpClient
         $this->requests[] = [
             'url' => $url,
             'query' => $query,
+            'headers' => $headers,
+        ];
+
+        $handler = array_shift($this->handlers);
+
+        if ($handler instanceof Throwable) {
+            throw $handler;
+        }
+
+        if (!$handler instanceof ProviderHttpResponse) {
+            throw new RuntimeException('Unexpected fake HTTP handler.');
+        }
+
+        return $handler;
+    }
+
+    public function post(
+        string $url,
+        array $body = [],
+        array $headers = [],
+    ): ProviderHttpResponse {
+        $this->requests[] = [
+            'url' => $url,
+            'body' => $body,
             'headers' => $headers,
         ];
 
@@ -97,6 +122,46 @@ function sampleMod(int $id, string $slug, string $loaderValue): array
         ],
         'logo' => ['url' => 'https://cdn.example/' . $slug . '.png'],
     ];
+}
+
+/**
+ * A mod as returned by the bulk /mods endpoint (includes latestFiles).
+ *
+ * @param array<int, array<string, mixed>> $latestFiles
+ *
+ * @return array<string, mixed>
+ */
+function sampleModDetails(int $id, array $latestFiles): array
+{
+    return [
+        'id' => $id,
+        'slug' => 'pack-' . $id,
+        'classId' => 4471,
+        'latestFiles' => $latestFiles,
+    ];
+}
+
+/**
+ * @param array<string, mixed> $extra
+ *
+ * @return array<string, mixed>
+ */
+function sampleFile(int $id, string $name, array $extra = []): array
+{
+    return array_merge([
+        'id' => $id,
+        'displayName' => $name,
+        'fileName' => $name,
+        'gameVersions' => ['1.20.1', 'Forge'],
+        'fileDate' => '2025-01-10T00:00:00Z',
+        'downloadCount' => 5,
+        'fileLength' => 1024,
+        'fileStatus' => 4,
+        'isAvailable' => true,
+        'downloadUrl' => 'https://download.curseforge.com/' . $id,
+        'isServerPack' => false,
+        'serverPackFileId' => null,
+    ], $extra);
 }
 
 $unconfigured = new CurseForgeCatalogProvider(new FakeProviderHttpClient([]), null);
@@ -153,10 +218,54 @@ if (($headers['sort'] ?? false) !== true || ($headers['loaders'] ?? false) !== t
 
 pass('configured credentials report available state');
 
+/**
+ * A block of server-capable search hits numbered consecutively from $from.
+ *
+ * @return array<int, array<string, mixed>>
+ */
+function searchBlock(int $from, int $count): array
+{
+    $mods = [];
+
+    for ($i = 0; $i < $count; $i++) {
+        $id = $from + $i;
+        $mods[] = sampleMod($id, 'pack-' . $id, 4);
+    }
+
+    return $mods;
+}
+
+/**
+ * A bulk /mods payload of server-capable details for the given ids.
+ *
+ * @param array<int, int> $ids
+ *
+ * @return array<int, array<string, mixed>>
+ */
+function capableBulk(array $ids): array
+{
+    $details = [];
+
+    foreach ($ids as $id) {
+        $details[] = sampleModDetails($id, [
+            [
+                'id' => 5000 + $id,
+                'isServerPack' => false,
+                'serverPackFileId' => 6000 + $id,
+            ],
+        ]);
+    }
+
+    return $details;
+}
+
 $http = new FakeProviderHttpClient([
     new ProviderHttpResponse(200, [
-        'data' => [sampleMod(111, 'fabric-pack', 4)],
+        'data' => searchBlock(1, 50),
         'pagination' => ['totalCount' => 137],
+    ]),
+    new ProviderHttpResponse(200, [
+        'data' => capableBulk(range(1, 50)),
     ]),
 ]);
 $provider = new CurseForgeCatalogProvider($http, 'secret-key');
@@ -164,7 +273,6 @@ $provider = new CurseForgeCatalogProvider($http, 'secret-key');
 $result = $provider->search(new CatalogSearchQuery(
     provider: 'curseforge',
     sort: \Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogSort::DOWNLOADS,
-    page: 3,
     limit: 25,
 ));
 
@@ -186,12 +294,12 @@ if (($request['query']['classId'] ?? null) !== 4471) {
     throw new RuntimeException('Missing modpacks classId.');
 }
 
-if ((int) ($request['query']['index'] ?? -1) !== 50) {
-    throw new RuntimeException('Unexpected index for page 3.');
+if ((int) ($request['query']['index'] ?? -1) !== 0) {
+    throw new RuntimeException('Scan must start at upstream index 0.');
 }
 
-if ((int) ($request['query']['pageSize'] ?? 0) !== 25) {
-    throw new RuntimeException('Unexpected pageSize.');
+if ((int) ($request['query']['pageSize'] ?? 0) !== 50) {
+    throw new RuntimeException('Scan blocks must be requested at size 50.');
 }
 
 if ((int) ($request['query']['sortField'] ?? 0) !== 6) {
@@ -202,11 +310,216 @@ if (!str_contains(($request['headers'][0] ?? ''), 'X-Api-Key: secret-key')) {
     throw new RuntimeException('API key header missing from request.');
 }
 
-if ($result->pagination->total !== 137) {
-    throw new RuntimeException('Unexpected upstream total.');
+if (count($result->items) !== 25) {
+    throw new RuntimeException('A full result page must be filled.');
 }
 
-pass('search builds correct request parameters and API key header');
+if (($result->items[0]->slug ?? '') !== 'pack-1') {
+    throw new RuntimeException('Accepted stream must preserve upstream order.');
+}
+
+if ($result->pagination->total !== 137) {
+    throw new RuntimeException('Upstream total must be preserved when the scan has not exhausted the corpus.');
+}
+
+if ($result->upstreamTotal !== 137 || $result->filteredTotal !== null) {
+    throw new RuntimeException('Upstream/filtered totals must be reported separately.');
+}
+
+$diagnostics = $result->diagnostics;
+
+if (($diagnostics['original_api_result_count'] ?? 0) !== 50) {
+    throw new RuntimeException('Diagnostics must report the raw upstream result count.');
+}
+
+if (($diagnostics['accepted'] ?? 0) !== 50) {
+    throw new RuntimeException('Diagnostics must report the accepted count.');
+}
+
+if (($diagnostics['source_pages'] ?? 0) !== 1 || ($diagnostics['more_source_pages'] ?? true) !== false) {
+    throw new RuntimeException('Single-block scans must report one source page.');
+}
+
+if (($diagnostics['scan_exhausted'] ?? null) !== false) {
+    throw new RuntimeException('A 50-item block must not imply an exhausted scan.');
+}
+
+pass('search scans from index 0, fills the page, and preserves the upstream total');
+
+$http = new FakeProviderHttpClient([
+    new ProviderHttpResponse(200, [
+        'data' => searchBlock(1, 50),
+        'pagination' => ['totalCount' => 137],
+    ]),
+    new ProviderHttpResponse(200, [
+        'data' => capableBulk(range(1, 50)),
+    ]),
+    new ProviderHttpResponse(200, [
+        'data' => searchBlock(51, 50),
+        'pagination' => ['totalCount' => 137],
+    ]),
+    new ProviderHttpResponse(200, [
+        'data' => capableBulk(range(51, 100)),
+    ]),
+]);
+$provider = new CurseForgeCatalogProvider($http, 'secret-key');
+
+$deep = $provider->search(new CatalogSearchQuery(
+    provider: 'curseforge',
+    limit: 25,
+    page: 3,
+));
+
+$secondBlock = $http->requests[2] ?? null;
+
+if ((int) ($secondBlock['query']['index'] ?? -1) !== 50) {
+    throw new RuntimeException('Deep pages must continue the scan at the next block.');
+}
+
+if (count($deep->items) !== 25) {
+    throw new RuntimeException('Deep pages must pull from later source blocks.');
+}
+
+if (($deep->items[0]->slug ?? '') !== 'pack-51') {
+    throw new RuntimeException('Page offset must slice the accepted stream correctly.');
+}
+
+if (($deep->diagnostics['more_source_pages'] ?? false) !== true) {
+    throw new RuntimeException('Multi-block scans must report more source pages.');
+}
+
+if (($deep->diagnostics['accepted'] ?? 0) !== 100) {
+    throw new RuntimeException('Accepted count must span every scanned block.');
+}
+
+pass('pagination on later pages reaches projects from subsequent upstream blocks');
+
+$http = new FakeProviderHttpClient([
+    new ProviderHttpResponse(200, [
+        'data' => array_merge(
+            searchBlock(1, 30),
+            searchBlock(31, 10),
+            searchBlock(41, 7),
+            searchBlock(48, 3),
+        ),
+        'pagination' => ['totalCount' => 137],
+    ]),
+    new ProviderHttpResponse(200, [
+        'data' => array_merge(
+            capableBulk(range(1, 30)),
+            array_map(
+                static fn (int $id): array => sampleModDetails($id, [
+                    [
+                        'id' => 5000 + $id,
+                        'isServerPack' => false,
+                        'serverPackFileId' => null,
+                        'fileStatus' => 4,
+                        'isAvailable' => true,
+                        'downloadUrl' => 'https://download.curseforge.com/' . $id,
+                        'isAlternate' => 0,
+                    ],
+                ]),
+                range(31, 40),
+            ),
+            array_map(
+                static fn (int $id): array => sampleModDetails($id, [
+                    [
+                        'id' => 5000 + $id,
+                        'isServerPack' => false,
+                        'serverPackFileId' => null,
+                        'fileStatus' => 3,
+                        'isAvailable' => true,
+                        'downloadUrl' => 'https://download.curseforge.com/' . $id,
+                        'isAlternate' => 0,
+                    ],
+                ]),
+                range(48, 50),
+            ),
+        ),
+    ]),
+]);
+$provider = new CurseForgeCatalogProvider($http, 'secret-key');
+
+$classified = $provider->search(new CatalogSearchQuery(
+    provider: 'curseforge',
+    limit: 47,
+));
+
+if (count($classified->items) !== 47) {
+    throw new RuntimeException('Server-pack, main-archive and unknown projects must all be kept.');
+}
+
+$slugs = array_map(
+    static fn ($item): string => $item->slug,
+    $classified->items,
+);
+
+foreach (['pack-1', 'pack-31', 'pack-45'] as $expected) {
+    if (!in_array($expected, $slugs, true)) {
+        throw new RuntimeException("Expected retained project {$expected} missing.");
+    }
+}
+
+if (in_array('pack-48', $slugs, true) || in_array('pack-50', $slugs, true)) {
+    throw new RuntimeException('Client-only projects must be excluded.');
+}
+
+$classification = $classified->diagnostics['classification'] ?? [];
+
+if (
+    ($classification['server_pack'] ?? 0) !== 30
+    || ($classification['main_archive'] ?? 0) !== 10
+    || ($classification['unknown'] ?? 0) !== 7
+    || ($classification['client_only'] ?? 0) !== 3
+) {
+    throw new RuntimeException('Classification buckets must be reported accurately.');
+}
+
+if (($classified->diagnostics['excluded'] ?? 0) !== 3) {
+    throw new RuntimeException('Excluded count must match client-only projects.');
+}
+
+if (($classified->diagnostics['exclusion_reasons']['no_server_or_public_archive'] ?? 0) !== 3) {
+    throw new RuntimeException('Client-only exclusions must be attributed to a reason.');
+}
+
+if ($classified->pagination->total !== 137) {
+    throw new RuntimeException('Non-exhausted scans must keep the upstream total even when projects are excluded.');
+}
+
+pass('search classifies projects and only excludes client-only ones');
+
+$http = new FakeProviderHttpClient([
+    new ProviderHttpResponse(200, [
+        'data' => [
+            sampleMod(101, 'small-pack', 4),
+        ],
+        'pagination' => ['totalCount' => 1],
+    ]),
+    new ProviderHttpResponse(200, [
+        'data' => capableBulk([101]),
+    ]),
+]);
+$provider = new CurseForgeCatalogProvider($http, 'secret-key');
+
+$small = $provider->search(new CatalogSearchQuery(
+    provider: 'curseforge',
+    limit: 50,
+));
+
+if (count($small->items) !== 1) {
+    throw new RuntimeException('Short upstream corpora must return their accepted items.');
+}
+
+if ($small->pagination->total !== 1 || $small->filteredTotal !== 1) {
+    throw new RuntimeException('Exhausted scans must report the exact accepted total.');
+}
+
+if (($small->diagnostics['scan_exhausted'] ?? false) !== true) {
+    throw new RuntimeException('Short upstream corpora must be flagged as exhausted.');
+}
+
+pass('exhausted scans report the exact accepted total');
 
 $http = new FakeProviderHttpClient([
     new ProviderHttpResponse(200, [
@@ -214,7 +527,14 @@ $http = new FakeProviderHttpClient([
             sampleMod(111, 'fabric-pack', 4),
             sampleMod(222, 'neo-pack', 6),
         ],
-        'pagination' => ['totalCount' => 500],
+        'pagination' => ['totalCount' => 2],
+    ]),
+    new ProviderHttpResponse(200, [
+        'data' => [
+            sampleModDetails(111, [
+                ['id' => 501, 'isServerPack' => false, 'serverPackFileId' => 502],
+            ]),
+        ],
     ]),
 ]);
 $provider = new CurseForgeCatalogProvider($http, 'secret-key');
@@ -222,6 +542,7 @@ $provider = new CurseForgeCatalogProvider($http, 'secret-key');
 $multi = $provider->search(new CatalogSearchQuery(
     provider: 'curseforge',
     loader: ['fabric', 'forge'],
+    limit: 25,
 ));
 
 $multiRequest = $http->requests[0] ?? null;
@@ -229,6 +550,14 @@ $multiRequest = $http->requests[0] ?? null;
 if (($multiRequest['query']['modLoaderType'] ?? null) !== 4) {
     throw new RuntimeException(
         'First loader should be applied upstream as modLoaderType.',
+    );
+}
+
+$multiBulk = $http->requests[1] ?? null;
+
+if (($multiBulk['body'] ?? null) !== ['modIds' => [111]]) {
+    throw new RuntimeException(
+        'Bulk mods request should only carry the post-filtered ids.',
     );
 }
 
@@ -254,10 +583,8 @@ if (($multi->items[0]->bannerUrl ?? null) !== 'https://cdn.example/fabric-pack-s
     throw new RuntimeException('First screenshot should map to the banner.');
 }
 
-if ($multi->pagination->total !== 1) {
-    throw new RuntimeException(
-        'Conservative total should only count visible items.',
-    );
+if ($multi->upstreamTotal !== 2) {
+    throw new RuntimeException('Upstream total must be preserved alongside the filtered total.');
 }
 
 if ($multi->appliedLoaders !== ['fabric', 'forge']) {
@@ -265,6 +592,131 @@ if ($multi->appliedLoaders !== ['fabric', 'forge']) {
 }
 
 pass('multi-value loaders apply upstream + provider-side honestly');
+
+$http = new FakeProviderHttpClient([
+    new ProviderHttpResponse(200, [
+        'data' => [
+            sampleFile(701, 'with server pack', ['serverPackFileId' => 702]),
+            sampleFile(703, 'server pack file', ['isServerPack' => true]),
+            sampleFile(704, 'client only'),
+            sampleFile(705, 'non-public', ['fileStatus' => 3]),
+        ],
+    ]),
+    new ProviderHttpResponse(200, [
+        'data' => sampleFile(702, 'dedicated server pack', ['isServerPack' => true]),
+    ]),
+]);
+$provider = new CurseForgeCatalogProvider($http, 'secret-key');
+
+$versions = $provider->versions(new CatalogVersionQuery(
+    provider: 'curseforge',
+    project: '444',
+));
+
+$versionRequest = $http->requests[0] ?? null;
+
+if (($versionRequest['url'] ?? '') !== 'https://api.curseforge.com/v1/mods/444/files') {
+    throw new RuntimeException('Unexpected files URL.');
+}
+
+$serverPackRequest = $http->requests[1] ?? null;
+
+if (($serverPackRequest['url'] ?? '') !== 'https://api.curseforge.com/v1/mods/444/files/702') {
+    throw new RuntimeException(
+        'The referenced server pack should be resolved on the version list.',
+    );
+}
+
+if (count($versions) !== 3) {
+    throw new RuntimeException('Unexpected number of listed versions.');
+}
+
+$ids = array_map(static fn ($version): string => $version->versionId, $versions);
+
+sort($ids);
+
+if ($ids !== ['702', '703', '704']) {
+    throw new RuntimeException('Unexpected resolved version ids.');
+}
+
+$mainVersion = array_values(array_filter(
+    $versions,
+    static fn ($version): bool => $version->versionId === '701',
+));
+
+if ($mainVersion !== []) {
+    throw new RuntimeException(
+        'The client zip must never be listed when a dedicated server pack exists.',
+    );
+}
+
+$resolved = array_values(array_filter(
+    $versions,
+    static fn ($version): bool => $version->versionId === '702',
+))[0];
+
+if ($resolved->source !== 'curseforge://444@702') {
+    throw new RuntimeException(
+        'The resolved server pack id should drive the install source.',
+    );
+}
+
+if (stripos($resolved->versionNumber, 'server pack') === false) {
+    throw new RuntimeException(
+        'The resolved server pack version label must identify the server pack.',
+    );
+}
+
+pass('versions resolve dedicated server packs and keep installable main archives');
+
+$http = new FakeProviderHttpClient([
+    new ProviderHttpResponse(200, [
+        'data' => [
+            sampleFile(8610060, 'Vagrant Saga-1.1.8.zip', [
+                'serverPackFileId' => 8610312,
+                'fileDate' => '2025-01-01T00:00:00Z',
+            ]),
+            sampleFile(8610312, 'Vagrant Saga Server Pack-1.1.8.zip', [
+                'isServerPack' => true,
+                'fileDate' => '2024-12-31T00:00:00Z',
+            ]),
+        ],
+    ]),
+    new ProviderHttpResponse(200, [
+        'data' => sampleFile(8610312, 'Vagrant Saga Server Pack-1.1.8.zip', [
+            'isServerPack' => true,
+            'fileDate' => '2024-12-31T00:00:00Z',
+        ]),
+    ]),
+]);
+$provider = new CurseForgeCatalogProvider($http, 'secret-key');
+
+$versions = $provider->versions(new CatalogVersionQuery(
+    provider: 'curseforge',
+    project: '442958',
+));
+
+if (count($versions) !== 1) {
+    throw new RuntimeException(
+        'A main file referencing its own server pack must produce a single version.',
+    );
+}
+
+$version = $versions[0];
+
+if ($version->versionId !== '8610312' || $version->source !== 'curseforge://442958@8610312') {
+    throw new RuntimeException(
+        'Versions must resolve to the dedicated server pack, not the client zip.',
+    );
+}
+
+if (stripos($version->versionNumber, 'server pack') === false) {
+    throw new RuntimeException(
+        'The version label must clearly identify the Vagrant Saga-style server pack.',
+    );
+}
+
+pass('main-versus-server-pack archives are not confused (Vagrant Saga style)');
 
 $http = new FakeProviderHttpClient([
     new ProviderHttpException('Unexpected request.', 500),

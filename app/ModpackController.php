@@ -1399,6 +1399,7 @@ final class ModpackController extends Controller
                 http: $http,
                 downloader: $driver,
                 apiKey: $this->curseForgeApiKey(),
+                temporaryRoot: self::TEMPORARY_ROOT,
             ),
         ]);
     }

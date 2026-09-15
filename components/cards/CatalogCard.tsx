@@ -17,11 +17,13 @@ export const CatalogCard = ({
     view,
     onOpen,
     disabled,
+    providerLabels,
 }: {
     item: CatalogItem;
     view: 'grid' | 'list';
     onOpen: (item: CatalogItem) => void;
     disabled: boolean;
+    providerLabels: Record<string, string>;
 }) => {
     const tags = buildCardTags(item);
 
@@ -66,7 +68,7 @@ export const CatalogCard = ({
                         <h4 title={item.name}>{item.name}</h4>
 
                         <span className="modpackinstaller-catalog-card-provider">
-                            {item.provider}
+                            {providerLabels[item.provider] ?? item.provider}
                         </span>
                     </div>
 

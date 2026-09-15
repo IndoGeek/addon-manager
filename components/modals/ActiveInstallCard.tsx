@@ -25,11 +25,13 @@ export const ActiveInstallCard = ({
     progress,
     onCancel,
     onDismiss,
+    providerLabels,
 }: {
     active: ActiveInstallRecord;
     progress: InstallProgressData | null;
     onCancel: () => void;
     onDismiss: () => void;
+    providerLabels: Record<string, string>;
 }) => {
     const mounted = useRef(true);
 
@@ -99,7 +101,7 @@ export const ActiveInstallCard = ({
                     <h4 title={active.name}>{active.name}</h4>
 
                     <span className="modpackinstaller-catalog-card-provider">
-                        {active.provider}
+                        {providerLabels[active.provider] ?? active.provider}
                     </span>
                 </div>
 

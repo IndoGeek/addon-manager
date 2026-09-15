@@ -106,7 +106,7 @@ export const DetailsModalBody = ({
                             </h4>
 
                             <span className="modpackinstaller-catalog-card-provider">
-                                {detailsItem.provider}
+                                {providerLabel ?? detailsItem.provider}
                             </span>
                         </div>
 

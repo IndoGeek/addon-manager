@@ -61,21 +61,48 @@ final class FakeProviderHttpClient implements ProviderHttpClient
 
         return $handler;
     }
+
+    public function post(
+        string $url,
+        array $body = [],
+        array $headers = [],
+    ): ProviderHttpResponse {
+        $handler = array_shift($this->handlers);
+
+        if ($handler instanceof Throwable) {
+            throw $handler;
+        }
+
+        if (!$handler instanceof ProviderHttpResponse) {
+            throw new RuntimeException('Unexpected fake HTTP handler.');
+        }
+
+        return $handler;
+    }
 }
 
 final class FakeDownloader implements Downloader
 {
     public int $calls = 0;
 
-    public function __construct(private readonly string $archivePath)
-    {
+    /** @param array<string, string> $routes       URL => archive path */
+    /** @param array<int, string>    $failedUrls   URLs that throw during download */
+    public function __construct(
+        private readonly string $archivePath,
+        private array $routes = [],
+        private array $failedUrls = [],
+    ) {
     }
 
     public function download(string $url): string
     {
         $this->calls++;
 
-        return $this->archivePath;
+        if (in_array($url, $this->failedUrls, true)) {
+            throw new RuntimeException('Download failed for ' . $url);
+        }
+
+        return $this->routes[$url] ?? $this->archivePath;
     }
 
     public int $offsetBytes = 0;
@@ -364,35 +391,461 @@ pass('missing public download URL produces controlled error');
 
 $clientPackPath = $temporaryRoot . '/client-pack.zip';
 buildZip($clientPackPath, [
-    'manifest.json' => '{"minecraft":{"version":"1.20.4"}}',
-    'overrides/config/client.toml' => 'client-only',
+    'manifest.json' => json_encode([
+        'minecraft' => [
+            'version' => '1.20.4',
+            'modLoaders' => [['id' => 'fabric-0.14.21', 'primary' => true]],
+        ],
+        'manifestType' => 'minecraftModpack',
+        'manifestVersion' => 1,
+        'name' => 'Prominence 2 RPG',
+        'version' => '1.0.0',
+        'overrides' => 'overrides',
+        'files' => [
+            [
+                'projectID' => 123,
+                'fileID' => 1001,
+                'required' => true,
+                'env' => ['client' => 'required', 'server' => 'required'],
+            ],
+            [
+                'projectID' => 456,
+                'fileID' => 1002,
+                'required' => true,
+                'env' => ['client' => 'required', 'server' => 'unsupported'],
+            ],
+            [
+                'projectID' => 789,
+                'fileID' => 1003,
+                'required' => false,
+            ],
+        ],
+    ]),
+    'overrides/config/install.toml' => 'server-config',
+    'config/client-only.toml' => 'should-not-leak',
 ]);
 
-$downloader = new FakeDownloader($clientPackPath);
-$http = new FakeProviderHttpClient([$projectResponse, $filesResponse]);
+$modJarPath = $temporaryRoot . '/downloaded-mod.jar';
+file_put_contents($modJarPath, 'MODJAR');
+
+$filesResolveResponse = new ProviderHttpResponse(200, [
+    'data' => [
+        [
+            'id' => 1001,
+            'fileName' => 'essential-mod.jar',
+            'downloadUrl' => 'https://cdn.example/mods/essential-mod.jar',
+            'fileLength' => 512,
+            'fileStatus' => 4,
+            'isAvailable' => true,
+        ],
+        [
+            'id' => 1002,
+            'fileName' => 'client-only-mod.jar',
+            'downloadUrl' => 'https://cdn.example/mods/client-only-mod.jar',
+            'fileLength' => 256,
+            'fileStatus' => 4,
+            'isAvailable' => true,
+        ],
+        [
+            'id' => 1003,
+            'fileName' => 'optional-mod.jar',
+            'downloadUrl' => 'https://cdn.example/mods/optional-mod.jar',
+            'fileLength' => 128,
+            'fileStatus' => 4,
+            'isAvailable' => true,
+        ],
+    ],
+]);
+
+$downloader = new FakeDownloader($clientPackPath, [
+    'https://cdn.example/mods/essential-mod.jar' => $modJarPath,
+]);
+$http = new FakeProviderHttpClient([
+    $projectResponse,
+    $filesResponse,
+    $filesResolveResponse,
+]);
 $provider = new CurseForgeProvider(
     $http,
     $downloader,
     SECRET_KEY,
+    $temporaryRoot,
 );
 
+$package = $provider->getPackage('curseforge://314768');
+
+$normalized = new ZipArchive();
+$normalized->open($package->archivePath);
+
 try {
-    $provider->getPackage('curseforge://314768');
-    throw new RuntimeException('Client pack was not rejected.');
-} catch (UnsupportedModpackPackageException $exception) {
-    if (!str_contains($exception->getMessage(), 'client pack')) {
-        throw new RuntimeException('Unexpected client-pack error message.');
+    $entries = [];
+
+    for ($index = 0; $index < $normalized->numFiles; $index++) {
+        $entries[] = $normalized->getNameIndex($index);
     }
-    if (str_contains($exception->getMessage(), SECRET_KEY)) {
-        throw new RuntimeException('API key leaked into error message.');
+
+    sort($entries);
+
+    if ($entries !== ['config/install.toml', 'mods/essential-mod.jar']) {
+        throw new RuntimeException(
+            'Unexpected normalized client-pack contents: ' . implode(',', $entries),
+        );
     }
+
+    if ($normalized->getFromName('mods/essential-mod.jar') !== 'MODJAR') {
+        throw new RuntimeException('Resolved manifest mod was not embedded.');
+    }
+
+    if ($normalized->getFromName('config/install.toml') !== 'server-config') {
+        throw new RuntimeException('Overrides were not applied to the server root.');
+    }
+
+    if ($normalized->statName('manifest.json') !== false) {
+        throw new RuntimeException(
+            'The client-pack manifest must not ship in the server archive.',
+        );
+    }
+
+    if ($normalized->statName('config/client-only.toml') !== false) {
+        throw new RuntimeException(
+            'Non-override client-pack content leaked into the server archive.',
+        );
+    }
+} finally {
+    $normalized->close();
+}
+
+if ($package->source !== 'curseforge://314768') {
+    throw new RuntimeException('Unexpected client-pack package source.');
 }
 
 if (is_file($clientPackPath)) {
     throw new RuntimeException('Downloaded client pack was not cleaned up.');
 }
 
-pass('client-pack archive rejected with controlled exception and cleaned up');
+$provider->cleanup($package);
+
+if (is_file($package->archivePath)) {
+    throw new RuntimeException('Cleanup did not remove the normalized archive.');
+}
+
+pass('client-pack archive resolved through the manifest into a normalized server archive');
+
+$brokenClientPackPath = $temporaryRoot . '/broken-client-pack.zip';
+buildZip($brokenClientPackPath, [
+    'manifest.json' => 'not-json',
+    'overrides/config/x.txt' => 'x',
+]);
+
+$downloader = new FakeDownloader($brokenClientPackPath);
+$http = new FakeProviderHttpClient([$projectResponse, $filesResponse]);
+$provider = new CurseForgeProvider(
+    $http,
+    $downloader,
+    SECRET_KEY,
+    $temporaryRoot,
+);
+
+try {
+    $provider->getPackage('curseforge://314768');
+    throw new RuntimeException('Malformed client-pack manifest was not rejected.');
+} catch (UnsupportedModpackPackageException $exception) {
+    if (!str_contains($exception->getMessage(), 'malformed')) {
+        throw new RuntimeException('Unexpected malformed-manifest error message.');
+    }
+    if (str_contains($exception->getMessage(), SECRET_KEY)) {
+        throw new RuntimeException('API key leaked into error message.');
+    }
+}
+
+if (is_file($brokenClientPackPath)) {
+    throw new RuntimeException('Broken client pack was not cleaned up.');
+}
+
+pass('malformed client-pack manifest fails loudly and cleans up');
+
+$partialPackPath = $temporaryRoot . '/partial-client-pack.zip';
+buildZip($partialPackPath, [
+    'manifest.json' => json_encode([
+        'minecraft' => ['version' => '1.20.4'],
+        'overrides' => 'overrides',
+        'files' => [
+            ['projectID' => 11, 'fileID' => 2001, 'required' => true],
+            ['projectID' => 22, 'fileID' => 2002, 'required' => true],
+        ],
+    ]),
+    'overrides/config/x.toml' => 'x',
+]);
+$partialModPath = $temporaryRoot . '/partial-mod.jar';
+file_put_contents($partialModPath, 'PARTIAL');
+
+$cdnDeadJarPath = $temporaryRoot . '/dead-mod-cdn.jar';
+file_put_contents($cdnDeadJarPath, 'DEADMOD');
+
+$partialResolve = new ProviderHttpResponse(200, [
+    'data' => [
+        [
+            'id' => 2001,
+            'fileName' => 'available-mod.jar',
+            'downloadUrl' => 'https://cdn.example/mods/available-mod.jar',
+            'fileLength' => 512,
+            'fileStatus' => 4,
+            'isAvailable' => true,
+        ],
+        [
+            'id' => 2002,
+            'fileName' => 'dead-mod.jar',
+            'downloadUrl' => null,
+            'fileLength' => 256,
+            'fileStatus' => 4,
+            'isAvailable' => true,
+        ],
+    ],
+]);
+
+$downloader = new FakeDownloader($partialPackPath, [
+    'https://cdn.example/mods/available-mod.jar' => $partialModPath,
+    'https://edge.forgecdn.net/files/2/2/dead-mod.jar' => $cdnDeadJarPath,
+]);
+$http = new FakeProviderHttpClient([
+    $projectResponse,
+    $filesResponse,
+    $partialResolve,
+]);
+$provider = new CurseForgeProvider(
+    $http,
+    $downloader,
+    SECRET_KEY,
+    $temporaryRoot,
+);
+
+$package = $provider->getPackage('curseforge://314768');
+
+$partial = new ZipArchive();
+$partial->open($package->archivePath);
+
+try {
+    if ($partial->getFromName('mods/available-mod.jar') !== 'PARTIAL') {
+        throw new RuntimeException(
+            'Public manifest mods must still be installed when siblings lack a URL.',
+        );
+    }
+
+    if ($partial->getFromName('mods/dead-mod.jar') !== 'DEADMOD') {
+        throw new RuntimeException(
+            'A manifest mod without a download URL must fall back to the CurseForge CDN layout.',
+        );
+    }
+} finally {
+    $partial->close();
+}
+
+$provider->cleanup($package);
+
+pass('manifest mods without a download URL fall back to the CurseForge CDN');
+
+$allDeadPackPath = $temporaryRoot . '/all-dead-client-pack.zip';
+buildZip($allDeadPackPath, [
+    'manifest.json' => json_encode([
+        'minecraft' => ['version' => '1.20.4'],
+        'overrides' => 'overrides',
+        'files' => [
+            ['projectID' => 11, 'fileID' => 2003, 'required' => true],
+            ['projectID' => 22, 'fileID' => 2004, 'required' => true],
+        ],
+    ]),
+    'overrides/config/x.toml' => 'x',
+]);
+
+$allDeadResolve = new ProviderHttpResponse(200, [
+    'data' => [
+        [
+            'id' => 2003,
+            'fileName' => 'dead-a.jar',
+            'downloadUrl' => null,
+            'fileLength' => 256,
+            'fileStatus' => 4,
+            'isAvailable' => true,
+        ],
+        [
+            'id' => 2004,
+            'fileName' => 'dead-b.jar',
+            'downloadUrl' => null,
+            'fileLength' => 256,
+            'fileStatus' => 4,
+            'isAvailable' => true,
+        ],
+    ],
+]);
+
+$downloader = new FakeDownloader(
+    $allDeadPackPath,
+    [],
+    [
+        'https://edge.forgecdn.net/files/2/3/dead-a.jar',
+        'https://edge.forgecdn.net/files/2/4/dead-b.jar',
+    ],
+);
+$http = new FakeProviderHttpClient([
+    $projectResponse,
+    $filesResponse,
+    $allDeadResolve,
+]);
+$provider = new CurseForgeProvider(
+    $http,
+    $downloader,
+    SECRET_KEY,
+    $temporaryRoot,
+);
+
+try {
+    $provider->getPackage('curseforge://314768');
+    throw new RuntimeException(
+        'A client pack with no installable mods must not be accepted.',
+    );
+} catch (UnsupportedModpackPackageException $exception) {
+    if (!str_contains($exception->getMessage(), 'no server mods')) {
+        throw new RuntimeException('Unexpected all-undownloadable error message.');
+    }
+    if (str_contains($exception->getMessage(), SECRET_KEY)) {
+        throw new RuntimeException('API key leaked into error message.');
+    }
+}
+
+if (is_file($allDeadPackPath)) {
+    throw new RuntimeException('Undownloadable client pack was not cleaned up.');
+}
+
+pass('client pack with no installable mods fails loudly');
+
+$fallbackPackPath = $temporaryRoot . '/fallback-client-pack.zip';
+buildZip($fallbackPackPath, [
+    'manifest.json' => json_encode([
+        'minecraft' => ['version' => '1.20.4'],
+        'overrides' => 'overrides',
+        'files' => [
+            ['projectID' => 33, 'fileID' => 3001, 'required' => true],
+        ],
+    ]),
+    'overrides/config/x.toml' => 'x',
+]);
+$fallbackModPath = $temporaryRoot . '/fallback-mod-cdn.jar';
+file_put_contents($fallbackModPath, 'FALLBACKCDN');
+
+$fallbackResolve = new ProviderHttpResponse(200, [
+    'data' => [
+        [
+            'id' => 3001,
+            'fileName' => 'fallback-mod.jar',
+            'downloadUrl' => 'https://cdn.example/mods/stale-mod.jar',
+            'fileLength' => 256,
+            'fileStatus' => 4,
+            'isAvailable' => true,
+        ],
+    ],
+]);
+
+$downloader = new FakeDownloader(
+    $fallbackPackPath,
+    [
+        'https://edge.forgecdn.net/files/3/1/fallback-mod.jar' => $fallbackModPath,
+    ],
+    [
+        'https://cdn.example/mods/stale-mod.jar',
+    ],
+);
+$http = new FakeProviderHttpClient([
+    $projectResponse,
+    $filesResponse,
+    $fallbackResolve,
+]);
+$provider = new CurseForgeProvider(
+    $http,
+    $downloader,
+    SECRET_KEY,
+    $temporaryRoot,
+);
+
+$package = $provider->getPackage('curseforge://314768');
+
+$fallback = new ZipArchive();
+$fallback->open($package->archivePath);
+
+try {
+    if ($fallback->getFromName('mods/fallback-mod.jar') !== 'FALLBACKCDN') {
+        throw new RuntimeException(
+            'A failed metadata download must fall back to the reconstructed CDN URL.',
+        );
+    }
+} finally {
+    $fallback->close();
+}
+
+$provider->cleanup($package);
+
+pass('a failed metadata download falls back to the reconstructed CDN URL');
+
+$serverPackFileResponse = new ProviderHttpResponse(200, [
+    'data' => [
+        'id' => 222222,
+        'displayName' => 'Dedicated Server Pack',
+        'fileName' => 'Server-Pack.zip',
+        'fileDate' => '2024-01-10T00:00:00Z',
+        'releaseType' => 1,
+        'fileStatus' => 4,
+        'isAvailable' => true,
+        'downloadUrl' => 'https://cdn.example/server-pack.zip',
+    ],
+]);
+
+$mainWithServerPack = new ProviderHttpResponse(200, [
+    'data' => [
+        [
+            'id' => 111111,
+            'displayName' => 'Main Client Zip',
+            'fileName' => 'Main.zip',
+            'fileDate' => '2024-01-01T00:00:00Z',
+            'releaseType' => 1,
+            'gameVersions' => ['Fabric', '1.20.4'],
+            'downloadUrl' => 'https://cdn.example/main.zip',
+            'serverPackFileId' => 222222,
+        ],
+    ],
+]);
+
+$preferredServerPack = $temporaryRoot . '/preferred-server-pack.zip';
+buildZip($preferredServerPack, [
+    'server.properties' => 'motd=hello',
+]);
+
+$downloader = new FakeDownloader($preferredServerPack);
+$http = new FakeProviderHttpClient([
+    $projectResponse,
+    $mainWithServerPack,
+    $serverPackFileResponse,
+]);
+$provider = new CurseForgeProvider(
+    $http,
+    $downloader,
+    SECRET_KEY,
+    $temporaryRoot,
+);
+
+$package = $provider->getPackage('curseforge://314768');
+
+if ($package->archivePath !== $preferredServerPack) {
+    throw new RuntimeException(
+        'The dedicated server pack should be installed instead of the main client zip.',
+    );
+}
+
+if ($package->source !== 'curseforge://314768@222222') {
+    throw new RuntimeException('Unexpected server-pack package source.');
+}
+
+$provider->cleanup($package);
+
+pass('download prefers the dedicated server pack over the main client zip');
 
 $serverPackPath = $temporaryRoot . '/server-pack.zip';
 buildZip($serverPackPath, [

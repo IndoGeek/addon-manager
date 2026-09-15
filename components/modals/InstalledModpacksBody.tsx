@@ -25,6 +25,7 @@ interface InstalledModpacksBodyProps {
     activeInstall: ActiveInstallRecord | null;
     activeProgress: InstallProgressData | null;
     outcomeBanner: StatusMessage | null;
+    providerLabels: Record<string, string>;
     onCancelActive: () => void;
     onDismissOutcome: () => void;
     onRefresh: () => void;
@@ -42,6 +43,7 @@ export const InstalledModpacksBody = ({
     activeInstall,
     activeProgress,
     outcomeBanner,
+    providerLabels,
     onCancelActive,
     onDismissOutcome,
     onRefresh,
@@ -92,6 +94,7 @@ export const InstalledModpacksBody = ({
                     progress={activeProgress}
                     onCancel={onCancelActive}
                     onDismiss={onDismissOutcome}
+                    providerLabels={providerLabels}
                 />
             )}
 
@@ -154,7 +157,8 @@ export const InstalledModpacksBody = ({
                                             </h4>
 
                                             <span className="modpackinstaller-catalog-card-provider">
-                                                {record.provider}
+                                                {providerLabels[record.provider]
+                                                    ?? record.provider}
                                             </span>
                                         </div>
 
