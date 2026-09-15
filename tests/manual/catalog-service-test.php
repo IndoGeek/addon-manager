@@ -188,7 +188,12 @@ try {
     ));
     throw new RuntimeException('Unavailable provider project was accepted.');
 } catch (CatalogUnavailableException $exception) {
-    if (!str_contains($exception->getMessage(), 'not configured')) {
+    if (
+        !str_contains(
+            $exception->getMessage(),
+            'Please add your API key to the .env file',
+        )
+    ) {
         throw new RuntimeException('Unexpected unavailable project message.');
     }
 }
@@ -201,7 +206,12 @@ try {
     ));
     throw new RuntimeException('Unavailable provider search was accepted.');
 } catch (CatalogUnavailableException $exception) {
-    if (!str_contains($exception->getMessage(), 'not configured')) {
+    if (
+        !str_contains(
+            $exception->getMessage(),
+            'Please add your API key to the .env file',
+        )
+    ) {
         throw new RuntimeException('Unexpected unavailable message.');
     }
 }
@@ -255,7 +265,12 @@ try {
         'Unconfigured CurseForge stub returned a result.',
     );
 } catch (CatalogUnavailableException $exception) {
-    if (!str_contains($exception->getMessage(), 'CURSEFORGE_API_KEY')) {
+    if (
+        !str_contains(
+            $exception->getMessage(),
+            'Please add your API key to the .env file',
+        )
+    ) {
         throw new RuntimeException('CurseForge config message incorrect.');
     }
 }

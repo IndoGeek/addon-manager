@@ -123,7 +123,12 @@ try {
     ));
     throw new RuntimeException('Unavailable provider versions were accepted.');
 } catch (CatalogUnavailableException $exception) {
-    if (!str_contains($exception->getMessage(), 'not configured')) {
+    if (
+        !str_contains(
+            $exception->getMessage(),
+            'Please add your API key to the .env file',
+        )
+    ) {
         throw new RuntimeException('Unexpected unavailable message.');
     }
 }

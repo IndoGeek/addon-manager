@@ -73,13 +73,10 @@ final class BackupManager
             );
         }
 
-        $contents = $this->serverFileTarget->read($relativePath);
-
-        if (file_put_contents($backupPath, $contents) === false) {
-            throw new RuntimeException(
-                "Unable to back up: {$relativePath}"
-            );
-        }
+        $this->serverFileTarget->getFile(
+            $relativePath,
+            $backupPath,
+        );
 
         return $backupPath;
     }

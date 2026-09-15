@@ -34,6 +34,7 @@ use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installa
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\InstallationOrchestrator;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\InstallationResult;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\InstallationWorkspace;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\InstallProgressStore;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Management\InstallRecord;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Management\InstallIntegrityVerifier;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Management\InstallRecordStore;
@@ -251,6 +252,7 @@ final class ModpackController extends Controller
         $package = null;
         $lock = null;
         $token = bin2hex(random_bytes(16));
+        $progressToken = '';
 
         try {
             $lock = $this->installationLock()->acquire(
@@ -260,17 +262,117 @@ final class ModpackController extends Controller
 
             $source = $this->installationSource($request);
 
-            $provider = $this->providerRegistry()->resolve($source);
+            $progressToken = $this->progressToken($request);
+
+            $progress = $this->installProgressStore();
+
+            $progress->set($progressToken, [
+                'phase' => 'starting',
+                'percent' => 1,
+                'indeterminate' => false,
+            ]);
+
+            $downloader = $this->downloader();
+
+            $lastLockTouch = 0.0;
+
+            $downloader->setProgressCallback(
+                static function (
+                    ?int $downloadedBytes,
+                    ?int $totalBytes,
+                ) use (
+                    $progress,
+                    $progressToken,
+                    $lock,
+                    &$lastLockTouch,
+                ): void {
+                    $now = microtime(true);
+
+                    if (($now - $lastLockTouch) >= 2.0) {
+                        $lastLockTouch = $now;
+
+                        // Keep the install lock alive so a long download is
+                        // never reclaimed as stale while it is still running.
+                        @touch($lock);
+                    }
+
+                    $percent = 40;
+
+                    if (
+                        $totalBytes !== null
+                        && $totalBytes > 0
+                        && $downloadedBytes !== null
+                    ) {
+                        $percent = (int) floor(
+                            min(1.0, $downloadedBytes / $totalBytes) * 85,
+                        );
+                    }
+
+                    $progress->set($progressToken, [
+                        'phase' => 'download',
+                        'percent' => $percent,
+                        'indeterminate' => $totalBytes === null || $totalBytes <= 0,
+                        'downloaded_bytes' => $downloadedBytes,
+                        'total_bytes' => $totalBytes,
+                    ]);
+                },
+            );
+
+            $provider = $this->providerRegistry($downloader)->resolve($source);
 
             $package = $provider->getPackage($source);
 
+            $progress->set($progressToken, [
+                'phase' => 'preparing',
+                'percent' => 88,
+                'indeterminate' => false,
+            ]);
+
             $target = $this->serverTarget($server);
 
-            $orchestrator = $this->orchestrator($target);
+            $orchestrator = $this->orchestrator(
+                $target,
+                static function (
+                    int $deployedFiles,
+                    int $totalFiles,
+                ) use (
+                    $progress,
+                    $progressToken,
+                    $lock,
+                    &$lastLockTouch,
+                ): void {
+                    $now = microtime(true);
+
+                    if (($now - $lastLockTouch) >= 2.0) {
+                        $lastLockTouch = $now;
+
+                        @touch($lock);
+                    }
+
+                    $percent = 88 + (int) floor(
+                        ($totalFiles > 0 ? $deployedFiles / $totalFiles : 0)
+                            * 12,
+                    );
+
+                    $progress->set($progressToken, [
+                        'phase' => 'deploy',
+                        'percent' => $percent,
+                        'indeterminate' => false,
+                        'deployed_files' => $deployedFiles,
+                        'total_files' => $totalFiles,
+                    ]);
+                },
+            );
 
             $result = $orchestrator->install(
                 archivePath: $package->archivePath,
             );
+
+            $progress->set($progressToken, [
+                'phase' => 'complete',
+                'percent' => 100,
+                'indeterminate' => false,
+            ]);
 
             $metadata = $this->installMetadata(
                 $provider,
@@ -334,6 +436,34 @@ final class ModpackController extends Controller
             if ($provider !== null && $package !== null) {
                 $provider->cleanup($package);
             }
+        }
+    }
+
+    public function installProgress(
+        Request $request,
+    ): JsonResponse {
+        try {
+            $state = $this->installProgressStore()->get(
+                $this->progressToken($request),
+            );
+
+            return response()->json([
+                'data' => $state ?? [
+                    'phase' => 'idle',
+                    'percent' => 0,
+                    'indeterminate' => false,
+                ],
+            ]);
+        } catch (InvalidArgumentException $exception) {
+            return response()->json([
+                'error' => $exception->getMessage(),
+            ], 422);
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return response()->json([
+                'error' => 'Unable to load the installation progress.',
+            ], 500);
         }
     }
 
@@ -1132,20 +1262,23 @@ final class ModpackController extends Controller
         return $uuid;
     }
 
-    private function providerRegistry(): ModpackProviderRegistry
-    {
+    private function providerRegistry(
+        ?DownloadManager $downloader = null,
+    ): ModpackProviderRegistry {
+        $driver = $downloader ?? $this->downloader();
+
         $http = $this->providerHttp();
 
         return new ModpackProviderRegistry([
             new MockModpackProvider(),
             new ModrinthProvider(
                 http: $http,
-                downloader: $this->downloader(),
+                downloader: $driver,
                 temporaryRoot: self::TEMPORARY_ROOT,
             ),
             new CurseForgeProvider(
                 http: $http,
-                downloader: $this->downloader(),
+                downloader: $driver,
                 apiKey: $this->curseForgeApiKey(),
             ),
         ]);
@@ -1153,7 +1286,7 @@ final class ModpackController extends Controller
 
     private function downloader(): DownloadManager
     {
-        $maxMb = env('MODPACK_INSTALLER_MAX_DOWNLOAD_MB');
+        $maxMb = config('modpackinstaller.max_download_mb');
 
         if (is_numeric($maxMb) && (int) $maxMb > 0) {
             return new DownloadManager(
@@ -1165,6 +1298,38 @@ final class ModpackController extends Controller
         return new DownloadManager(self::TEMPORARY_ROOT);
     }
 
+    private function installProgressStore(): InstallProgressStore
+    {
+        return new InstallProgressStore(
+            self::TEMPORARY_ROOT . '/progress',
+        );
+    }
+
+    private function progressToken(Request $request): string
+    {
+        $value = $request->query('progress_token');
+
+        if (!is_string($value) || trim($value) === '') {
+            throw new InvalidArgumentException(
+                'A progress token is required.',
+            );
+        }
+
+        $token = trim($value);
+
+        if (
+            strlen($token) < 8
+            || strlen($token) > 64
+            || preg_match('/^[a-zA-Z0-9-]+$/', $token) !== 1
+        ) {
+            throw new InvalidArgumentException(
+                'The progress token is invalid.',
+            );
+        }
+
+        return $token;
+    }
+
     private function providerHttp(): ProviderHttpClient
     {
         return new CurlProviderHttpClient();
@@ -1172,7 +1337,7 @@ final class ModpackController extends Controller
 
     private function curseForgeApiKey(): ?string
     {
-        $key = env('CURSEFORGE_API_KEY');
+        $key = config('modpackinstaller.curseforge_api_key');
 
         if (!is_string($key) || $key === '') {
             return null;
@@ -1197,7 +1362,7 @@ final class ModpackController extends Controller
 
     private function targetMode(): string
     {
-        $mode = env('MODPACK_INSTALLER_SERVER_TARGET', 'local');
+        $mode = config('modpackinstaller.server_target', 'local');
 
         if (!is_string($mode) || trim($mode) === '') {
             return 'local';
@@ -1208,7 +1373,7 @@ final class ModpackController extends Controller
 
     private function localServerRoot(): string
     {
-        $root = env('MODPACK_INSTALLER_SERVER_ROOT');
+        $root = config('modpackinstaller.server_root');
 
         if (is_string($root) && $root !== '') {
             return $root;
@@ -1228,14 +1393,21 @@ final class ModpackController extends Controller
 
     private function orchestrator(
         ServerFileTarget $target,
+        ?callable $progress = null,
     ): InstallationOrchestrator {
+        $executor = new DeploymentExecutor($target);
+
+        if ($progress !== null) {
+            $executor->setProgressCallback($progress);
+        }
+
         return new InstallationOrchestrator(
             workspaceManager: new InstallationWorkspace(
                 self::TEMPORARY_ROOT,
             ),
             planner: new DeploymentPlanner($target),
             backupManager: new BackupManager($target),
-            executor: new DeploymentExecutor($target),
+            executor: $executor,
             temporaryRoot: self::TEMPORARY_ROOT,
             serverFileTarget: $target,
         );
@@ -1250,7 +1422,7 @@ final class ModpackController extends Controller
 
     private function installDataDir(): string
     {
-        $directory = env('MODPACK_INSTALLER_DATA_DIR');
+        $directory = config('modpackinstaller.data_dir');
 
         if (is_string($directory) && $directory !== '') {
             return $directory;

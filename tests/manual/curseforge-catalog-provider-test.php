@@ -127,7 +127,12 @@ try {
     $unconfigured->search(new CatalogSearchQuery(provider: 'curseforge'));
     throw new RuntimeException('Unconfigured search was accepted.');
 } catch (CatalogUnavailableException $exception) {
-    if (!str_contains($exception->getMessage(), 'CURSEFORGE_API_KEY')) {
+    if (
+        !str_contains(
+            $exception->getMessage(),
+            'Please add your API key to the .env file',
+        )
+    ) {
         throw new RuntimeException('Unexpected config message.');
     }
 }

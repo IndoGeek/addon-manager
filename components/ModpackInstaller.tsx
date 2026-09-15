@@ -36,6 +36,8 @@ import {
     CatalogResponse,
     CatalogVersion,
     CatalogVersionsResponse,
+    InstallProgressData,
+    InstallProgressResponse,
     InstallRecordData,
     InstallResponse,
     InstallationResult,
@@ -80,6 +82,10 @@ export default () => {
 
             if (debounceTimer.current !== null) {
                 window.clearTimeout(debounceTimer.current);
+            }
+
+            if (progressPollTimer.current !== null) {
+                window.clearInterval(progressPollTimer.current);
             }
         };
     }, []);
@@ -176,6 +182,11 @@ export default () => {
 
     const [modalInstallLoading, setModalInstallLoading] =
         useState(false);
+
+    const [installProgress, setInstallProgress] =
+        useState<InstallProgressData | null>(null);
+
+    const progressPollTimer = useRef<number | null>(null);
 
     const versionsRequestId = useRef(0);
 
@@ -922,6 +933,60 @@ export default () => {
         }
     };
 
+    const stopProgressPolling = () => {
+        if (progressPollTimer.current !== null) {
+            window.clearInterval(progressPollTimer.current);
+            progressPollTimer.current = null;
+        }
+    };
+
+    const startProgressPolling = (token: string) => {
+        stopProgressPolling();
+
+        const tick = async () => {
+            try {
+                const response =
+                    await axios.get<InstallProgressResponse>(
+                        `${API_BASE}/install/progress`,
+                        {
+                            params: {
+                                progress_token: token,
+                            },
+                        },
+                    );
+
+                if (!alive.current) {
+                    return;
+                }
+
+                setInstallProgress(response.data.data);
+            } catch {
+                // Transient poll failures are ignored; the install
+                // response itself is authoritative for completion.
+            }
+        };
+
+        tick();
+
+        progressPollTimer.current = window.setInterval(tick, 750);
+    };
+
+    const newProgressToken = (): string => {
+        if (typeof window.crypto?.randomUUID === 'function') {
+            return window.crypto.randomUUID();
+        }
+
+        let token = '';
+        const alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789';
+
+        while (token.length < 32) {
+            token +=
+                alphabet[Math.floor(Math.random() * alphabet.length)];
+        }
+
+        return token;
+    };
+
     const installModalModpack = async () => {
         if (!server) {
             setModalStatus({
@@ -955,6 +1020,16 @@ export default () => {
         setModalStatus(null);
         setModalResult(null);
 
+        const token = newProgressToken();
+
+        setInstallProgress({
+            phase: 'starting',
+            percent: 0,
+            indeterminate: false,
+        });
+
+        startProgressPolling(token);
+
         try {
             const response =
                 await axios.post<InstallResponse>(
@@ -962,11 +1037,24 @@ export default () => {
                     {
                         source: modalVersionSource,
                     },
+                    {
+                        params: {
+                            progress_token: token,
+                        },
+                    },
                 );
 
             if (!alive.current || detailsItem === null) {
                 return;
             }
+
+            stopProgressPolling();
+
+            setInstallProgress({
+                phase: 'complete',
+                percent: 100,
+                indeterminate: false,
+            });
 
             setModalResult(response.data.data);
             loadInstalled();
@@ -985,6 +1073,7 @@ export default () => {
             });
         } finally {
             if (alive.current && detailsItem !== null) {
+                stopProgressPolling();
                 setModalInstallLoading(false);
             }
         }
@@ -1100,6 +1189,16 @@ export default () => {
         setStatus(null);
         setResult(null);
 
+        const token = newProgressToken();
+
+        setInstallProgress({
+            phase: 'starting',
+            percent: 0,
+            indeterminate: false,
+        });
+
+        startProgressPolling(token);
+
         try {
             const response =
                 await axios.post<InstallResponse>(
@@ -1107,11 +1206,24 @@ export default () => {
                     {
                         source: selectedSource,
                     },
+                    {
+                        params: {
+                            progress_token: token,
+                        },
+                    },
                 );
 
             if (!alive.current) {
                 return;
             }
+
+            stopProgressPolling();
+
+            setInstallProgress({
+                phase: 'complete',
+                percent: 100,
+                indeterminate: false,
+            });
 
             setResult(response.data.data);
             loadInstalled();
@@ -1130,6 +1242,7 @@ export default () => {
             });
         } finally {
             if (alive.current) {
+                stopProgressPolling();
                 setInstallLoading(false);
             }
         }
@@ -1318,18 +1431,40 @@ export default () => {
                                 <button
                                     type="button"
                                     onClick={installManualSource}
-                                    disabled={installLoading || result !== null}
-                                    className={`modpackinstaller-modal-actions-button${
+                                    disabled={
+                                        installLoading || result !== null
+                                    }
+                                    className={`modpackinstaller-modal-actions-button modpackinstaller-install-button${
                                         result !== null
                                             ? ' modpackinstaller-modal-actions-button--success'
                                             : ''
                                     }`}
                                 >
-                                    {installLoading
-                                        ? 'Installing ...'
-                                        : result !== null
-                                            ? 'Installation Complete'
-                                            : 'Install this modpack'}
+                                    {installLoading && (
+                                        <span
+                                            className={`modpackinstaller-install-progress-fill${
+                                                installProgress
+                                                    ?.indeterminate
+                                                    ? ' modpackinstaller-install-progress-fill--indeterminate'
+                                                    : ''
+                                            }`}
+                                            style={{
+                                                width: `${installProgress?.percent ?? 0}%`,
+                                            }}
+                                        />
+                                    )}
+                                    <span className="modpackinstaller-install-progress-label">
+                                        {installLoading
+                                            ? `Installing ...${
+                                                  installProgress
+                                                  && !installProgress.indeterminate
+                                                      ? ` ${installProgress.percent}%`
+                                                      : ''
+                                              }`
+                                            : result !== null
+                                                ? 'Installed'
+                                                : 'Install this modpack'}
+                                    </span>
                                 </button>
                             </div>
                         )}
@@ -1419,6 +1554,7 @@ export default () => {
                         modalStatus={modalStatus}
                         modalResult={modalResult}
                         modalInstallLoading={modalInstallLoading}
+                        installProgress={installProgress}
                         onSelectVersion={selectModalVersion}
                         onRetryVersions={retryModalVersions}
                         onRetryMetadata={retryModalMetadata}

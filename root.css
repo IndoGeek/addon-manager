@@ -1006,6 +1006,12 @@
   border-color: rgba(37, 99, 235, 0.45);
 }
 
+.modpackinstaller-pill--storage {
+  color: #86efac;
+  background: rgba(22, 163, 74, 0.18);
+  border-color: rgba(34, 197, 94, 0.45);
+}
+
 .modpackinstaller-pill--overflow {
   border-style: dashed;
   background: transparent;
@@ -1918,6 +1924,41 @@
   color: #fff;
   font-weight: 600;
   transition: background 0.2s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.modpackinstaller-install-progress-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 0%;
+  background: #16a34a;
+  z-index: 0;
+  pointer-events: none;
+  transition: width 0.3s linear;
+}
+
+.modpackinstaller-install-progress-fill--indeterminate {
+  width: 40% !important;
+  animation: modpackinstaller-progress-slide 1.1s ease-in-out
+    infinite;
+}
+
+@keyframes modpackinstaller-progress-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+
+  100% {
+    transform: translateX(300%);
+  }
+}
+
+.modpackinstaller-install-progress-label {
+  position: relative;
+  z-index: 1;
 }
 
 .modpackinstaller-modal-actions button:hover:not(:disabled) {

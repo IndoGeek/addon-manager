@@ -81,6 +81,89 @@ final class LocalFilesystemServerFileTarget implements ServerFileTarget
         }
     }
 
+    public function putFile(string $relativePath, string $sourcePath): void
+    {
+        $path = $this->resolve($relativePath);
+
+        if (is_dir($path)) {
+            throw new RuntimeException(
+                "Target path is a directory: {$relativePath}"
+            );
+        }
+
+        if (!is_file($sourcePath)) {
+            throw new RuntimeException(
+                "Source file does not exist: {$sourcePath}"
+            );
+        }
+
+        $parent = dirname($path);
+
+        if (
+            !is_dir($parent)
+            && !mkdir($parent, 0750, true)
+            && !is_dir($parent)
+        ) {
+            throw new RuntimeException(
+                "Unable to create target directory: {$relativePath}"
+            );
+        }
+
+        // Write to a sibling temporary file and atomically rename it into
+        // place so a crash mid-copy never leaves a truncated target file.
+        $temporary = $parent
+            . '/.'
+            . basename($path)
+            . '.'
+            . bin2hex(random_bytes(4))
+            . '.tmp';
+
+        if (!@copy($sourcePath, $temporary)) {
+            @unlink($temporary);
+
+            throw new RuntimeException(
+                "Unable to write file: {$relativePath}"
+            );
+        }
+
+        if (!@rename($temporary, $path)) {
+            @unlink($temporary);
+
+            throw new RuntimeException(
+                "Unable to write file: {$relativePath}"
+            );
+        }
+    }
+
+    public function getFile(string $relativePath, string $destinationPath): void
+    {
+        $path = $this->resolve($relativePath);
+
+        if (!is_file($path)) {
+            throw new RuntimeException(
+                "File does not exist: {$relativePath}"
+            );
+        }
+
+        $parent = dirname($destinationPath);
+
+        if (
+            !is_dir($parent)
+            && !mkdir($parent, 0750, true)
+            && !is_dir($parent)
+        ) {
+            throw new RuntimeException(
+                "Unable to create destination directory: {$destinationPath}"
+            );
+        }
+
+        if (!copy($path, $destinationPath)) {
+            throw new RuntimeException(
+                "Unable to copy file: {$relativePath}"
+            );
+        }
+    }
+
     public function delete(string $relativePath): void
     {
         $path = $this->resolve($relativePath);

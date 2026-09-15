@@ -12,6 +12,18 @@ interface ServerFileTarget
 
     public function write(string $relativePath, string $contents): void;
 
+    /**
+     * Copies a local source file into the target, streaming the bytes so that
+     * arbitrarily large files can be moved without buffering them in memory.
+     */
+    public function putFile(string $relativePath, string $sourcePath): void;
+
+    /**
+     * Copies a target file out to a local destination path, streaming the
+     * bytes so that arbitrarily large files never have to fit in memory.
+     */
+    public function getFile(string $relativePath, string $destinationPath): void;
+
     public function delete(string $relativePath): void;
 
     /** Returns true only when the directory exists and contains no entries. */

@@ -28,6 +28,7 @@ final readonly class CatalogVersion
         public ?string $dateModified,
         public ?int $downloads,
         public string $source,
+        public ?int $fileSize,
     ) {
     }
 
@@ -50,6 +51,7 @@ final readonly class CatalogVersion
             'date_modified' => $this->dateModified,
             'downloads' => $this->downloads,
             'source' => $this->source,
+            'file_size' => $this->fileSize,
         ];
     }
 }

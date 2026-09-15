@@ -845,6 +845,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
             dateModified: null,
             downloads: $this->intOrNull($file['downloadCount'] ?? null),
             source: 'curseforge://' . $query->project . '@' . $id,
+            fileSize: $this->intOrNull($file['fileLength'] ?? null),
         );
     }
 

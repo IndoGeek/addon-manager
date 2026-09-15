@@ -482,18 +482,58 @@ final class ModrinthProvider implements ModpackProvider
                 );
             }
 
+            // Source entries are streamed into scratch files and added to the
+            // normalized archive via addFile() so a single large override file
+            // never has to be decompressed fully in memory. A fresh scratch
+            // file is used per entry because ZipArchive reads it lazily when
+            // the archive is closed.
+            $scratchPaths = [];
+
             try {
                 foreach ($content as $relative => $payload) {
-                    $contents = $source->getFromName($payload['archiveEntry']);
+                    $stream = $source->getStream(
+                        $payload['archiveEntry'],
+                    );
 
-                    if ($contents === false) {
+                    if ($stream === false) {
                         continue;
                     }
 
-                    $output->addFromString($relative, $contents);
+                    try {
+                        $scratchPath = $root
+                            . '/'
+                            . bin2hex(random_bytes(16))
+                            . '.bin';
+
+                        $scratch = fopen($scratchPath, 'wb');
+
+                        if ($scratch === false) {
+                            continue;
+                        }
+
+                        try {
+                            if (stream_copy_to_stream($stream, $scratch) === false) {
+                                continue;
+                            }
+                        } finally {
+                            fclose($scratch);
+                        }
+
+                        $scratchPaths[] = $scratchPath;
+
+                        if (!$output->addFile($scratchPath, $relative)) {
+                            continue;
+                        }
+                    } finally {
+                        fclose($stream);
+                    }
                 }
             } finally {
                 $output->close();
+
+                foreach ($scratchPaths as $scratchPath) {
+                    @unlink($scratchPath);
+                }
             }
 
             return $outputPath;

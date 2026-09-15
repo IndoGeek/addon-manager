@@ -9,10 +9,10 @@ use ZipArchive;
 final class ArchiveValidator
 {
     public function __construct(
-        private readonly int $maxArchiveBytes = 2_147_483_648,
-        private readonly int $maxExtractedBytes = 8_589_934_592,
+        private readonly int $maxArchiveBytes = 10_737_418_240,
+        private readonly int $maxExtractedBytes = 21_474_836_480,
         private readonly int $maxEntries = 50_000,
-        private readonly int $maxEntryBytes = 1_073_741_824,
+        private readonly int $maxEntryBytes = 10_737_418_240,
     ) {
     }
 

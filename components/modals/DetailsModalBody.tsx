@@ -2,6 +2,7 @@ import React from 'react';
 import {
     CatalogItem,
     CatalogVersion,
+    InstallProgressData,
     ModpackMetadata,
     StatusMessage,
 } from '../types';
@@ -15,6 +16,7 @@ import {
 } from '../icons';
 import {
     buildCardTags,
+    formatBytes,
     formatCount,
     formatDate,
     formatUpdated,
@@ -39,6 +41,7 @@ interface DetailsModalBodyProps {
         backed_up: number;
     } | null;
     modalInstallLoading: boolean;
+    installProgress: InstallProgressData | null;
     onSelectVersion: (source: string) => void;
     onRetryVersions: () => void;
     onRetryMetadata: () => void;
@@ -58,11 +61,17 @@ export const DetailsModalBody = ({
     modalStatus,
     modalResult,
     modalInstallLoading,
+    installProgress,
     onSelectVersion,
     onRetryVersions,
     onRetryMetadata,
     onInstall,
 }: DetailsModalBodyProps) => {
+    const selectedFileSize =
+        modalVersions?.find(
+            (version) => version.source === modalVersionSource,
+        )?.file_size ?? null;
+
     return (
         <>
             {modalStatus && (
@@ -243,6 +252,8 @@ export const DetailsModalBody = ({
                                                 {version.date_published
                                                     ? `Published ${formatDate(version.date_published)}`
                                                     : 'Release date unavailable'}
+                                                {version.file_size !== null
+                                                    && ` · ${formatBytes(version.file_size)}`}
                                             </span>
                                         </button>
                                     );
@@ -294,6 +305,12 @@ export const DetailsModalBody = ({
                                     {modalMetadata.loader}
                                 </span>
                             )}
+
+                            {selectedFileSize !== null && (
+                                <span className="modpackinstaller-pill modpackinstaller-pill--storage">
+                                    {formatBytes(selectedFileSize)}
+                                </span>
+                            )}
                         </div>
 
                         {modalMetadata.manual_download ? (
@@ -312,17 +329,37 @@ export const DetailsModalBody = ({
                                         || modalInstallLoading
                                         || modalResult !== null
                                     }
-                                    className={`modpackinstaller-modal-actions-button${
+                                    className={`modpackinstaller-modal-actions-button modpackinstaller-install-button${
                                         modalResult !== null
                                             ? ' modpackinstaller-modal-actions-button--success'
                                             : ''
                                     }`}
                                 >
-                                    {modalInstallLoading
-                                        ? 'Installing ...'
-                                        : modalResult !== null
-                                            ? 'Installation Complete'
-                                            : 'Install Modpack'}
+                                    {modalInstallLoading && (
+                                        <span
+                                            className={`modpackinstaller-install-progress-fill${
+                                                installProgress
+                                                    ?.indeterminate
+                                                    ? ' modpackinstaller-install-progress-fill--indeterminate'
+                                                    : ''
+                                            }`}
+                                            style={{
+                                                width: `${installProgress?.percent ?? 0}%`,
+                                            }}
+                                        />
+                                    )}
+                                    <span className="modpackinstaller-install-progress-label">
+                                        {modalInstallLoading
+                                            ? `Installing ...${
+                                                  installProgress
+                                                  && !installProgress.indeterminate
+                                                      ? ` ${installProgress.percent}%`
+                                                      : ''
+                                              }`
+                                            : modalResult !== null
+                                                ? 'Installed'
+                                                : 'Install Modpack'}
+                                    </span>
                                 </button>
                             </div>
                         )}

@@ -55,6 +55,26 @@ export const formatDate = (value: string): string => {
     return date.toLocaleString();
 };
 
+export const formatBytes = (value: number | null): string => {
+    if (value === null || !Number.isFinite(value) || value < 0) {
+        return '';
+    }
+
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    let index = 0;
+    let size = value;
+
+    while (size >= 1024 && index < units.length - 1) {
+        size /= 1024;
+        index++;
+    }
+
+    const digits =
+        index === 0 ? 0 : size >= 100 ? 0 : size >= 10 ? 1 : 2;
+
+    return `${size.toFixed(digits)} ${units[index]}`;
+};
+
 export const formatUpdated = (value: string): string => {
     const date = new Date(value);
 

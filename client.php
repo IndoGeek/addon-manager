@@ -31,6 +31,11 @@ Route::get('/catalog/providers', [
     'catalogProviders',
 ]);
 
+Route::get('/install/progress', [
+    ModpackController::class,
+    'installProgress',
+]);
+
 Route::group([
     'prefix' => '/servers/{server}',
     'middleware' => [

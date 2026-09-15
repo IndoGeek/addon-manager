@@ -8,22 +8,52 @@ use Throwable;
 
 final class DeploymentExecutor
 {
+    /**
+     * @var null|callable(int $deployedFiles, int $totalFiles): void
+     */
+    private $progressCallback = null;
+
     public function __construct(
         private readonly ServerFileTarget $serverFileTarget,
-        private readonly int $maxFileBytes = 1_073_741_824,
+        private readonly int $maxFileBytes = 10_737_418_240,
     ) {
+    }
+
+    /**
+     * Registers a callback invoked after each deployed file reports its
+     * running count against the plan's total.
+     *
+     * @param null|callable(int $deployedFiles, int $totalFiles): void $callback
+     */
+    public function setProgressCallback(?callable $callback): void
+    {
+        $this->progressCallback = $callback;
     }
 
     public function execute(
         DeploymentPlan $plan,
     ): array {
         $deployed = [];
+        $total = $plan->totalFiles();
+        $done = 0;
 
         try {
             foreach ($plan->operations as $operation) {
                 $this->deployFile($operation);
 
+                $done++;
+
                 $deployed[] = $operation->relativePath;
+
+                $callback = $this->progressCallback;
+
+                if ($callback !== null) {
+                    try {
+                        $callback($done, $total);
+                    } catch (Throwable) {
+                        // Progress reporting must never mask a deployment.
+                    }
+                }
             }
         } catch (Throwable $exception) {
             throw new DeploymentException(
@@ -60,23 +90,15 @@ final class DeploymentExecutor
             );
         }
 
-        $contents = file_get_contents($operation->source);
-
-        if ($contents === false) {
-            throw new RuntimeException(
-                "Unable to read workspace file: {$relativePath}"
-            );
-        }
-
         if ($this->serverFileTarget->isDirectory($relativePath)) {
             throw new RuntimeException(
                 "Target path is a directory: {$relativePath}"
             );
         }
 
-        $this->serverFileTarget->write(
+        $this->serverFileTarget->putFile(
             $relativePath,
-            $contents,
+            $operation->source,
         );
     }
 

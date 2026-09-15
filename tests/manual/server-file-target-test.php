@@ -40,9 +40,57 @@ final class FakeServerFileTarget implements ServerFileTarget
         $this->files[$relativePath] = $contents;
     }
 
+    public function putFile(string $relativePath, string $sourcePath): void
+    {
+        $contents = file_get_contents($sourcePath);
+
+        if ($contents === false) {
+            throw new RuntimeException(
+                "Unable to read source file: {$sourcePath}"
+            );
+        }
+
+        $this->files[$relativePath] = $contents;
+    }
+
+    public function getFile(string $relativePath, string $destinationPath): void
+    {
+        if (!isset($this->files[$relativePath])) {
+            throw new RuntimeException(
+                "File does not exist: {$relativePath}"
+            );
+        }
+
+        if (file_put_contents($destinationPath, $this->files[$relativePath]) === false) {
+            throw new RuntimeException(
+                "Unable to write destination file: {$destinationPath}"
+            );
+        }
+    }
+
     public function delete(string $relativePath): void
     {
         unset($this->files[$relativePath]);
+        unset($this->directories[$relativePath]);
+    }
+
+    public function isEmptyDirectory(string $relativePath): bool
+    {
+        return isset($this->directories[$relativePath]);
+    }
+
+    public function removeDirectory(string $relativePath): void
+    {
+        if (!isset($this->directories[$relativePath])) {
+            return;
+        }
+
+        foreach ($this->files as $path => $contents) {
+            if (str_starts_with($path, rtrim($relativePath, '/') . '/')) {
+                unset($this->files[$path]);
+            }
+        }
+
         unset($this->directories[$relativePath]);
     }
 

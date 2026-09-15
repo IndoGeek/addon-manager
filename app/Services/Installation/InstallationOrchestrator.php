@@ -224,9 +224,7 @@ final class InstallationOrchestrator
 
         foreach ($backups as $relativePath => $backupPath) {
             try {
-                $contents = file_get_contents($backupPath);
-
-                if ($contents === false) {
+                if (!is_file($backupPath)) {
                     throw new RuntimeException(
                         "Unable to read backup: {$relativePath}"
                     );
@@ -238,9 +236,9 @@ final class InstallationOrchestrator
                     $this->serverFileTarget->ensureDirectory($parent);
                 }
 
-                $this->serverFileTarget->write(
+                $this->serverFileTarget->putFile(
                     $relativePath,
-                    $contents,
+                    $backupPath,
                 );
             } catch (Throwable $exception) {
                 $errors[] = "Unable to restore backup: {$relativePath}";

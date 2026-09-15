@@ -35,6 +35,20 @@ export interface InstallResponse {
     data: InstallationResult;
 }
 
+export interface InstallProgressData {
+    phase: string;
+    percent: number;
+    indeterminate: boolean;
+    downloaded_bytes?: number | null;
+    total_bytes?: number | null;
+    deployed_files?: number | null;
+    total_files?: number | null;
+}
+
+export interface InstallProgressResponse {
+    data: InstallProgressData;
+}
+
 export interface RecordIntegrity {
     status: 'ok' | 'degraded';
     missing: string[];
@@ -149,6 +163,7 @@ export interface CatalogVersion {
     date_modified: string | null;
     downloads: number | null;
     source: string;
+    file_size: number | null;
 }
 
 export interface CatalogVersionsResponse {

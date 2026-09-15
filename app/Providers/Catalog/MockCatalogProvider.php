@@ -75,24 +75,26 @@ final class MockCatalogProvider implements CatalogProvider
      */
     private const MODPACK_VERSIONS = [
         'example-pack' => [
-            [
-                'version_id' => '1.0.0',
-                'version_number' => '1.0.0',
-                'version_name' => 'Initial release',
-                'game_versions' => ['1.21.1'],
-                'loaders' => ['fabric'],
-                'date_published' => '2024-01-01T00:00:00Z',
-                'downloads' => 0,
-            ],
-            [
-                'version_id' => '1.1.0',
-                'version_number' => '1.1.0',
-                'version_name' => 'Bugfix release',
-                'game_versions' => ['1.21.1'],
-                'loaders' => ['fabric'],
-                'date_published' => '2024-02-01T00:00:00Z',
-                'downloads' => 0,
-            ],
+[
+        'version_id' => '1.0.0',
+        'version_number' => '1.0.0',
+        'version_name' => 'Initial release',
+        'game_versions' => ['1.21.1'],
+        'loaders' => ['fabric'],
+        'date_published' => '2024-01-01T00:00:00Z',
+        'downloads' => 0,
+        'file_size' => 64_000_000,
+    ],
+    [
+        'version_id' => '1.1.0',
+        'version_number' => '1.1.0',
+        'version_name' => 'Bugfix release',
+        'game_versions' => ['1.21.1'],
+        'loaders' => ['fabric'],
+        'date_published' => '2024-02-01T00:00:00Z',
+        'downloads' => 0,
+        'file_size' => 71_500_000,
+    ],
         ],
         'vanilla-tweaks' => [
             [
@@ -104,15 +106,16 @@ final class MockCatalogProvider implements CatalogProvider
                 'date_published' => '2024-01-15T00:00:00Z',
                 'downloads' => 0,
             ],
-            [
-                'version_id' => '2.4.0',
-                'version_number' => '2.4.0',
-                'version_name' => 'Latest refresh',
-                'game_versions' => ['1.21.1', '1.20.1'],
-                'loaders' => ['fabric'],
-                'date_published' => '2024-03-01T00:00:00Z',
-                'downloads' => 0,
-            ],
+[
+        'version_id' => '2.4.0',
+        'version_number' => '2.4.0',
+        'version_name' => 'Latest refresh',
+        'game_versions' => ['1.21.1', '1.20.1'],
+        'loaders' => ['fabric'],
+        'date_published' => '2024-03-01T00:00:00Z',
+        'downloads' => 0,
+        'file_size' => 227_000_000,
+    ],
         ],
         'barebones-progression' => [
             [
@@ -276,6 +279,7 @@ final class MockCatalogProvider implements CatalogProvider
                 dateModified: null,
                 downloads: self::optionalInt($version['downloads'] ?? null),
                 source: 'mock://' . $slug . '@' . $version['version_id'],
+                fileSize: self::optionalInt($version['file_size'] ?? null),
             ),
             array_values($versions),
         );

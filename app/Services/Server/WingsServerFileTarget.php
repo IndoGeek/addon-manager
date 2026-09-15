@@ -90,6 +90,78 @@ final class WingsServerFileTarget implements ServerFileTarget
         $this->forgetListingsFrom($path);
     }
 
+    public function putFile(string $relativePath, string $sourcePath): void
+    {
+        $path = ServerRelativePath::normalize($relativePath);
+
+        if ($this->entryType($path) === 'dir') {
+            throw new RuntimeException(
+                "Target path is a directory: {$relativePath}"
+            );
+        }
+
+        $parent = $this->parentOf($path);
+
+        if ($parent !== self::ROOT) {
+            $this->ensureDirectoryInternal($parent);
+        }
+
+        try {
+            $this->client->putFile($path, $sourcePath);
+        } catch (WingsFileNotFoundException $exception) {
+            // The parent directory disappeared between the ensure and the
+            // write; rebuild the tree once and retry before failing.
+            if ($parent !== self::ROOT) {
+                $this->ensureDirectoryInternal($parent);
+            }
+
+            try {
+                $this->client->putFile($path, $sourcePath);
+            } catch (WingsFileNotFoundException $retryException) {
+                throw new RuntimeException(
+                    "Unable to write file: {$relativePath}",
+                    0,
+                    $retryException,
+                );
+            }
+        }
+
+        $this->forgetListingsFrom($path);
+    }
+
+    public function getFile(string $relativePath, string $destinationPath): void
+    {
+        $path = ServerRelativePath::normalize($relativePath);
+
+        try {
+            $contents = $this->client->getContents($path);
+        } catch (WingsFileNotFoundException $exception) {
+            throw new RuntimeException(
+                "File does not exist: {$relativePath}",
+                0,
+                $exception,
+            );
+        }
+
+        $parent = dirname($destinationPath);
+
+        if (
+            !is_dir($parent)
+            && !mkdir($parent, 0750, true)
+            && !is_dir($parent)
+        ) {
+            throw new RuntimeException(
+                "Unable to create destination directory: {$destinationPath}"
+            );
+        }
+
+        if (file_put_contents($destinationPath, $contents) === false) {
+            throw new RuntimeException(
+                "Unable to copy file: {$relativePath}"
+            );
+        }
+    }
+
     public function delete(string $relativePath): void
     {
         $path = ServerRelativePath::normalize($relativePath);

@@ -75,6 +75,47 @@ final class WingsFileClient
     }
 
     /**
+     * Streams a local source file to the Wings node without buffering the
+     * whole payload in memory (the transport uploads from the file handle).
+     */
+    public function putFile(string $relativePath, string $sourcePath): void
+    {
+        $path = ServerRelativePath::normalize($relativePath);
+
+        if (!is_file($sourcePath)) {
+            throw new InvalidArgumentException(
+                "Source file does not exist: {$sourcePath}"
+            );
+        }
+
+        $stream = fopen($sourcePath, 'rb');
+
+        if ($stream === false) {
+            throw new InvalidArgumentException(
+                "Unable to open source file: {$sourcePath}"
+            );
+        }
+
+        try {
+            $response = $this->request('POST', '/files/write', [
+                'query' => ['file' => $path],
+                'body' => $stream,
+                'headers' => [
+                    'Content-Type' => 'application/octet-stream',
+                ],
+            ]);
+        } finally {
+            fclose($stream);
+        }
+
+        if (in_array($response->status, self::SUCCESS, true)) {
+            return;
+        }
+
+        $this->throwFor($response->status);
+    }
+
+    /**
      * @return array<int, array<string, mixed>> Wings file entry list
      */
     public function listDirectory(string $directory): array
@@ -174,11 +215,11 @@ final class WingsFileClient
             . $this->serverUuid
             . $endpoint;
 
-        $options['headers'] = array_merge($options['headers'] ?? [], [
+        $options['headers'] = array_merge([
             'Authorization' => 'Bearer ' . $this->daemonKey,
             'Accept' => 'application/json',
             'Content-Type' => 'application/json',
-        ]);
+        ], $options['headers'] ?? []);
 
         return $this->transport->request($method, $url, $options);
     }

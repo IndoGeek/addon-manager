@@ -310,7 +310,42 @@ final class ModrinthCatalogProvider implements CatalogProvider
             source: $versionId === ''
                 ? ''
                 : 'modrinth://' . $query->project . '@' . $versionId,
+            fileSize: $this->primaryFileSize($version),
         );
+    }
+
+    /**
+     * Modrinth may advertise several files per version; the primary one is
+     * what the installer downloads. Prefer it, then fall back to the first
+     * file that actually reports a size.
+     *
+     * @param array<string, mixed> $version
+     */
+    private function primaryFileSize(array $version): ?int
+    {
+        $files = $version['files'] ?? null;
+
+        if (!is_array($files)) {
+            return null;
+        }
+
+        foreach ($files as $file) {
+            if (!is_array($file)) {
+                continue;
+            }
+
+            if (($file['primary'] ?? false) === true) {
+                return $this->intOrNull($file['size'] ?? null);
+            }
+        }
+
+        foreach ($files as $file) {
+            if (is_array($file) && isset($file['size'])) {
+                return $this->intOrNull($file['size']);
+            }
+        }
+
+        return null;
     }
 
     /**

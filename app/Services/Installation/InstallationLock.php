@@ -20,8 +20,8 @@ final class InstallationLock
 {
     public function __construct(
         private readonly string $temporaryRoot,
-        private readonly int $acquireTimeoutSeconds = 30,
-        private readonly int $staleTimeoutSeconds = 900,
+        private readonly int $acquireTimeoutSeconds = 15,
+        private readonly int $staleTimeoutSeconds = 120,
     ) {
     }
 
@@ -86,6 +86,16 @@ final class InstallationLock
         @touch($lockPath);
 
         return $lockPath;
+    }
+
+    /**
+     * Refreshes the lock's modification time so a long-running install is
+     * never mistaken for a stale (crashed) one. Callers invoke this at a
+     * throttled cadence while work is in progress.
+     */
+    public function renew(string $lockPath): void
+    {
+        @touch($lockPath);
     }
 
     public function release(string $lockPath, string $token): void

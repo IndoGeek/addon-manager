@@ -12,6 +12,11 @@ final class DownloadManager implements Downloader
     private const MAX_REDIRECTS = 5;
 
     /**
+     * @var null|callable(int|null $downloadedBytes, int|null $totalBytes): void
+     */
+    private $progressCallback = null;
+
+    /**
      * Additional reserved/private networks that PHP's filter_var IP flags do
      * not classify as non-public. They must never be reachable from the
      * downloader (metadata services, multicast, NAT gateways, benchmarks and
@@ -36,8 +41,19 @@ final class DownloadManager implements Downloader
 
     public function __construct(
         private readonly string $temporaryRoot,
-        private readonly int $maxDownloadBytes = 2_147_483_648,
+        private readonly int $maxDownloadBytes = 10_737_418_240,
     ) {
+    }
+
+    /**
+     * Registers a callback invoked while the payload body is being streamed
+     * to disk so callers can surface download progress.
+     *
+     * @param null|callable(int|null $downloadedBytes, int|null $totalBytes): void $callback
+     */
+    public function setProgressCallback(?callable $callback): void
+    {
+        $this->progressCallback = $callback;
     }
 
     public function download(string $url): string
@@ -147,6 +163,7 @@ final class DownloadManager implements Downloader
 
         $maxBytes = $this->maxDownloadBytes;
         $headers = '';
+        $lastProgressReport = 0.0;
 
         curl_setopt_array($curl, [
             CURLOPT_URL => $url,
@@ -154,7 +171,7 @@ final class DownloadManager implements Downloader
             CURLOPT_FOLLOWLOCATION => false,
             CURLOPT_FAILONERROR => false,
             CURLOPT_CONNECTTIMEOUT => 15,
-            CURLOPT_TIMEOUT => 300,
+            CURLOPT_TIMEOUT => 3600,
             CURLOPT_PROTOCOLS => CURLPROTO_HTTP | CURLPROTO_HTTPS,
             CURLOPT_REDIR_PROTOCOLS => CURLPROTO_HTTP | CURLPROTO_HTTPS,
             CURLOPT_SSL_VERIFYPEER => true,
@@ -170,8 +187,33 @@ final class DownloadManager implements Downloader
                 float $downloaded,
                 float $uploadSize,
                 float $uploaded,
-            ) use ($maxBytes): int {
-                return $downloaded > $maxBytes ? 1 : 0;
+            ) use ($maxBytes, &$lastProgressReport): int {
+                if ($downloaded > $maxBytes) {
+                    return 1;
+                }
+
+                $callback = $this->progressCallback;
+
+                if ($callback !== null) {
+                    $now = microtime(true);
+
+                    if (($now - $lastProgressReport) >= 0.4) {
+                        $lastProgressReport = $now;
+
+                        try {
+                            $callback(
+                                (int) floor($downloaded),
+                                $downloadSize > 0
+                                    ? (int) floor($downloadSize)
+                                    : null,
+                            );
+                        } catch (\Throwable) {
+                            // Progress reporting must never abort a download.
+                        }
+                    }
+                }
+
+                return 0;
             },
             CURLOPT_HEADERFUNCTION => function (
                 $curl,
