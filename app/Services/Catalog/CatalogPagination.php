@@ -53,4 +53,18 @@ final readonly class CatalogPagination
             'has_previous' => $this->hasPrevious,
         ];
     }
+
+    /**
+     * Rebuilds a pagination from toArray() output (cache hydration).
+     *
+     * @param array<string, mixed> $data
+     */
+    public static function fromArray(array $data): self
+    {
+        return new self(
+            (int) ($data['page'] ?? CatalogSearchQuery::DEFAULT_PAGE),
+            (int) ($data['limit'] ?? 1),
+            (int) ($data['total'] ?? 0),
+        );
+    }
 }

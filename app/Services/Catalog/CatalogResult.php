@@ -56,4 +56,55 @@ final readonly class CatalogResult
             'diagnostics' => $this->diagnostics,
         ];
     }
+
+    /**
+     * Rebuilds a result from toArray() output (cache hydration).
+     *
+     * @param array<string, mixed> $data
+     */
+    public static function fromArray(array $data): self
+    {
+        $filters = is_array($data['filters'] ?? null)
+            ? $data['filters']
+            : [];
+
+        $items = [];
+
+        if (is_array($data['items'] ?? null)) {
+            foreach ($data['items'] as $item) {
+                if (is_array($item)) {
+                    $items[] = CatalogItem::fromArray($item);
+                }
+            }
+        }
+
+        $intOrNull = static function ($value): ?int {
+            return is_int($value) ? $value : null;
+        };
+
+        $listOrEmpty = static function ($value): array {
+            return is_array($value) ? array_values($value) : [];
+        };
+
+        return new self(
+            $items,
+            isset($data['pagination']) && is_array($data['pagination'])
+                ? CatalogPagination::fromArray($data['pagination'])
+                : new CatalogPagination(1, 1, 0),
+            (string) ($data['provider'] ?? ''),
+            (string) ($data['sort'] ?? ''),
+            isset($filters['query']) && is_string($filters['query'])
+                ? $filters['query']
+                : null,
+            $listOrEmpty($filters['game_versions'] ?? null),
+            $listOrEmpty($filters['loaders'] ?? null),
+            $listOrEmpty($filters['categories'] ?? null),
+            $listOrEmpty($filters['environments'] ?? null),
+            $intOrNull($data['upstream_total'] ?? null),
+            $intOrNull($data['filtered_total'] ?? null),
+            is_array($data['diagnostics'] ?? null)
+                ? $data['diagnostics']
+                : [],
+        );
+    }
 }

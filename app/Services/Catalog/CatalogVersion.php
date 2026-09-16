@@ -54,4 +54,47 @@ final readonly class CatalogVersion
             'file_size' => $this->fileSize,
         ];
     }
+
+    /**
+     * Rebuilds a version from toArray() output (cache hydration).
+     *
+     * @param array<string, mixed> $data
+     */
+    public static function fromArray(array $data): self
+    {
+        return new self(
+            (string) ($data['provider'] ?? ''),
+            (string) ($data['project_id'] ?? ''),
+            isset($data['project_slug']) && is_string($data['project_slug'])
+                ? $data['project_slug']
+                : null,
+            isset($data['project_name']) && is_string($data['project_name'])
+                ? $data['project_name']
+                : null,
+            (string) ($data['version_id'] ?? ''),
+            (string) ($data['version_number'] ?? ''),
+            isset($data['version_name']) && is_string($data['version_name'])
+                ? $data['version_name']
+                : null,
+            is_array($data['game_versions'] ?? null)
+                ? array_values($data['game_versions'])
+                : [],
+            is_array($data['loaders'] ?? null)
+                ? array_values($data['loaders'])
+                : [],
+            isset($data['date_published']) && is_string($data['date_published'])
+                ? $data['date_published']
+                : null,
+            isset($data['date_modified']) && is_string($data['date_modified'])
+                ? $data['date_modified']
+                : null,
+            isset($data['downloads']) && is_int($data['downloads'])
+                ? $data['downloads']
+                : null,
+            (string) ($data['source'] ?? ''),
+            isset($data['file_size']) && is_int($data['file_size'])
+                ? $data['file_size']
+                : null,
+        );
+    }
 }

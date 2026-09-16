@@ -602,8 +602,15 @@ $http = new FakeProviderHttpClient([
             sampleFile(705, 'non-public', ['fileStatus' => 3]),
         ],
     ]),
+    // Bulk server-pack resolution: one POST /mods/files for every
+    // referenced server pack id instead of per-file GETs.
     new ProviderHttpResponse(200, [
-        'data' => sampleFile(702, 'dedicated server pack', ['isServerPack' => true]),
+        'data' => [
+            sampleFile(702, 'dedicated server pack', [
+                'isServerPack' => true,
+                'modId' => 444,
+            ]),
+        ],
     ]),
 ]);
 $provider = new CurseForgeCatalogProvider($http, 'secret-key');
@@ -621,9 +628,21 @@ if (($versionRequest['url'] ?? '') !== 'https://api.curseforge.com/v1/mods/444/f
 
 $serverPackRequest = $http->requests[1] ?? null;
 
-if (($serverPackRequest['url'] ?? '') !== 'https://api.curseforge.com/v1/mods/444/files/702') {
+if (($serverPackRequest['url'] ?? '') !== 'https://api.curseforge.com/v1/mods/files') {
     throw new RuntimeException(
-        'The referenced server pack should be resolved on the version list.',
+        'Server packs should resolve through one bulk /mods/files call.',
+    );
+}
+
+if (($serverPackRequest['body']['fileIds'] ?? null) !== [702]) {
+    throw new RuntimeException(
+        'The bulk call should carry exactly the referenced server pack id.',
+    );
+}
+
+if (count($http->requests) !== 2) {
+    throw new RuntimeException(
+        'The version list must not make per-file server-pack requests (N+1).',
     );
 }
 
@@ -683,10 +702,13 @@ $http = new FakeProviderHttpClient([
         ],
     ]),
     new ProviderHttpResponse(200, [
-        'data' => sampleFile(8610312, 'Vagrant Saga Server Pack-1.1.8.zip', [
-            'isServerPack' => true,
-            'fileDate' => '2024-12-31T00:00:00Z',
-        ]),
+        'data' => [
+            sampleFile(8610312, 'Vagrant Saga Server Pack-1.1.8.zip', [
+                'isServerPack' => true,
+                'fileDate' => '2024-12-31T00:00:00Z',
+                'modId' => 442958,
+            ]),
+        ],
     ]),
 ]);
 $provider = new CurseForgeCatalogProvider($http, 'secret-key');

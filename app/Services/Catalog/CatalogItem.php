@@ -61,4 +61,45 @@ final readonly class CatalogItem
             'environment' => $this->environment,
         ];
     }
+
+    /**
+     * Rebuilds an item from toArray() output (cache hydration).
+     *
+     * @param array<string, mixed> $data
+     */
+    public static function fromArray(array $data): self
+    {
+        $stringOrNull = static function ($value): ?string {
+            return is_string($value) && $value !== '' ? $value : null;
+        };
+
+        $intOrNull = static function ($value): ?int {
+            return is_int($value) ? $value : null;
+        };
+
+        $listOrNull = static function ($value): array {
+            return is_array($value) ? array_values($value) : [];
+        };
+
+        return new self(
+            (string) ($data['provider'] ?? ''),
+            (string) ($data['provider_project_id'] ?? ''),
+            $stringOrNull($data['slug'] ?? null),
+            (string) ($data['name'] ?? ''),
+            $stringOrNull($data['summary'] ?? null),
+            $stringOrNull($data['icon_url'] ?? null),
+            $stringOrNull($data['project_url'] ?? null),
+            $intOrNull($data['downloads'] ?? null),
+            $intOrNull($data['follows'] ?? null),
+            $listOrNull($data['categories'] ?? null),
+            $listOrNull($data['game_versions'] ?? null),
+            $listOrNull($data['loaders'] ?? null),
+            $stringOrNull($data['latest_version'] ?? null),
+            (string) ($data['source'] ?? ''),
+            $stringOrNull($data['author'] ?? null),
+            $stringOrNull($data['updated_at'] ?? null),
+            $stringOrNull($data['banner_url'] ?? null),
+            $stringOrNull($data['environment'] ?? null),
+        );
+    }
 }

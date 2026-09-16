@@ -20,6 +20,7 @@ use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Providers\Unsuppo
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Models\ModpackMetadata;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogProjectQuery;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogProviderException;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogCache;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogProviderRegistry;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogSearchQuery;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogService;
@@ -1404,7 +1405,24 @@ final class ModpackController extends Controller
                     $this->curseForgeApiKey(),
                 ),
             ]),
+            $this->catalogCache(),
         );
+    }
+
+    /**
+     * Short-lived Redis-backed cache for upstream catalog responses. Null
+     * when caching is disabled via config; every cache failure degrades
+     * gracefully to direct upstream fetches.
+     */
+    private function catalogCache(): ?CatalogCache
+    {
+        $ttl = config('modpackinstaller.catalog_cache_ttl');
+
+        if (!is_numeric($ttl) || (int) $ttl <= 0) {
+            return null;
+        }
+
+        return new CatalogCache((int) $ttl);
     }
 
     private function installationLock(): InstallationLock

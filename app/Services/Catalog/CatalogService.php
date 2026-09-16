@@ -7,11 +7,17 @@ namespace Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Ca
  * requested provider, refuses unavailable providers, exposes the list of
  * providers (with their availability, capabilities and facet options) for the
  * UI, and resolves normalized project details for the details view.
+ *
+ * Search/version/project responses are cached for a short TTL (panel Redis
+ * through the shared cache repository) keyed by the exact query, so repeat
+ * views and provider switches render instantly instead of re-hitting the
+ * upstream APIs on every open.
  */
 final class CatalogService
 {
     public function __construct(
         private readonly CatalogProviderRegistry $registry,
+        private readonly ?CatalogCache $cache = null,
     ) {
     }
 
@@ -71,7 +77,29 @@ final class CatalogService
             );
         }
 
-        return $provider->search($query);
+        $key = CatalogCache::key('search', [
+            'provider' => $query->provider,
+            'query' => $query->query,
+            'game_versions' => $query->gameVersions,
+            'loaders' => $query->loaders,
+            'categories' => $query->categories,
+            'environments' => $query->environments,
+            'sort' => $query->sort->value,
+            'page' => $query->page,
+            'limit' => $query->limit,
+        ]);
+
+        $cached = $this->cache?->get($key);
+
+        if (is_array($cached)) {
+            return CatalogResult::fromArray($cached);
+        }
+
+        $result = $provider->search($query);
+
+        $this->cache?->put($key, $result->toArray());
+
+        return $result;
     }
 
     public function versions(CatalogVersionQuery $query): CatalogVersionList
@@ -84,12 +112,29 @@ final class CatalogService
             );
         }
 
-        return new CatalogVersionList(
+        $key = CatalogCache::key('versions', [
+            'provider' => $query->provider,
+            'project' => $query->project,
+            'game_versions' => $query->gameVersions,
+            'loaders' => $query->loaders,
+        ]);
+
+        $cached = $this->cache?->get($key);
+
+        if (is_array($cached)) {
+            return CatalogVersionList::fromArray($cached);
+        }
+
+        $list = new CatalogVersionList(
             provider: $provider->name(),
             appliedGameVersions: $query->gameVersions,
             appliedLoaders: $query->loaders,
             versions: $provider->versions($query),
         );
+
+        $this->cache?->put($key, $list->toArray());
+
+        return $list;
     }
 
     public function project(CatalogProjectQuery $query): CatalogItem
@@ -102,7 +147,22 @@ final class CatalogService
             );
         }
 
-        return $provider->project($query);
+        $key = CatalogCache::key('project', [
+            'provider' => $query->provider,
+            'project' => $query->project,
+        ]);
+
+        $cached = $this->cache?->get($key);
+
+        if (is_array($cached)) {
+            return CatalogItem::fromArray($cached);
+        }
+
+        $item = $provider->project($query);
+
+        $this->cache?->put($key, $item->toArray());
+
+        return $item;
     }
 
     private function unavailableMessage(CatalogProvider $provider): string

@@ -485,6 +485,14 @@ final class CurseForgeCatalogProvider implements CatalogProvider
 
         $files = $this->requestAllFiles($query->project, $parameters);
 
+        // Resolve every referenced dedicated server pack in ONE bulk call
+        // instead of one sequential HTTP round-trip per file. The per-file
+        // approach turned the versions menu into a latency sink on projects
+        // like Tensura Neo Otherworld, where most of the dozens of files
+        // reference a server pack (17 sequential calls, seconds of dead
+        // air before the menu renders).
+        $serverPacks = $this->bulkResolveServerPacks($files, $query->project);
+
         $versions = [];
         $seenFileIds = [];
 
@@ -499,7 +507,11 @@ final class CurseForgeCatalogProvider implements CatalogProvider
                 continue;
             }
 
-            $installFile = $this->resolveInstallableFile($file, $query->project);
+            $installFile = $this->resolveInstallableFile(
+                $file,
+                $query->project,
+                $serverPacks,
+            );
 
             if ($installFile === null) {
                 continue;
@@ -857,13 +869,17 @@ final class CurseForgeCatalogProvider implements CatalogProvider
     private function resolveInstallableFile(
         array $file,
         string $project,
+        array $serverPacks = [],
     ): ?array {
         if ($this->isServerPack($file)) {
             return $file;
         }
 
         if ($this->fileReferencesServerPack($file)) {
-            $serverPack = $this->fetchServerPackFile($project, $file);
+            $serverPackFileId = (int) ($file['serverPackFileId'] ?? 0);
+
+            $serverPack = $serverPacks[$serverPackFileId]
+                ?? $this->fetchServerPackFile($project, $file);
 
             if ($serverPack !== null) {
                 return $this->inheritMissingGameVersions($serverPack, $file);
@@ -875,6 +891,88 @@ final class CurseForgeCatalogProvider implements CatalogProvider
         }
 
         return $file;
+    }
+
+    /**
+     * Resolves every distinct referenced server pack id across the file list
+     * through the bulk /mods/files endpoint (one call per 50 ids instead of
+     * one per file). Files the bulk call cannot serve fall back to the
+     * per-file lookup inside resolveInstallableFile().
+     *
+     * @param array<int, array<string, mixed>> $files
+     *
+     * @return array<int, array<string, mixed>> server pack id => file payload
+     */
+    private function bulkResolveServerPacks(
+        array $files,
+        string $project,
+    ): array {
+        $ids = [];
+
+        foreach ($files as $file) {
+            if (!is_array($file) || !$this->fileReferencesServerPack($file)) {
+                continue;
+            }
+
+            $id = $this->intOrNull($file['serverPackFileId'] ?? null);
+
+            if ($id !== null && $id > 0) {
+                $ids[$id] = true;
+            }
+        }
+
+        if ($ids === []) {
+            return [];
+        }
+
+        $ids = array_map('intval', array_keys($ids));
+
+        $resolved = [];
+
+        foreach (array_chunk($ids, 50) as $chunk) {
+            try {
+                $response = $this->http->post(
+                    self::API_BASE . '/mods/files',
+                    body: ['fileIds' => $chunk],
+                    headers: $this->headers(),
+                );
+            } catch (ProviderHttpException $exception) {
+                // A bulk failure must not kill the whole version menu; the
+                // per-file fallback inside resolveInstallableFile() covers
+                // the ids this chunk could not resolve.
+                continue;
+            }
+
+            if (
+                !is_array($response->body)
+                || !is_array($response->body['data'] ?? null)
+            ) {
+                continue;
+            }
+
+            foreach ($response->body['data'] as $file) {
+                if (!is_array($file)) {
+                    continue;
+                }
+
+                $id = $this->intOrNull($file['id'] ?? null);
+                $modId = $this->intOrNull($file['modId'] ?? null);
+
+                // The bulk endpoint returns files across projects, so every
+                // payload is checked against the requested project id.
+                if (
+                    $id === null
+                    || $modId !== (int) $project
+                    || !$this->isPubliclyDownloadable($file)
+                ) {
+                    continue;
+                }
+
+                $resolved[$id] = $file;
+            }
+        }
+
+        return $resolved;
     }
 
     /**

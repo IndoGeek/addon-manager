@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Dropdown } from '../common/Dropdown';
 import { FilterIcon, GridIcon, ListIcon, PackageIcon, SearchIcon } from '../icons';
 import { SORT_OPTIONS } from '../utils/constants';
@@ -54,24 +54,108 @@ export const CatalogToolbar = ({
     badgeCount,
     onOpenInstalled,
 }: ToolbarProps) => {
+    const searchInputRef = useRef<HTMLInputElement | null>(null);
+
+    // Scroll positions (page and extension container) captured when the
+    // input gains focus. The virtual keyboard opening itself fires a small
+    // scroll on some mobile browsers, so the dismiss threshold must be
+    // large enough to ignore that.
+    const focusScrollY = useRef<{ windowY: number; rootTop: number }>({
+        windowY: 0,
+        rootTop: 0,
+    });
+
+    useEffect(() => {
+        const onScroll = (event: Event) => {
+            const input = searchInputRef.current;
+
+            if (!input || document.activeElement !== input) {
+                return;
+            }
+
+            const target = event.target;
+            const isDocument = target === document;
+            const element = isDocument ? null : (target as Element);
+
+            // Only the page itself or the extension's own container can
+            // meaningfully move the input; a tiny inner scroller (a dropdown
+            // menu, for instance) must not dismiss the keyboard.
+            if (!isDocument && !element?.closest('.modpackinstaller-root')) {
+                return;
+            }
+
+            const before = isDocument
+                ? (focusScrollY.current.windowY ?? 0)
+                : (focusScrollY.current.rootTop ?? 0);
+
+            const after = isDocument
+                ? window.scrollY
+                : (element as Element).scrollTop;
+
+            // The keyboard opening itself fires a small scroll on some
+            // mobile browsers; anything beyond that threshold means the
+            // user moved away from the input, which is the moment to
+            // dismiss the keyboard.
+            if (Math.abs(after - before) > 40) {
+                input.blur();
+            }
+        };
+
+        // Capture phase on document: scroll events do not bubble, and the
+        // panel may scroll inside an inner container rather than the window.
+        document.addEventListener('scroll', onScroll, {
+            capture: true,
+            passive: true,
+        });
+
+        return () => document.removeEventListener('scroll', onScroll, {
+            capture: true,
+        });
+    }, []);
+
+    const submitAndDismissKeyboard = () => {
+        searchInputRef.current?.blur();
+
+        onQuerySubmit();
+    };
+
     return (
         <div className="modpackinstaller-browser-toolbar">
             <div className="modpackinstaller-search">
                 <div className="modpackinstaller-controls-row">
                     <div className="modpackinstaller-search-box">
                         <input
+                            ref={searchInputRef}
                             id="modpackinstaller-search"
                             type="search"
                             value={query}
                             onChange={(event) => onQueryChange(event.target.value)}
                             onKeyDown={(event) => {
                                 if (event.key === 'Enter') {
-                                    onQuerySubmit();
+                                    submitAndDismissKeyboard();
                                 }
                             }}
+                            onFocus={(event) => {
+                                // Remember where the page and the extension
+                                // container were when focus landed, so the
+                                // scroll-away dismissal compares like with
+                                // like.
+                                const container = (
+                                    event.target as HTMLElement
+                                ).closest('.modpackinstaller-root');
+
+                                focusScrollY.current = {
+                                    windowY: window.scrollY,
+                                    rootTop: container?.scrollTop ?? 0,
+                                };
+                            }}
+                            // Never disabled while searching: disabling a
+                            // focused input dismisses the mobile keyboard
+                            // mid-typing. The debounced search simply keeps
+                            // running underneath whatever is typed next.
                             placeholder="Search modpacks"
-                            disabled={catalogBusy}
                             aria-label="Search modpacks"
+                            aria-busy={catalogBusy}
                         />
 
                         {query.trim() !== '' && (
@@ -79,6 +163,9 @@ export const CatalogToolbar = ({
                                 type="button"
                                 className="modpackinstaller-search-clear"
                                 onClick={onQueryClear}
+                                // Keep the keyboard open: preventDefault on
+                                // mousedown stops the input losing focus.
+                                onMouseDown={(event) => event.preventDefault()}
                                 aria-label="Clear search"
                                 disabled={catalogBusy}
                             >
@@ -89,7 +176,7 @@ export const CatalogToolbar = ({
                         <button
                             type="button"
                             className="modpackinstaller-search-go"
-                            onClick={onQuerySubmit}
+                            onClick={submitAndDismissKeyboard}
                             disabled={catalogBusy}
                             aria-label="Search"
                         >

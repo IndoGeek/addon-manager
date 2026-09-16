@@ -39,4 +39,37 @@ final readonly class CatalogVersionList
             ),
         ];
     }
+
+    /**
+     * Rebuilds a version list from toArray() output (cache hydration).
+     *
+     * @param array<string, mixed> $data
+     */
+    public static function fromArray(array $data): self
+    {
+        $filters = is_array($data['filters'] ?? null)
+            ? $data['filters']
+            : [];
+
+        $versions = [];
+
+        if (is_array($data['versions'] ?? null)) {
+            foreach ($data['versions'] as $version) {
+                if (is_array($version)) {
+                    $versions[] = CatalogVersion::fromArray($version);
+                }
+            }
+        }
+
+        return new self(
+            (string) ($data['provider'] ?? ''),
+            is_array($filters['game_versions'] ?? null)
+                ? array_values($filters['game_versions'])
+                : [],
+            is_array($filters['loaders'] ?? null)
+                ? array_values($filters['loaders'])
+                : [],
+            $versions,
+        );
+    }
 }

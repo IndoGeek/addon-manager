@@ -18,4 +18,13 @@ return [
     'server_root' => env('MODPACK_INSTALLER_SERVER_ROOT'),
 
     'data_dir' => env('MODPACK_INSTALLER_DATA_DIR'),
+
+    /*
+     | Lifetime in seconds of cached upstream catalog responses (search,
+     | version lists, project details) stored in the panel's cache store
+     | (Redis on a stock install). Short by design: the catalog must pick
+     | up newly published modpack versions within minutes. Set to 0 to
+     | disable catalog caching entirely.
+     */
+    'catalog_cache_ttl' => env('MODPACK_INSTALLER_CATALOG_CACHE_TTL', 300),
 ];
