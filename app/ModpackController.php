@@ -15,6 +15,7 @@ use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Providers\ManualD
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Providers\MockModpackProvider;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Providers\ModrinthProvider;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Providers\ModpackProvider;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Providers\PartialPackageProvider;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Providers\UnsupportedModpackPackageException;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Models\ModpackMetadata;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogProjectQuery;
@@ -919,6 +920,11 @@ final class ModpackController extends Controller
         $record = null;
         $token = bin2hex(random_bytes(16));
 
+        // A restore still downloads the pack archive (the manifest inside it
+        // identifies the files), which can take minutes on slow links. Lift
+        // the request timer for the same reason the install route does.
+        @set_time_limit(0);
+
         try {
             $id = $this->validateRecordId($id);
 
@@ -926,6 +932,8 @@ final class ModpackController extends Controller
                 $this->lockKey($server),
                 $token,
             );
+
+            $this->clearCancelFlag($this->lockKey($server));
 
             $record = $this->store()->find(
                 (string) $server->uuid,
@@ -957,11 +965,38 @@ final class ModpackController extends Controller
                 ], 409);
             }
 
-            $provider = $this->providerRegistry()->resolve($record->source);
+            $downloader = $this->downloader();
 
-            $package = $provider->getPackage($record->source);
+            $downloader->setCancelChecker(
+                fn (): bool => $this->wasCancelled(
+                    $this->lockKey($server),
+                ),
+            );
 
-            $result = $this->orchestrator($target)->restore(
+            $provider = $this->providerRegistry($downloader)
+                ->resolve($record->source);
+
+            // Providers that support partial builds fetch only the missing
+            // files: the pack archive still downloads (the manifest inside it
+            // identifies every file), but the mods phase resolves and fetches
+            // exactly the wanted paths instead of re-downloading hundreds of
+            // mods that are already deployed and intact.
+            if ($provider instanceof PartialPackageProvider) {
+                $package = $provider->getPackageForPaths(
+                    $record->source,
+                    $missing,
+                );
+            } else {
+                $package = $provider->getPackage($record->source);
+            }
+
+            $result = $this->orchestrator(
+                $target,
+                null,
+                fn (): bool => $this->wasCancelled(
+                    $this->lockKey($server),
+                ),
+            )->restore(
                 archivePath: $package->archivePath,
                 paths: $missing,
             );
@@ -975,6 +1010,10 @@ final class ModpackController extends Controller
                     'requested' => count($missing),
                 ],
             ]);
+        } catch (InstallationCancelledException $exception) {
+            return response()->json([
+                'error' => 'Restore cancelled.',
+            ], 409);
         } catch (InstallationLockedException $exception) {
             return response()->json([
                 'error' => 'Another installation operation is already running for this server. Please wait and try again.',
@@ -1033,6 +1072,8 @@ final class ModpackController extends Controller
             if ($provider !== null && $package !== null) {
                 $provider->cleanup($package);
             }
+
+            $this->clearCancelFlag($this->lockKey($server));
         }
     }
 

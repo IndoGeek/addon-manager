@@ -13,7 +13,7 @@ use RuntimeException;
 use Throwable;
 use ZipArchive;
 
-final class ModrinthProvider implements ModpackProvider
+final class ModrinthProvider implements ModpackProvider, PartialPackageProvider
 {
     private const API_BASE = 'https://api.modrinth.com/v2';
 
@@ -204,6 +204,136 @@ final class ModrinthProvider implements ModpackProvider
     public function cleanup(ModpackPackage $package): void
     {
         $this->removeTracked($package->archivePath);
+    }
+
+    /**
+     * Builds a package holding only the requested server-relative paths.
+     * Used by restore: the mrpack archive is still downloaded (the index
+     * lives inside it and identifies every file), but only the wanted
+     * embedded entries stream out and only the wanted index files are
+     * fetched from the network.
+     *
+     * @param list<string> $paths normalized server-relative paths
+     */
+    public function getPackageForPaths(
+        string $source,
+        array $paths,
+    ): ModpackPackage {
+        $parsed = $this->parseSource($source);
+
+        if ($parsed === null) {
+            throw new InvalidArgumentException(
+                'Unsupported modpack source.',
+            );
+        }
+
+        $wanted = [];
+
+        foreach ($paths as $path) {
+            $normalized = str_replace('\\', '/', $path);
+            $normalized = ltrim($normalized, '/');
+
+            if (
+                $normalized === ''
+                || !$this->isSafeRelativePath($normalized)
+            ) {
+                throw new InvalidArgumentException(
+                    'The modpack restore contains an invalid path.',
+                );
+            }
+
+            $wanted[$normalized] = true;
+        }
+
+        if ($wanted === []) {
+            throw new InvalidArgumentException(
+                'A modpack restore requires at least one path.',
+            );
+        }
+
+        $project = $this->fetchProject($parsed['project']);
+
+        $this->assertModpackProject($project);
+
+        $version = $this->selectedVersion(
+            $parsed['versionId'],
+            $project,
+            $parsed['project'],
+        );
+
+        $file = $this->selectPrimaryFile($version['files'] ?? []);
+
+        if ($file === null) {
+            throw new InvalidArgumentException(
+                'The Modrinth version does not provide a package file.',
+            );
+        }
+
+        $filename = (string) ($file['filename'] ?? '');
+        $extension = strtolower(
+            (string) pathinfo($filename, PATHINFO_EXTENSION),
+        );
+
+        if (!in_array($extension, ['mrpack', 'zip'], true)) {
+            throw new InvalidArgumentException(
+                'The Modrinth version does not provide a supported modpack archive.',
+            );
+        }
+
+        $url = (string) ($file['url'] ?? '');
+
+        if ($url === '') {
+            throw new InvalidArgumentException(
+                'The Modrinth version file does not have a download URL.',
+            );
+        }
+
+        // Same progress anchoring as getPackage(): the archive phase is
+        // scaled so the later index-phase re-anchor does not jump backwards.
+        $archiveSize = max(0, (int) ($file['size'] ?? 0));
+
+        if ($extension === 'mrpack') {
+            $this->downloader->setProgressOffset(
+                0,
+                max(1, (int) round($archiveSize / self::PROGRESS_ARCHIVE_SLICE)),
+            );
+        } else {
+            $this->downloader->setProgressOffset(0, $archiveSize);
+        }
+
+        $archivePath = $this->downloader->download($url);
+
+        $this->temporaryPackages[$archivePath] = true;
+
+        $resolvedVersionId = $this->nullableString($version['id'] ?? null)
+            ?? $parsed['versionId'];
+
+        try {
+            if ($extension !== 'mrpack') {
+                return new ModpackPackage(
+                    archivePath: $archivePath,
+                    source: $this->canonicalSource($project, $resolvedVersionId),
+                );
+            }
+
+            $normalized = $this->buildServerArchive(
+                $archivePath,
+                array_keys($wanted),
+            );
+
+            $this->removeTracked($archivePath);
+
+            $this->temporaryPackages[$normalized] = true;
+
+            return new ModpackPackage(
+                archivePath: $normalized,
+                source: $this->canonicalSource($project, $resolvedVersionId),
+            );
+        } catch (Throwable $exception) {
+            $this->removeTracked($archivePath);
+
+            throw $exception;
+        }
     }
 
     private function removeTracked(string $path): void
@@ -459,8 +589,15 @@ final class ModrinthProvider implements ModpackProvider
         return $files[0] ?? null;
     }
 
-    private function buildServerArchive(string $archivePath): string
-    {
+    /**
+     * When $wantedPaths is non-null the build is restricted to those
+     * server-relative paths (restore flow): embedded entries stream only
+     * their files and the index phase fetches only wanted downloads.
+     */
+    private function buildServerArchive(
+        string $archivePath,
+        ?array $wantedPaths = null,
+    ): string {
         $source = new ZipArchive();
 
         if ($source->open($archivePath) !== true) {
@@ -470,9 +607,13 @@ final class ModrinthProvider implements ModpackProvider
         }
 
         try {
-            $content = $this->collectArchiveContent($source);
+            $wanted = $wantedPaths === null
+                ? null
+                : array_fill_keys($wantedPaths, true);
 
-            $this->mergeIndexFiles($source, $content);
+            $content = $this->collectArchiveContent($source, $wanted);
+
+            $this->mergeIndexFiles($source, $content, $wanted);
 
             if ($content === []) {
                 throw new UnsupportedModpackPackageException(
@@ -802,7 +943,10 @@ final class ModrinthProvider implements ModpackProvider
      *
      * @return array<string, array{archiveEntry: string, downloadUrl: null, priority: string, bytes: int}>
      */
-    private function collectArchiveContent(ZipArchive $source): array
+    private function collectArchiveContent(
+        ZipArchive $source,
+        ?array $wanted = null,
+    ): array
     {
         $content = [];
 
@@ -833,6 +977,12 @@ final class ModrinthProvider implements ModpackProvider
             if (
                 $this->shouldReplace($content[$payload['relative']] ?? null, $payload['priority'])
             ) {
+                // Restore flow: embedded entries outside the wanted set are
+                // skipped before streaming.
+                if ($wanted !== null && !isset($wanted[$payload['relative']])) {
+                    continue;
+                }
+
                 $content[$payload['relative']] = [
                     'archiveEntry' => $name,
                     'downloadUrl' => null,
@@ -855,9 +1005,16 @@ final class ModrinthProvider implements ModpackProvider
      * Malformed or unresolvable manifests fail loudly (never silently skip)
      * so a partial install is never reported as complete.
      *
+     * When $wanted is non-null (restore flow) index files outside the wanted
+     * set are skipped without being queued for download.
+     *
      * @param array<string, array{archiveEntry: string|null, downloadUrl: string|null, priority: string, bytes: int}> $content
      */
-    private function mergeIndexFiles(ZipArchive $source, array &$content): void
+    private function mergeIndexFiles(
+        ZipArchive $source,
+        array &$content,
+        ?array $wanted = null,
+    ): void
     {
         $rawIndex = $source->getFromName(self::INDEX_FILE);
 
@@ -915,6 +1072,10 @@ final class ModrinthProvider implements ModpackProvider
             if (
                 $this->shouldReplace($content[$relative] ?? null, 'index')
             ) {
+                if ($wanted !== null && !isset($wanted[$relative])) {
+                    continue;
+                }
+
                 $content[$relative] = [
                     'archiveEntry' => null,
                     'downloadUrl' => $url,

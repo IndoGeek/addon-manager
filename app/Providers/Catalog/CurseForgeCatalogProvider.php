@@ -866,7 +866,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
             $serverPack = $this->fetchServerPackFile($project, $file);
 
             if ($serverPack !== null) {
-                return $serverPack;
+                return $this->inheritMissingGameVersions($serverPack, $file);
             }
         }
 
@@ -875,6 +875,41 @@ final class CurseForgeCatalogProvider implements CatalogProvider
         }
 
         return $file;
+    }
+
+    /**
+     * CurseForge server-pack files frequently ship with an empty
+     * gameVersions array even though the client pack that references them
+     * declares its own. The versions menu would then show those entries
+     * without a Minecraft version and installing them would fail metadata
+     * resolution. Since the server pack belongs to the same project and
+     * version as the referencing file, the referencing file's versions are
+     * inherited for any field the server pack omits.
+     *
+     * @param array<string, mixed> $serverPack
+     * @param array<string, mixed> $referencingFile
+     *
+     * @return array<string, mixed>
+     */
+    private function inheritMissingGameVersions(
+        array $serverPack,
+        array $referencingFile,
+    ): array {
+        $serverVersions = $serverPack['gameVersions'] ?? null;
+
+        if (is_array($serverVersions) && $serverVersions !== []) {
+            return $serverPack;
+        }
+
+        $referenceVersions = $referencingFile['gameVersions'] ?? null;
+
+        if (!is_array($referenceVersions) || $referenceVersions === []) {
+            return $serverPack;
+        }
+
+        $serverPack['gameVersions'] = $referenceVersions;
+
+        return $serverPack;
     }
 
     /**

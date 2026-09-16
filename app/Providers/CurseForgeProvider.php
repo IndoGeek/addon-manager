@@ -13,7 +13,7 @@ use RuntimeException;
 use Throwable;
 use ZipArchive;
 
-final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvider
+final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvider, PartialPackageProvider
 {
     private const API_BASE = 'https://api.curseforge.com/v1';
 
@@ -258,6 +258,112 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
     }
 
     /**
+     * Builds a package holding only the requested server-relative paths.
+     * Used by restore: the client-pack archive is still downloaded (the
+     * manifest lives inside it and identifies every file), but the mods
+     * phase resolves and fetches only the wanted files instead of the
+     * whole manifest, and overrides stream only their entries.
+     *
+     * @param list<string> $paths normalized server-relative paths
+     */
+    public function getPackageForPaths(
+        string $source,
+        array $paths,
+    ): ModpackPackage {
+        $parsed = $this->parseSource($source);
+
+        if ($parsed === null) {
+            throw new InvalidArgumentException(
+                'Unsupported modpack source.',
+            );
+        }
+
+        $this->assertConfigured();
+
+        $wanted = [];
+
+        foreach ($paths as $path) {
+            $normalized = str_replace('\\', '/', $path);
+            $normalized = ltrim($normalized, '/');
+
+            if (
+                $normalized === ''
+                || !$this->isSafeRelativePath($normalized)
+            ) {
+                throw new InvalidArgumentException(
+                    'The modpack restore contains an invalid path.',
+                );
+            }
+
+            $wanted[$normalized] = true;
+        }
+
+        if ($wanted === []) {
+            throw new InvalidArgumentException(
+                'A modpack restore requires at least one path.',
+            );
+        }
+
+        $projectId = $parsed['projectId'];
+
+        $project = $this->fetchProject($projectId);
+
+        $this->assertModpackProject($project);
+
+        $file = $this->resolveFile($projectId, $parsed['fileId']);
+
+        if ($file === null) {
+            throw new InvalidArgumentException(
+                'The CurseForge project has no files.',
+            );
+        }
+
+        $file = $this->resolvePackageFile($file, $projectId);
+
+        if (!$this->isPubliclyDownloadable($file)) {
+            throw new InvalidArgumentException(
+                'The CurseForge modpack does not provide a public download URL.',
+            );
+        }
+
+        $downloadUrl = (string) ($file['downloadUrl'] ?? '');
+
+        $archivePath = $this->downloader->download($downloadUrl);
+
+        $this->temporaryPackages[$archivePath] = true;
+
+        $resolvedFileId = $this->intOrNull($file['id'] ?? null);
+
+        $resolvedFileId = $resolvedFileId === null
+            ? $parsed['fileId']
+            : (string) $resolvedFileId;
+
+        try {
+            $normalized = $this->manifestResolvedArchive(
+                $archivePath,
+                array_keys($wanted),
+            );
+
+            if ($normalized !== null) {
+                $this->removeTracked($archivePath);
+
+                $this->temporaryPackages[$normalized] = true;
+
+                $archivePath = $normalized;
+            }
+
+            return new ModpackPackage(
+                archivePath: $archivePath,
+                source: $this->canonicalSource($projectId, $resolvedFileId),
+            );
+        } catch (Throwable $exception) {
+            $this->removeTracked($archivePath);
+
+            throw $exception;
+        }
+    }
+
+    /**
      * Resolves the file a source would install and, when that file cannot be
      * downloaded automatically, returns normalized manual-download guidance.
      * Returns null when the file can be installed automatically.
@@ -429,6 +535,40 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
         if ($serverPack === null) {
             return $file;
         }
+
+        return $this->inheritMissingGameVersions($serverPack, $file);
+    }
+
+    /**
+     * CurseForge server-pack files frequently ship with an empty
+     * gameVersions array even though the client pack that references them
+     * declares its own (e.g. Tensura Neo Otherworld). Since the server pack
+     * belongs to the same project and version as the referencing file, the
+     * referencing file's versions are inherited for any field the server
+     * pack omits, so metadata resolution keeps working.
+     *
+     * @param array<string, mixed> $serverPack
+     * @param array<string, mixed> $referencingFile
+     *
+     * @return array<string, mixed>
+     */
+    private function inheritMissingGameVersions(
+        array $serverPack,
+        array $referencingFile,
+    ): array {
+        $serverVersions = $serverPack['gameVersions'] ?? null;
+
+        if (is_array($serverVersions) && $serverVersions !== []) {
+            return $serverPack;
+        }
+
+        $referenceVersions = $referencingFile['gameVersions'] ?? null;
+
+        if (!is_array($referenceVersions) || $referenceVersions === []) {
+            return $serverPack;
+        }
+
+        $serverPack['gameVersions'] = $referenceVersions;
 
         return $serverPack;
     }
@@ -774,15 +914,21 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
 
     /**
      * Returns a normalized server archive for the downloaded CurseForge file.
-     * Dedicated server packs do not carry manifest.json and pass through
-     * untouched (null). Client packs are rebuilt from their manifest: every
-     * required, server-compatible mod file is downloaded into mods/ and the
-     * overrides directory is applied at the archive root.
+     * Dedicated server packs do not carry manifest.json: they are passed
+     * through untouched unless every entry lives inside a single wrapper
+     * folder (e.g. SERVER_1.21/...), in which case a package directory is
+     * materialized with the wrapper stripped so content lands at the server
+     * root. Client packs are rebuilt from their manifest: every required,
+     * server-compatible mod file is downloaded into mods/ and the overrides
+     * directory is applied at the archive root.
      *
      * Malformed or unresolvable manifests fail loudly (never silently skip) so
      * a partial install is never reported as complete.
      */
-    private function manifestResolvedArchive(string $archivePath): ?string
+    private function manifestResolvedArchive(
+        string $archivePath,
+        ?array $wantedPaths = null,
+    ): ?string
     {
         $source = new ZipArchive();
 
@@ -793,11 +939,33 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
         }
 
         try {
+            $prefix = '';
+
             if ($source->statName(self::MANIFEST_FILE) === false) {
-                return null;
+                // The manifest may sit inside a single wrapper folder (some
+                // packs zip their whole tree one level deep).
+                $wrapper = $this->singleRootPrefix($source);
+
+                if (
+                    $wrapper !== ''
+                    && $source->statName($wrapper . self::MANIFEST_FILE) !== false
+                ) {
+                    $prefix = $wrapper;
+                } elseif ($wrapper !== '') {
+                    // Dedicated server pack wrapped in one folder: stream it
+                    // out with the wrapper stripped so its content deploys at
+                    // the server root instead of a stray folder.
+                    return $this->materializeStrippedArchive(
+                        $source,
+                        $wrapper,
+                        $wantedPaths,
+                    );
+                } else {
+                    return null;
+                }
             }
 
-            $rawManifest = $source->getFromName(self::MANIFEST_FILE);
+            $rawManifest = $source->getFromName($prefix . self::MANIFEST_FILE);
 
             if ($rawManifest === false) {
                 throw new UnsupportedModpackPackageException(
@@ -813,10 +981,242 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
                 );
             }
 
-            return $this->buildServerArchive($source, $archivePath, $manifest);
+            return $this->buildServerArchive(
+                $source,
+                $archivePath,
+                $manifest,
+                $wantedPaths,
+                $prefix,
+            );
         } finally {
             $source->close();
         }
+    }
+
+    /**
+     * Detects whether every entry in the archive lives inside one shared
+     * top-level folder. Returns that folder's name with a trailing slash
+     * (e.g. "SERVER_1.21/"), or an empty string when entries live at the
+     * archive root or across several top-level folders.
+     */
+    private function singleRootPrefix(ZipArchive $source): string
+    {
+        $root = null;
+
+        for ($index = 0; $index < $source->numFiles; $index++) {
+            $entry = $source->statIndex($index);
+
+            if ($entry === false) {
+                return '';
+            }
+
+            $name = (string) ($entry['name'] ?? '');
+
+            if ($name === '') {
+                continue;
+            }
+
+            $slash = strpos($name, '/');
+
+            // A file at the archive root means no wrapper folder at all.
+            if ($slash === false) {
+                return '';
+            }
+
+            $top = substr($name, 0, $slash + 1);
+
+            if ($root === null) {
+                $root = $top;
+            } elseif ($root !== $top) {
+                return '';
+            }
+        }
+
+        if ($root === null || !$this->isSafeRelativePath(rtrim($root, '/'))) {
+            return '';
+        }
+
+        return $root;
+    }
+
+    /**
+     * Materializes a dedicated server pack into a package directory, stripping
+     * the given wrapper prefix from every entry so the content deploys at the
+     * server root. When $wantedPaths is non-null (restore flow) only those
+     * entries are streamed and every wanted path must be satisfied.
+     *
+     * @param list<string>|null $wantedPaths
+     */
+    private function materializeStrippedArchive(
+        ZipArchive $source,
+        string $prefix,
+        ?array $wantedPaths = null,
+    ): string {
+        $wanted = $wantedPaths === null
+            ? null
+            : array_fill_keys($wantedPaths, true);
+
+        $totalBytes = 0;
+
+        $entries = [];
+
+        for ($index = 0; $index < $source->numFiles; $index++) {
+            $entry = $source->statIndex($index);
+
+            if ($entry === false) {
+                throw new UnsupportedModpackPackageException(
+                    'The modpack archive contains an unreadable entry.',
+                );
+            }
+
+            $name = (string) ($entry['name'] ?? '');
+
+            if ($name === '' || str_ends_with($name, '/')) {
+                continue;
+            }
+
+            if (!str_starts_with($name, $prefix)) {
+                continue;
+            }
+
+            $relative = substr($name, strlen($prefix));
+
+            if ($relative === '' || !$this->isSafeRelativePath($relative)) {
+                throw new InvalidArgumentException(
+                    'The modpack archive contains an invalid entry path.',
+                );
+            }
+
+            if ($wanted !== null && !isset($wanted[$relative])) {
+                continue;
+            }
+
+            $entries[$relative] = $name;
+
+            $totalBytes += max(0, (int) ($entry['size'] ?? 0));
+        }
+
+        if ($wanted !== null) {
+            $missing = [];
+
+            foreach ($wantedPaths ?? [] as $wantedPath) {
+                if (!isset($entries[$wantedPath])) {
+                    $missing[] = $wantedPath;
+                }
+            }
+
+            if ($missing !== []) {
+                throw new UnsupportedModpackPackageException(
+                    'The modpack restore could not source these files from the pack: '
+                        . implode(', ', $missing),
+                );
+            }
+        }
+
+        if ($entries === []) {
+            throw new UnsupportedModpackPackageException(
+                'The CurseForge server pack contains no files to install.',
+            );
+        }
+
+        $this->downloader->setProgressOffset(0, max(1, $totalBytes));
+
+        $outputPath = $this->createPackageDirectory();
+
+        $written = 0;
+
+        try {
+            foreach ($entries as $relative => $name) {
+                if ($this->downloader->isCancelled()) {
+                    throw new InstallationCancelledException(
+                        'Installation cancelled.'
+                    );
+                }
+
+                $written += $this->streamZipEntry(
+                    $source,
+                    $name,
+                    $this->packageOutputPath($outputPath, $relative),
+                );
+
+                $this->downloader->reportProgress($written, max(1, $totalBytes));
+            }
+        } catch (\Throwable $exception) {
+            $this->deleteDirectoryTree($outputPath);
+
+            throw $exception;
+        }
+
+        $this->downloader->reportProgress(max(1, $totalBytes), max(1, $totalBytes));
+
+        return $outputPath;
+    }
+
+    /**
+     * Streams one zip entry to an absolute destination path. Returns the
+     * number of bytes written.
+     */
+    private function streamZipEntry(
+        ZipArchive $source,
+        string $entry,
+        string $destination,
+    ): int {
+        $stream = $source->getStream($entry);
+
+        if ($stream === false) {
+            throw new RuntimeException(
+                'Unable to read an entry from the modpack archive.',
+            );
+        }
+
+        $handle = @fopen($destination, 'wb');
+
+        if ($handle === false) {
+            fclose($stream);
+
+            throw new RuntimeException(
+                'Unable to write a modpack file into the package directory.',
+            );
+        }
+
+        $written = 0;
+
+        try {
+            while (!feof($stream)) {
+                if ($this->downloader->isCancelled()) {
+                    throw new InstallationCancelledException(
+                        'Installation cancelled.'
+                    );
+                }
+
+                $chunk = fread($stream, 262144);
+
+                if ($chunk === false) {
+                    throw new RuntimeException(
+                        'Unable to read an entry from the modpack archive.',
+                    );
+                }
+
+                if ($chunk === '') {
+                    break;
+                }
+
+                $bytes = fwrite($handle, $chunk);
+
+                if ($bytes === false || $bytes !== strlen($chunk)) {
+                    throw new RuntimeException(
+                        'Unable to write a modpack file into the package directory.',
+                    );
+                }
+
+                $written += $bytes;
+            }
+        } finally {
+            fclose($handle);
+            fclose($stream);
+        }
+
+        return $written;
     }
 
     /**
@@ -828,30 +1228,46 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
      * directly in mods/. The installer consumes this directory as its
      * workspace without any re-compression or re-extraction.
      *
+     * When $wantedPaths is non-null the build is restricted to those
+     * server-relative paths (restore flow): overrides only stream their
+     * entries and the manifest phase resolves/fetches only mods under the
+     * wanted set.
+     *
      * @param array<string, array{archiveEntry: string|null, downloadUrls: array<int, string>, priority: string, bytes: int, sha1: string}> $content
      */
     private function buildServerArchive(
         ZipArchive $source,
         string $archivePath,
         array $manifest,
+        ?array $wantedPaths = null,
+        string $prefix = '',
     ): string {
+        $wanted = $wantedPaths === null
+            ? null
+            : array_fill_keys($wantedPaths, true);
+
         $content = $this->collectArchiveContent(
             $source,
-            $this->manifestOverridesPath($manifest),
+            $prefix . $this->manifestOverridesPath($manifest),
+            $wanted,
+            $prefix,
         );
 
         [$installedMods, $wantedMods] = $this->mergeManifestFiles(
             $manifest,
             $content,
+            $wanted,
         );
 
         if ($content === []) {
-            throw new UnsupportedModpackPackageException(
-                'The CurseForge modpack contains no server content to install (no mods or overrides).',
-            );
-        }
-
-        if ($wantedMods > 0 && $installedMods === 0) {
+            // Restore flow: an all-mods wanted set legitimately produces no
+            // overrides content, so only a full build must fail here.
+            if ($wantedPaths === null) {
+                throw new UnsupportedModpackPackageException(
+                    'The CurseForge modpack contains no server content to install (no mods or overrides).',
+                );
+            }
+        } elseif ($wantedMods > 0 && $installedMods === 0) {
             throw new UnsupportedModpackPackageException(
                 'The CurseForge modpack references mod files with no usable download source, so no server mods could be installed.',
             );
@@ -905,6 +1321,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
             }
 
             $failedMods = [];
+            $succeededMods = [];
 
             $downloadedMods = $this->fetchPackageMods(
                 $content,
@@ -913,6 +1330,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
                 $overridesWritten,
                 $archiveBytes,
                 $failedMods,
+                $succeededMods,
             );
 
             if ($wantedMods > 0 && $downloadedMods === 0) {
@@ -923,6 +1341,17 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
 
             if ($wantedMods > 0 && $downloadedMods < $wantedMods) {
                 $failedCount = count($failedMods);
+
+                // Restore flow: every requested path must come back. A restore
+                // that silently skips a requested file would report success
+                // while the server is still broken, so the missing names are
+                // reported and the restore fails.
+                if ($wantedPaths !== null) {
+                    throw new UnsupportedModpackPackageException(
+                        'The modpack restore could not fetch: '
+                            . implode(', ', $failedMods),
+                    );
+                }
 
                 if ($failedCount > $this->toleratedModFailures($wantedMods)) {
                     throw new UnsupportedModpackPackageException(
@@ -949,6 +1378,40 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
             throw $exception;
         }
 
+        // Restore flow: any wanted path that neither matched an overrides
+        // entry nor a manifest mod (renamed upstream, absent from the pack,
+        // or never part of this pack) makes the restore fail loudly.
+        if ($wantedPaths !== null) {
+            $provided = [];
+
+            foreach ($content as $relative => $payload) {
+                if ($payload['archiveEntry'] !== null) {
+                    $provided[$relative] = true;
+                }
+            }
+
+            foreach ($succeededMods as $id) {
+                $provided[$id] = true;
+            }
+
+            $unfulfilled = [];
+
+            foreach ($wantedPaths as $wantedPath) {
+                if (!isset($provided[$wantedPath])) {
+                    $unfulfilled[] = $wantedPath;
+                }
+            }
+
+            if ($unfulfilled !== []) {
+                $this->deleteDirectoryTree($outputPath);
+
+                throw new UnsupportedModpackPackageException(
+                    'The modpack restore could not source these files from the pack: '
+                        . implode(', ', $unfulfilled),
+                );
+            }
+        }
+
         return $outputPath;
     }
 
@@ -961,6 +1424,8 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
      * @param array<string, array{archiveEntry: string|null, downloadUrls: array<int, string>, priority: string, bytes: int, sha1: string}> $content
      * @param array<int, string> $failedMods Output list of the relative paths
      *   of manifest mods that could not be installed, for diagnostics.
+     * @param array<int, string> $succeededMods Output list of the relative
+     *   paths of manifest mods that were downloaded and verified.
      */
     private function fetchPackageMods(
         array $content,
@@ -969,6 +1434,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
         int $overridesWritten,
         int $archiveBytes,
         array &$failedMods = [],
+        array &$succeededMods = [],
     ): int {
         $modTasks = [];
 
@@ -1030,6 +1496,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
                 }
 
                 $downloadedMods++;
+                $succeededMods[] = (string) $id;
             }
 
             return $downloadedMods;
@@ -1077,6 +1544,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
                 }
 
                 $downloadedMods++;
+                $succeededMods[] = $task['id'];
                 $downloadedTemps[] = $downloadPath;
                 $networkBytesDone += $task['bytes'];
             }
@@ -1258,9 +1726,11 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
     private function collectArchiveContent(
         ZipArchive $source,
         string $overridesPath,
+        ?array $wantedPaths = null,
+        string $prefix = '',
     ): array {
         $content = [];
-        $prefix = $overridesPath . '/';
+        $prefix = $prefix . $overridesPath . '/';
 
         for ($index = 0; $index < $source->numFiles; $index++) {
             if ($this->downloader->isCancelled()) {
@@ -1295,6 +1765,10 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
                 );
             }
 
+            if ($wantedPaths !== null && !isset($wantedPaths[$relative])) {
+                continue;
+            }
+
             $content[$relative] = [
                 'archiveEntry' => $name,
                 'downloadUrls' => [],
@@ -1317,9 +1791,17 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
      * mod files have died upstream. Only when no manifest mod file can be
      * installed does the caller abort.
      *
+     * When $wantedPaths is non-null (restore flow) only manifest mods whose
+     * relative mods/ path is in the wanted set are resolved and added; every
+     * other mod is skipped without touching the network.
+     *
      * @return array{0: int, 1: int} [installed count, wanted count]
      */
-    private function mergeManifestFiles(array $manifest, array &$content): array
+    private function mergeManifestFiles(
+        array $manifest,
+        array &$content,
+        ?array $wantedPaths = null,
+    ): array
     {
         $entries = $manifest['files'] ?? [];
 
@@ -1393,6 +1875,12 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
 
             $relative = 'mods/' . $fileName;
 
+            // Restore flow: skip every manifest mod outside the wanted set
+            // before resolution work (candidate building) begins.
+            if ($wantedPaths !== null && !isset($wantedPaths[$relative])) {
+                continue;
+            }
+
             if ($this->shouldReplace($content[$relative] ?? null, 'mods')) {
                 $content[$relative] = [
                     'archiveEntry' => null,
@@ -1414,6 +1902,27 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
                 . count($wanted)
                 . ' mod files without any usable download source.'
             );
+        }
+
+        // Restore flow reports its own scope: the wanted count is the number
+        // of manifest mods actually in the wanted path set, so the caller's
+        // tolerance math (installed vs wanted) never compares against the
+        // whole manifest.
+        if ($wantedPaths !== null) {
+            $wantedInScope = 0;
+
+            foreach ($wanted as $fileId => $meta) {
+                $fileName = $this->manifestFileName(
+                    $resolved[$fileId] ?? null,
+                    (int) $fileId,
+                );
+
+                if (isset($wantedPaths['mods/' . $fileName])) {
+                    $wantedInScope++;
+                }
+            }
+
+            return [$installed, $wantedInScope];
         }
 
         return [$installed, count($wanted)];

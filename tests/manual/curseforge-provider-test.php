@@ -894,6 +894,111 @@ if (is_file($serverPackPath)) {
 
 pass('server-pack archive returned as-is and cleaned up');
 
+// A wrapped dedicated server pack (every entry inside one top-level folder,
+// e.g. SERVER_1.21/) must be materialized with the wrapper stripped so the
+// content deploys at the server root instead of a stray folder.
+$wrappedServerPackPath = $temporaryRoot . '/wrapped-server-pack.zip';
+buildZip($wrappedServerPackPath, [
+    'SERVER_1.21/server.properties' => 'motd=wrapped',
+    'SERVER_1.21/config/server.yml' => 'a: b',
+    'SERVER_1.21/mods/inner-mod.jar' => 'INNERMOD',
+]);
+
+$wrappedFilesResponse = new ProviderHttpResponse(200, [
+    'data' => [
+        [
+            'id' => 8823850,
+            'displayName' => 'Tensura Neo Otherworld-Release-1.1.1.zip',
+            'fileName' => 'Tensura-Neo-Otherworld-Release-1.1.1.zip',
+            'fileDate' => '2026-01-01T00:00:00Z',
+            'releaseType' => 1,
+            'gameVersions' => ['1.21.1', 'NeoForge'],
+            'downloadUrl' => 'https://cdn.example/wrapped-server-pack.zip',
+            'serverPackFileId' => 8827604,
+        ],
+    ],
+]);
+
+// The referenced server pack ships with an empty gameVersions array; the
+// referencing file's versions must be inherited so metadata resolution works.
+$emptyGvServerPackResponse = new ProviderHttpResponse(200, [
+    'data' => [
+        'id' => 8827604,
+        'displayName' => 'server_pack_1.21.zip',
+        'fileName' => 'server_pack_1.21.zip',
+        'fileDate' => '2026-01-02T00:00:00Z',
+        'releaseType' => 1,
+        'gameVersions' => [],
+        'fileStatus' => 4,
+        'isAvailable' => true,
+        'downloadUrl' => 'https://cdn.example/wrapped-server-pack.zip',
+    ],
+]);
+
+$downloader = new FakeDownloader($wrappedServerPackPath);
+$http = new FakeProviderHttpClient([
+    $projectResponse,
+    $wrappedFilesResponse,
+    $emptyGvServerPackResponse,
+]);
+$provider = new CurseForgeProvider(
+    $http,
+    $downloader,
+    SECRET_KEY,
+    $temporaryRoot,
+);
+
+$metadata = $provider->getMetadata('curseforge://314768');
+
+if ($metadata->minecraftVersion !== '1.21.1') {
+    throw new RuntimeException(
+        'Server pack with empty gameVersions must inherit the referencing file\'s Minecraft version, got: '
+            . ($metadata->minecraftVersion ?? 'null')
+    );
+}
+
+pass('server pack with empty gameVersions inherits the referencing file versions');
+
+$downloader = new FakeDownloader($wrappedServerPackPath);
+$http = new FakeProviderHttpClient([
+    $projectResponse,
+    $wrappedFilesResponse,
+    $emptyGvServerPackResponse,
+]);
+$provider = new CurseForgeProvider(
+    $http,
+    $downloader,
+    SECRET_KEY,
+    $temporaryRoot,
+);
+
+$package = $provider->getPackage('curseforge://314768');
+
+$entries = packageDirectoryFiles($package->archivePath);
+
+if ($entries !== [
+    'config/server.yml',
+    'mods/inner-mod.jar',
+    'server.properties',
+]) {
+    throw new RuntimeException(
+        'Wrapped server pack must strip the wrapper folder, got: '
+            . implode(', ', $entries)
+    );
+}
+
+if (file_get_contents($package->archivePath . '/server.properties') !== 'motd=wrapped') {
+    throw new RuntimeException('Wrapped server-pack content was corrupted.');
+}
+
+if (is_dir($package->archivePath . '/SERVER_1.21')) {
+    throw new RuntimeException('Wrapper folder leaked into the package.');
+}
+
+$provider->cleanup($package);
+
+pass('wrapped dedicated server pack deploys at the server root');
+
 $http = new FakeProviderHttpClient([$projectResponse, $filesResponse]);
 $provider = new CurseForgeProvider(
     $http,
