@@ -10,12 +10,12 @@ A powerful Pterodactyl Panel extension for browsing and installing Minecraft mod
 
 ## Features
 
-- 🎮 **Multi-Provider Support** – Browse and install from both Modrinth and CurseForge
-- 🔍 **Advanced Filtering** – Search by game version, loader, category, and more
-- 📦 **One-Click Installation** – Seamlessly install modpacks to your server
-- 🎨 **Modern UI** – Clean, responsive interface built with React and TypeScript
-- ⚙️ **Server Management** – View, update, and uninstall installed modpacks
-- 🔐 **Secure** – API keys stored server-side, never exposed to clients
+- **Multi-Provider Support** – Browse and install from both Modrinth and CurseForge
+- **Advanced Filtering** – Search by game version, loader, category, and more
+- **One-Click Installation** – Seamlessly install modpacks to your server
+- **Modern UI** – Clean, responsive interface built with React and TypeScript
+- **Server Management** – View, update, and uninstall installed modpacks
+- **Secure** – API keys stored server-side, never exposed to clients
 
 ## Requirements
 
@@ -73,13 +73,13 @@ Modrinth works out of the box. To enable CurseForge, set `CURSEFORGE_API_KEY` in
 
 ### Environment Variables
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `CURSEFORGE_API_KEY` | No | Your CurseForge API key for catalog access |
-| `MODPACK_INSTALLER_SERVER_TARGET` | No | Server target mode: `local` (default) or `wings` |
-| `MODPACK_INSTALLER_SERVER_ROOT` | No | Custom server root path (defaults to `/var/lib/pterodactyl/volumes`) |
-| `MODPACK_INSTALLER_MAX_DOWNLOAD_MB` | No | Max download size in MB (no limit by default) |
-| `MODPACK_INSTALLER_DATA_DIR` | No | Install records storage path (defaults to `/var/lib/pterodactyl/modpack-installer`) |
+| Variable                            | Required | Description                                                                         |
+| ----------------------------------- | -------- | ----------------------------------------------------------------------------------- |
+| `CURSEFORGE_API_KEY`                | No       | Your CurseForge API key for catalog access                                          |
+| `MODPACK_INSTALLER_SERVER_TARGET`   | No       | Server target mode: `local` (default) or `wings`                                    |
+| `MODPACK_INSTALLER_SERVER_ROOT`     | No       | Custom server root path (defaults to `/var/lib/pterodactyl/volumes`)                |
+| `MODPACK_INSTALLER_MAX_DOWNLOAD_MB` | No       | Max download size in MB (no limit by default)                                       |
+| `MODPACK_INSTALLER_DATA_DIR`        | No       | Install records storage path (defaults to `/var/lib/pterodactyl/modpack-installer`) |
 
 ## Development
 
@@ -111,11 +111,13 @@ php tests/manual/installation-orchestrator-test.php
 ## API Providers
 
 ### Modrinth ✓
+
 - **Status**: Always available (no configuration needed)
 - **Features**: Search, filtering, versioning
 - **Rate Limit**: 300 req/min
 
 ### CurseForge ✓
+
 - **Status**: Optional (requires API key)
 - **Features**: Search, filtering, versioning
 - **Rate Limit**: Depends on API tier
@@ -123,16 +125,19 @@ php tests/manual/installation-orchestrator-test.php
 ## Troubleshooting
 
 ### CurseForge shows "not available"
+
 - Verify `CURSEFORGE_API_KEY` is set in `.env`
 - Restart PHP-FPM: `systemctl restart php8.2-fpm`
 - Check logs: `tail -f /var/log/php8.2-fpm.log`
 
 ### Installation fails
+
 - Ensure sufficient disk space on the server
 - Check server permissions: `ls -la /var/lib/pterodactyl/volumes/`
 - Verify file write permissions for the panel user
 
 ### Modpacks not showing
+
 - Try clearing browser cache
 - Verify internet connectivity on panel server
 - Check if provider APIs are reachable
@@ -152,10 +157,11 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## Support
 
 For issues, questions, or suggestions:
+
 - 🐛 [Report Issues](https://github.com/indogeek/modpack-installer/issues)
-- 💬 [Discussions](https://github.com/indogeek/modpack-installer/discussions)
+- 💬 [Discussions](https://github.com/IndoGeek/modpack-installer/discussions/1#discussion-10823816)
 - 📧 Contact: tanumoy.maity12@gmail.com
 
 ---
 
-Made with ❤️ for Pterodactyl Panel
+Made to help the Community..

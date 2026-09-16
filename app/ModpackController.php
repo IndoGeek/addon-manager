@@ -1580,7 +1580,7 @@ final class ModpackController extends Controller
     private function wingsServerTargetFactory(): WingsServerFileTargetFactory
     {
         return new WingsServerFileTargetFactory(
-            timeout: 30,
+            timeout: 600,
             connectTimeout: 10,
             verifySsl: app()->environment('production'),
         );

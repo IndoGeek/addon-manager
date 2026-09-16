@@ -126,19 +126,66 @@ final class ArchiveExtractor
                 );
             }
 
-            if (!$zip->extractTo($destination, $name)) {
+            $entryStream = $zip->getStream($name);
+
+            if ($entryStream === false) {
                 throw new InvalidArgumentException(
                     'The archive contains a corrupt or unreadable entry.'
                 );
             }
 
-            $entryBytes = (int) @filesize($destination . '/' . $name);
-            $writtenBytes += $entryBytes;
+            $target = $destination . '/' . $name;
 
-            if ($writtenBytes > $this->maxExtractedBytes) {
-                throw new InvalidArgumentException(
-                    'The archive exceeds the maximum allowed extracted size.'
+            $handle = @fopen($target, 'wb');
+
+            if ($handle === false) {
+                fclose($entryStream);
+
+                throw new RuntimeException(
+                    'Unable to create an extraction target for the archive.'
                 );
+            }
+
+            try {
+                while (!feof($entryStream)) {
+                    $checker = $this->cancelChecker;
+
+                    if ($checker !== null && $checker()) {
+                        throw new InstallationCancelledException(
+                            'Installation cancelled.'
+                        );
+                    }
+
+                    $chunk = fread($entryStream, 262144);
+
+                    if ($chunk === false) {
+                        throw new InvalidArgumentException(
+                            'The archive contains a corrupt or unreadable entry.'
+                        );
+                    }
+
+                    if ($chunk === '') {
+                        break;
+                    }
+
+                    $written = fwrite($handle, $chunk);
+
+                    if ($written === false || $written !== strlen($chunk)) {
+                        throw new RuntimeException(
+                            'Unable to extract an entry from the archive.'
+                        );
+                    }
+
+                    $writtenBytes += strlen($chunk);
+
+                    if ($writtenBytes > $this->maxExtractedBytes) {
+                        throw new InvalidArgumentException(
+                            'The archive exceeds the maximum allowed extracted size.'
+                        );
+                    }
+                }
+            } finally {
+                fclose($handle);
             }
         }
     }

@@ -90,6 +90,11 @@ final class RecordingDownloader implements Downloader
      */
     public array $offsetSnapshots = [];
 
+    /**
+     * @var array<int, array{bytes: int, total: int|null}>
+     */
+    public array $progressSnapshots = [];
+
     public int $calls = 0;
 
     public bool $cancelled = false;
@@ -129,6 +134,14 @@ final class RecordingDownloader implements Downloader
     public function isCancelled(): bool
     {
         return $this->cancelled;
+    }
+
+    public function reportProgress(int $downloadedBytes, ?int $totalBytes): void
+    {
+        $this->progressSnapshots[] = [
+            'bytes' => $downloadedBytes,
+            'total' => $totalBytes,
+        ];
     }
 }
 
@@ -188,6 +201,58 @@ foreach (glob($temporaryRoot . '/*') ?: [] as $leftover) {
 
 $mrpackPath = $temporaryRoot . '/fixture.mrpack';
 
+function removeDirectoryTree(string $directory): void
+{
+    $iterator = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator(
+            $directory,
+            FilesystemIterator::SKIP_DOTS,
+        ),
+        RecursiveIteratorIterator::CHILD_FIRST,
+    );
+
+    foreach ($iterator as $item) {
+        if ($item->isDir()) {
+            @rmdir($item->getPathname());
+        } else {
+            @unlink($item->getPathname());
+        }
+    }
+
+    @rmdir($directory);
+}
+
+/**
+ * @return list<string>
+ */
+function packageDirectoryFiles(string $directory): array
+{
+    $files = [];
+
+    $iterator = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator(
+            $directory,
+            FilesystemIterator::SKIP_DOTS,
+        ),
+        RecursiveIteratorIterator::LEAVES_ONLY,
+    );
+
+    foreach ($iterator as $file) {
+        if (!$file->isFile()) {
+            continue;
+        }
+
+        $files[] = ltrim(
+            substr($file->getPathname(), strlen($directory)),
+            DIRECTORY_SEPARATOR,
+        );
+    }
+
+    sort($files);
+
+    return $files;
+}
+
 function buildFixtureMrpack(string $path): void
 {
     buildZip($path, [
@@ -240,8 +305,8 @@ $provider = new ModrinthProvider(
 
 $package = $provider->getPackage('modrinth://prominence-2-rpg');
 
-if (!is_file($package->archivePath)) {
-    throw new RuntimeException('Provider did not produce a normalized archive.');
+if (!is_dir($package->archivePath)) {
+    throw new RuntimeException('Provider did not produce a normalized directory.');
 }
 
 $indexTotal = 111 + 222;
@@ -290,24 +355,21 @@ if ($downloader->calls !== 3) {
     );
 }
 
-if (!is_file($package->archivePath)) {
-    throw new RuntimeException('Normalized archive missing.');
+if (!is_dir($package->archivePath)) {
+    throw new RuntimeException('Normalized package directory missing.');
 }
 
-$zip = new ZipArchive();
-$zip->open($package->archivePath);
+$entries = packageDirectoryFiles($package->archivePath);
 
 foreach (['mods/alpha.jar', 'mods/beta.jar', 'mods/embedded.jar'] as $expectedEntry) {
-    if ($zip->statName($expectedEntry) === false) {
-        throw new RuntimeException("Normalized archive is missing {$expectedEntry}.");
+    if (!in_array($expectedEntry, $entries, true)) {
+        throw new RuntimeException("Normalized package is missing {$expectedEntry}.");
     }
 }
 
-if ($zip->statName('mods/gamma.jar') !== false) {
+if (in_array('mods/gamma.jar', $entries, true)) {
     throw new RuntimeException('Server-unsupported mod leaked into the archive.');
 }
-
-$zip->close();
 
 echo 'PASS: cumulative byte totals stay monotonic across archive and mods' . "\n";
 

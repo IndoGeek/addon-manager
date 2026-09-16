@@ -16,7 +16,7 @@ use GuzzleHttp\Exception\TransferException;
 final class GuzzleWingsTransport implements WingsTransport
 {
     public function __construct(
-        private readonly int $timeout = 30,
+        private readonly int $timeout = 600,
         private readonly int $connectTimeout = 10,
         private readonly bool $verifySsl = true,
     ) {

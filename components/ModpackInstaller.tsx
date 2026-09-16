@@ -76,6 +76,12 @@ import { RefreshIcon, SpinnerIcon, WarningIcon } from './icons';
 // the first progress snapshot has not landed yet — the card must stay alive.
 const IDLE_GRACE_MS = 30000;
 
+// How long a requested cancellation may stay in the 'cancelling' phase before
+// the poll loop gives up on hearing back from the backend. The backend makes
+// real cancellations land in seconds, so this only fires for a wedged install
+// request and stops the card from spinning "Cancelling ..." indefinitely.
+const CANCEL_STUCK_TIMEOUT_MS = 90000;
+
 export default () => {
     const server = getServerIdentifier();
 
@@ -86,6 +92,8 @@ export default () => {
     const debounceTimer = useRef<number | null>(null);
 
     const initialSearchRan = useRef(false);
+
+    const cancellingSince = useRef<number | null>(null);
 
     useEffect(() => {
         return () => {
@@ -1157,6 +1165,7 @@ export default () => {
         if (state.phase === 'cancelled' || state.phase === 'failed') {
             stopActivePolling();
             clearActiveInstallStorage();
+            cancellingSince.current = null;
             setActiveProgress(state);
 
             const message =
@@ -1172,6 +1181,35 @@ export default () => {
 
             scheduleOutcomeClear();
             return;
+        }
+
+        if (state.phase === 'cancelling') {
+            // A requested cancellation normally resolves to 'cancelled' within
+            // a few seconds. If the backend has not reported back for a long
+            // time the install request is wedged (e.g. an upstream that never
+            // closes a stalled connection), so stop the card from spinning
+            // "Cancelling ..." forever and surface the outcome locally.
+            if (cancellingSince.current === null) {
+                cancellingSince.current = Date.now();
+            } else if (
+                Date.now() - cancellingSince.current
+                >= CANCEL_STUCK_TIMEOUT_MS
+            ) {
+                stopActivePolling();
+                clearActiveInstallStorage();
+                cancellingSince.current = null;
+                setActiveProgress(state);
+
+                setOutcomeBanner({
+                    kind: 'info',
+                    message: `${record.name} download was cancelled.`,
+                });
+
+                scheduleOutcomeClear();
+                return;
+            }
+        } else {
+            cancellingSince.current = null;
         }
 
         setActiveProgress(state);

@@ -25,7 +25,7 @@ final class InstallProgressStore
     public function set(
         string $token,
         array $state,
-        int $ttlSeconds = 600,
+        int $ttlSeconds = 3600,
     ): void {
         $this->ensureDirectory();
 

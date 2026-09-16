@@ -6,11 +6,18 @@ use InvalidArgumentException;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\InstallationCancelledException;
 use RuntimeException;
 
-final class DownloadManager implements Downloader
+final class DownloadManager implements ConcurrentDownloader
 {
     private const REDIRECT_CAP_BYTES = 1_048_576;
 
     private const MAX_REDIRECTS = 5;
+
+    /**
+     * How many independent transfers downloadBatch() keeps in flight at once.
+     * The ethics of higher numbers trade memory/descriptors for wall-clock
+     * speed; eight is a safe balance for hundreds of mod files.
+     */
+    private const BATCH_CONCURRENCY = 8;
 
     /**
      * Total transfer attempts per hop, including the first. A mirror or
@@ -18,6 +25,19 @@ final class DownloadManager implements Downloader
      * retry is worth more than surface diagnostic-only errors.
      */
     private const MAX_ATTEMPTS = 3;
+
+    /**
+     * A transfer that cannot push even one byte for this many seconds is
+     * treated as dead. libcurl only invokes the transfer/cancel callback while
+     * bytes are moving, so a server that accepts the connection but then stalls
+     * leaves curl blocked in a read and the cancel checker is never reached.
+     * This bounded stall detection turns such a hang into a normal transfer
+     * error, after which the retry loop consults the cancel checker and aborts
+     * promptly when a cancellation has been requested.
+     */
+    private const LOW_SPEED_LIMIT_BYTES = 1;
+
+    private const LOW_SPEED_TIME_SECONDS = 8;
 
     /**
      * @var null|callable(int|null $downloadedBytes, int|null $totalBytes): void
@@ -39,6 +59,13 @@ final class DownloadManager implements Downloader
     private int $progressOffsetBytes = 0;
 
     private ?int $progressOffsetTotal = null;
+
+    /**
+     * Timestamp of the last progress write so manual reportProgress() calls
+     * share the same 0.4s throttle as the transfer callback, keeping hot
+     * packaging loops from flooding the progress store.
+     */
+    private float $lastProgressReport = 0.0;
 
     /**
      * Additional reserved/private networks that PHP's filter_var IP flags do
@@ -109,6 +136,40 @@ final class DownloadManager implements Downloader
         $checker = $this->cancelChecker;
 
         return $checker !== null && $checker();
+    }
+
+    public function reportProgress(int $downloadedBytes, ?int $totalBytes): void
+    {
+        if ($downloadedBytes < 0) {
+            return;
+        }
+
+        $callback = $this->progressCallback;
+
+        if ($callback === null) {
+            return;
+        }
+
+        $now = microtime(true);
+
+        if (($now - $this->lastProgressReport) < 0.4) {
+            return;
+        }
+
+        $this->lastProgressReport = $now;
+
+        $safeTotal = $totalBytes !== null && $totalBytes > 0
+            ? $totalBytes
+            : $downloadedBytes;
+
+        try {
+            $callback(
+                min($downloadedBytes, $safeTotal),
+                $safeTotal,
+            );
+        } catch (\Throwable) {
+            // Progress reporting must never abort a composition step.
+        }
     }
 
     private function ensureNotCancelled(): void
@@ -227,6 +288,576 @@ final class DownloadManager implements Downloader
         }
     }
 
+    public function downloadBatch(array $tasks): array
+    {
+        if ($tasks === []) {
+            return [];
+        }
+
+        $this->ensureTemporaryRoot();
+
+        $results = [];
+        $pending = [];
+
+        foreach ($tasks as $task) {
+            $id = $task['id'] ?? '';
+            $urls = $task['urls'] ?? null;
+            $destination = $task['destination'] ?? '';
+
+            if ($id === '' || !is_array($urls) || $destination === '') {
+                throw new InvalidArgumentException(
+                    'A download batch task is malformed.'
+                );
+            }
+
+            $urls = array_values($urls);
+
+            if ($urls === [] || $destination === '') {
+                $results[$id] = null;
+                continue;
+            }
+
+            $directory = dirname($destination);
+
+            if (
+                $directory !== ''
+                && !is_dir($directory)
+                && !@mkdir($directory, 0750, true)
+                && !is_dir($directory)
+            ) {
+                throw new RuntimeException(
+                    'Unable to create the download batch directory.'
+                );
+            }
+
+            $handle = @fopen($destination, 'wb');
+
+            if ($handle === false) {
+                throw new RuntimeException(
+                    'Unable to create a download batch file.'
+                );
+            }
+
+            $pending[$id] = [
+                'id' => $id,
+                'urls' => $urls,
+                'index' => 0,
+                'attempts' => self::MAX_ATTEMPTS,
+                'hops' => 0,
+                'url' => null,
+                'destination' => $destination,
+                'handle' => $handle,
+                'headers' => '',
+                'transferred' => 0,
+                'active' => 0.0,
+                'done' => false,
+                'failed' => false,
+                'size' => 0,
+                'curl' => null,
+            ];
+
+            $results[$id] = null;
+        }
+
+        $multi = null;
+
+        try {
+            if ($pending === []) {
+                return $results;
+            }
+
+            $multi = curl_multi_init();
+
+            if ($multi === false) {
+                throw new RuntimeException(
+                    'Unable to initialize the concurrent HTTP client.'
+                );
+            }
+
+            $active = []; // task ids with a live handle in the multi engine
+            $running = 0;
+
+            foreach ($pending as $id => &$state) {
+                $this->batchReopen($state, $active, $multi);
+
+                if (count($active) >= self::BATCH_CONCURRENCY) {
+                    break;
+                }
+            }
+            unset($state);
+
+            $peak = 0;
+
+            do {
+                if ($this->isCancelled()) {
+                    throw new InstallationCancelledException(
+                        'Installation cancelled.'
+                    );
+                }
+
+                $exec = curl_multi_exec($multi, $running);
+
+                while ($exec === CURLM_CALL_MULTI_PERFORM) {
+                    $exec = curl_multi_exec($multi, $running);
+                }
+
+                if ($exec !== CURLM_OK) {
+                    throw new RuntimeException(
+                        'The concurrent download engine failed.'
+                    );
+                }
+
+                $this->processBatchMessages($multi, $pending, $active);
+
+                if (count($active) < self::BATCH_CONCURRENCY) {
+                    foreach ($pending as $id => &$state) {
+                        if (
+                            isset($active[$id])
+                            || $state['done']
+                            || $state['failed']
+                        ) {
+                            continue;
+                        }
+
+                        if (count($active) >= self::BATCH_CONCURRENCY) {
+                            break;
+                        }
+
+                        $this->batchReopen($state, $active, $multi);
+                    }
+                    unset($state);
+                }
+
+                $peak = $this->aggregateBatchProgress($pending, $peak);
+
+                if ($running > 0) {
+                    curl_multi_select($multi, 0.2);
+                }
+            } while ($running > 0);
+
+            foreach ($pending as $id => $state) {
+                if ($state['done']) {
+                    $results[$id] = $state['destination'];
+                }
+            }
+
+            return $results;
+        } finally {
+            if ($multi !== null) {
+                foreach ($pending as &$state) {
+                    if ($state['curl'] !== null) {
+                        curl_multi_remove_handle($multi, $state['curl']);
+                        curl_close($state['curl']);
+                        $state['curl'] = null;
+                    }
+                }
+                unset($state);
+
+                curl_multi_close($multi);
+            }
+
+            foreach ($pending as $id => $state) {
+                if (is_resource($state['handle'])) {
+                    fclose($state['handle']);
+                }
+
+                if (!$state['done'] && is_file($state['destination'])) {
+                    @unlink($state['destination']);
+                }
+            }
+        }
+    }
+
+    /**
+     * Opens a curl handle for a task's current URL, or advances the task
+     * through its remaining candidates when the current one cannot be used.
+     * A task with no usable candidate is marked failed.
+     *
+     * @param array<string, mixed>       $state
+     * @param array<string, true>        $active
+     * @param \CurlMultiHandle           $multi
+     */
+    private function batchReopen(
+        array &$state,
+        array &$active,
+        $multi,
+    ): void {
+        while (true) {
+            if ($state['index'] >= count($state['urls'])) {
+                if ($state['curl'] !== null) {
+                    curl_multi_remove_handle($multi, $state['curl']);
+                    curl_close($state['curl']);
+                    $state['curl'] = null;
+                }
+
+                unset($active[$state['id']]);
+
+                $state['failed'] = true;
+
+                return;
+            }
+
+            // A retried or redirected task keeps its last-used URL; a task
+            // that has not started yet takes the first candidate in its list.
+            $url = $state['url'] !== null
+                ? (string) $state['url']
+                : (string) $state['urls'][$state['index']];
+
+            try {
+                $parts = $this->validateUrl($url);
+                $resolveEntries = $this->resolveEntries($parts);
+            } catch (InvalidArgumentException) {
+                $state['index']++;
+                $state['attempts'] = self::MAX_ATTEMPTS;
+                $state['hops'] = 0;
+                $state['url'] = null;
+
+                continue;
+            }
+
+            $state['url'] = $url;
+
+            $curl = $this->batchConfigureHandle($state, $resolveEntries);
+
+            $state['curl'] = $curl;
+            $active[$state['id']] = true;
+
+            curl_multi_add_handle($multi, $curl);
+
+            return;
+        }
+    }
+
+    /**
+     * Configures a ready-to-run curl handle for the given task, mirroring the
+     * single-download option set (public-address pinning, manual redirects,
+     * bounded low-speed and reference-counted size/cancel checks).
+     *
+     * @param array<string, mixed> $state
+     * @param list<string>         $resolveEntries
+     */
+    private function batchConfigureHandle(array &$state, array $resolveEntries): \CurlHandle
+    {
+        $curl = curl_init();
+
+        if ($curl === false) {
+            throw new RuntimeException(
+                'Unable to initialize the HTTP client.'
+            );
+        }
+
+        $maxBytes = $this->maxDownloadBytes;
+        $state['headers'] = '';
+        $state['active'] = 0.0;
+
+        curl_setopt_array($curl, [
+            CURLOPT_URL => $state['url'],
+            CURLOPT_FILE => $state['handle'],
+            CURLOPT_FOLLOWLOCATION => false,
+            CURLOPT_FAILONERROR => false,
+            CURLOPT_CONNECTTIMEOUT => 15,
+            CURLOPT_TIMEOUT => 3600,
+            CURLOPT_LOW_SPEED_LIMIT => self::LOW_SPEED_LIMIT_BYTES,
+            CURLOPT_LOW_SPEED_TIME => self::LOW_SPEED_TIME_SECONDS,
+            CURLOPT_PROTOCOLS => CURLPROTO_HTTP | CURLPROTO_HTTPS,
+            CURLOPT_REDIR_PROTOCOLS => CURLPROTO_HTTP | CURLPROTO_HTTPS,
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYHOST => 2,
+            CURLOPT_USERAGENT => 'ModpackInstaller/1.0',
+            CURLOPT_RESOLVE => $resolveEntries,
+            CURLOPT_NOPROGRESS => false,
+            CURLOPT_XFERINFOFUNCTION => function (
+                $curl,
+                float $downloadSize,
+                float $downloaded,
+                float $uploadSize,
+                float $uploaded,
+            ) use ($maxBytes, &$state): int {
+                $state['active'] = $downloaded;
+
+                if ($downloaded > $maxBytes) {
+                    return 1;
+                }
+
+                $checker = $this->cancelChecker;
+
+                if ($checker !== null && $checker()) {
+                    return 1;
+                }
+
+                return 0;
+            },
+            CURLOPT_HEADERFUNCTION => function (
+                $curl,
+                string $line,
+            ) use (&$state): int {
+                $state['headers'] .= $line;
+
+                return strlen($line);
+            },
+        ]);
+
+        return $curl;
+    }
+
+    /**
+     * Drains every completed handle from the multi engine, applying the same
+     * hop/retry/candidate state machine as download(): 2xx settles the task,
+     * 3xx is redirected manually (re-validated and re-pinned per hop), hard
+     * transfer errors retry up to MAX_ATTEMPTS per candidate, and any other
+     * terminal state moves the task to its next candidate.
+     *
+     * @param \CurlMultiHandle    $multi
+     * @param array<string, array<string, mixed>> $pending
+     * @param array<string, true> $active
+     */
+    private function processBatchMessages(
+        $multi,
+        array &$pending,
+        array &$active,
+    ): void {
+        while (true) {
+            $info = curl_multi_info_read($multi, $queued);
+
+            if ($info === false) {
+                break;
+            }
+
+            $curl = $info['handle'];
+            $result = (int) $info['result'];
+
+            $id = null;
+
+            foreach ($pending as $taskId => &$state) {
+                if ($state['curl'] === $curl) {
+                    $id = $taskId;
+                    break;
+                }
+            }
+            unset($state);
+
+            if ($id === null) {
+                curl_multi_remove_handle($multi, $curl);
+                curl_close($curl);
+
+                continue;
+            }
+
+            $state = &$pending[$id];
+
+            $status = (int) curl_getinfo($curl, CURLINFO_RESPONSE_CODE);
+            $transferBytes = (int) floor(
+                curl_getinfo($curl, CURLINFO_SIZE_DOWNLOAD),
+            );
+
+            curl_multi_remove_handle($multi, $curl);
+            curl_close($curl);
+
+            $state['curl'] = null;
+
+            $state['transferred'] += $transferBytes;
+            $state['active'] = 0.0;
+
+            if ($result !== CURLE_OK) {
+                if ($result === CURLE_ABORTED_BY_CALLBACK && $this->isCancelled()) {
+                    throw new InstallationCancelledException(
+                        'Installation cancelled.'
+                    );
+                }
+
+                if ($result !== CURLE_ABORTED_BY_CALLBACK) {
+                    $parts = $this->validateUrl((string) $state['url']);
+                    $this->recordTransferFailure(
+                        $curl,
+                        $parts['host'],
+                        (string) $state['url'],
+                    );
+                }
+
+                $this->batchFailAttempt($state);
+
+                if ($state['done'] || $state['failed']) {
+                    unset($active[$id]);
+                    continue;
+                }
+
+                $this->ensureNotCancelled();
+
+                usleep(1_000_000);
+
+                $this->batchResetFile($state);
+
+                $this->batchReopen($state, $active, $multi);
+
+                continue;
+            }
+
+            if ($status >= 200 && $status <= 299) {
+                $state['done'] = true;
+                $state['size'] = max(0, (int) @filesize($state['destination']));
+
+                unset($active[$id]);
+
+                continue;
+            }
+
+            if ($status >= 300 && $status <= 399) {
+                if ($state['hops'] >= self::MAX_REDIRECTS) {
+                    $this->batchToNextCandidate($state);
+                } else {
+                    try {
+                        $hopBytes = $this->hopBytes($state['handle']);
+
+                        if ($hopBytes > self::REDIRECT_CAP_BYTES) {
+                            throw new InvalidArgumentException(
+                                'The download server sent an excessive redirect response.',
+                            );
+                        }
+
+                        $location = self::locationFromHeaders($state['headers']);
+
+                        $newUrl = RedirectResolver::resolve(
+                            (string) $state['url'],
+                            $location,
+                        );
+
+                        $this->validateUrl($newUrl);
+
+                        $state['url'] = $newUrl;
+                        $state['hops']++;
+
+                        $this->batchResetFile($state);
+
+                        $this->batchReopen($state, $active, $multi);
+                    } catch (InvalidArgumentException) {
+                        $this->batchToNextCandidate($state);
+                    }
+                }
+
+                if ($state['done'] || $state['failed']) {
+                    unset($active[$id]);
+                    continue;
+                }
+
+                continue;
+            }
+
+            $this->batchToNextCandidate($state);
+
+            if ($state['done'] || $state['failed']) {
+                unset($active[$id]);
+            }
+        }
+    }
+
+    /**
+     * Handles a failed transfer attempt: retries the same URL when attempts
+     * remain, otherwise falls through to the next candidate.
+     *
+     * @param array<string, mixed> $state
+     */
+    private function batchFailAttempt(array &$state): void
+    {
+        if ($state['attempts'] > 1) {
+            $state['attempts']--;
+
+            return;
+        }
+
+        $this->batchToNextCandidate($state);
+    }
+
+    /**
+     * Moves a task to its next candidate (resetting hop/attempt state) or
+     * marks it failed once every candidate has been tried.
+     *
+     * @param array<string, mixed> $state
+     */
+    private function batchToNextCandidate(array &$state): void
+    {
+        $state['index']++;
+        $state['attempts'] = self::MAX_ATTEMPTS;
+        $state['hops'] = 0;
+        $state['url'] = null;
+
+        if ($state['index'] >= count($state['urls'])) {
+            $state['failed'] = true;
+
+            return;
+        }
+
+        $this->batchResetFile($state);
+    }
+
+    /**
+     * Truncates a task's destination slot for the next hop or attempt so the
+     * file only ever holds the winning body.
+     *
+     * @param array<string, mixed> $state
+     */
+    private function batchResetFile(array &$state): void
+    {
+        rewind($state['handle']);
+        ftruncate($state['handle'], 0);
+        $state['headers'] = '';
+    }
+
+    /**
+     * Reports an aggregated, monotonic progress value across every active and
+     * settled task, anchored on the previously configured offset. Failed tasks
+     * drop out of the running sum, so the reported value is clamped to the
+     * highest value seen to keep the bar moving strictly forward.
+     *
+     * @param array<string, array<string, mixed>> $pending
+     */
+    private function aggregateBatchProgress(array &$pending, int $peak): int
+    {
+        $callback = $this->progressCallback;
+
+        if ($callback === null) {
+            return $peak;
+        }
+
+        $now = microtime(true);
+
+        if (($now - $this->lastProgressReport) < 0.4) {
+            return $peak;
+        }
+
+        $this->lastProgressReport = $now;
+
+        $sum = 0;
+
+        foreach ($pending as $state) {
+            if ($state['failed']) {
+                continue;
+            }
+
+            if ($state['done']) {
+                $sum += $state['size'];
+
+                continue;
+            }
+
+            $sum += $state['transferred'] + (int) floor($state['active']);
+        }
+
+        $done = max($peak, $this->progressOffsetBytes + $sum);
+
+        $safeTotal = $this->progressOffsetTotal !== null
+            && $this->progressOffsetTotal > 0
+            ? $this->progressOffsetTotal
+            : $done;
+
+        try {
+            $callback(min($done, $safeTotal), $safeTotal);
+        } catch (\Throwable) {
+            // Progress reporting must never abort a composition step.
+        }
+
+        return max($peak, $done);
+    }
+
     /**
      * Performs a single HTTP request, streaming any body into the provided
      * handle, and returns [status code, raw response headers].
@@ -259,6 +890,8 @@ final class DownloadManager implements Downloader
             CURLOPT_FAILONERROR => false,
             CURLOPT_CONNECTTIMEOUT => 15,
             CURLOPT_TIMEOUT => 3600,
+            CURLOPT_LOW_SPEED_LIMIT => self::LOW_SPEED_LIMIT_BYTES,
+            CURLOPT_LOW_SPEED_TIME => self::LOW_SPEED_TIME_SECONDS,
             CURLOPT_PROTOCOLS => CURLPROTO_HTTP | CURLPROTO_HTTPS,
             CURLOPT_REDIR_PROTOCOLS => CURLPROTO_HTTP | CURLPROTO_HTTPS,
             CURLOPT_SSL_VERIFYPEER => true,

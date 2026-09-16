@@ -4,6 +4,7 @@ namespace Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Providers;
 
 use InvalidArgumentException;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Models\ModpackMetadata;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Download\ConcurrentDownloader;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Download\Downloader;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\InstallationCancelledException;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Provider\ProviderHttpClient;
@@ -305,6 +306,8 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
 
         if (is_file($path)) {
             @unlink($path);
+        } elseif (is_dir($path)) {
+            $this->deleteDirectoryTree($path);
         }
 
         unset($this->temporaryPackages[$path]);
@@ -442,6 +445,50 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
         }
 
         return $this->nullableString($file['downloadUrl'] ?? null) !== null;
+    }
+
+    /**
+     * Extracts the SHA-1 (algorithm 1) digest CurseForge reports for a file,
+     * which the pack references download verification against. Returns the
+     * empty string when the metadata omits it so verification is skipped
+     * rather than failing the candidate.
+     *
+     * @param array<string, mixed> $hashes
+     */
+    private function sha1FromHashes(array $hashes): string
+    {
+        foreach ($hashes as $hash) {
+            if (($hash['algo'] ?? null) === 1) {
+                $value = (string) ($hash['value'] ?? '');
+
+                if ($value !== '') {
+                    return strtolower($value);
+                }
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * Whether a downloaded file's SHA-1 digest matches the expected digest
+     * reported by the provider metadata. Verification is skipped (returns
+     * true) for an empty expectation so files without a published hash keep
+     * installing.
+     */
+    private function matchesSha1(string $path, string $expectedSha1): bool
+    {
+        if ($expectedSha1 === '') {
+            return true;
+        }
+
+        $actual = @sha1_file($path);
+
+        if ($actual === false || $actual === '') {
+            return false;
+        }
+
+        return hash_equals(strtolower($expectedSha1), strtolower($actual));
     }
 
     /**
@@ -766,9 +813,15 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
     }
 
     /**
-     * Rebuilds a CurseForge client pack into a normalized server archive.
+     * Rebuilds a CurseForge client pack into a normalized server package.
      *
-     * @param array<string, array{archiveEntry: string|null, downloadUrls: array<int, string>, priority: string, bytes: int}> $content
+     * Instead of synthesizing a new archive, the normalized package is a
+     * ready-to-deploy directory: the overrides payload is streamed straight
+     * out of the downloaded client pack and every required mod file lands
+     * directly in mods/. The installer consumes this directory as its
+     * workspace without any re-compression or re-extraction.
+     *
+     * @param array<string, array{archiveEntry: string|null, downloadUrls: array<int, string>, priority: string, bytes: int, sha1: string}> $content
      */
     private function buildServerArchive(
         ZipArchive $source,
@@ -816,6 +869,302 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
             max($networkBytesDone, $archiveBytes),
         );
 
+        $outputPath = $this->createPackageDirectory();
+
+        // Materialize every overrides entry directly into the package
+        // directory, keeping the progress bar alive with the bytes streamed.
+        $overridesWritten = 0;
+
+        try {
+            foreach ($content as $relative => $payload) {
+                if ($payload['archiveEntry'] === null) {
+                    continue;
+                }
+
+                if ($this->downloader->isCancelled()) {
+                    throw new InstallationCancelledException(
+                        'Installation cancelled.'
+                    );
+                }
+
+                $this->writePackageEntry(
+                    $source,
+                    $payload['archiveEntry'],
+                    $relative,
+                    $outputPath,
+                    $networkBytesDone,
+                    $archiveBytes,
+                    $overridesWritten,
+                );
+            }
+
+            $downloadedMods = $this->fetchPackageMods(
+                $content,
+                $outputPath,
+                $networkBytesDone,
+                $overridesWritten,
+                $archiveBytes,
+            );
+
+            if ($wantedMods > 0 && $downloadedMods === 0) {
+                throw new UnsupportedModpackPackageException(
+                    'None of the CurseForge mod files referenced by the modpack could be downloaded, so no server mods could be installed.',
+                );
+            }
+
+            if ($wantedMods > 0 && $downloadedMods < $wantedMods) {
+                $failedMods = $wantedMods - $downloadedMods;
+
+                if ($failedMods > $this->toleratedModFailures($wantedMods)) {
+                    throw new UnsupportedModpackPackageException(
+                        'Only '
+                        . $downloadedMods
+                        . ' of the '
+                        . $wantedMods
+                        . ' required CurseForge mod files could be downloaded. Installing the pack anyway would leave the server broken, so the installation was stopped. This usually means the CurseForge API key lacks the download entitlement, some mods were removed from CurseForge, or the API is rate-limiting requests.',
+                    );
+                }
+
+                @error_log(
+                    'modpackinstaller manifest download failed for '
+                    . $failedMods
+                    . ' of '
+                    . $wantedMods
+                    . ' mod files; continuing with the rest.'
+                );
+            }
+        } catch (\Throwable $exception) {
+            $this->deleteDirectoryTree($outputPath);
+
+            throw $exception;
+        }
+
+        return $outputPath;
+    }
+
+    /**
+     * Downloads every manifest mod file into the package's mods/ directory,
+     * either through the parallel batch engine when the transport supports it
+     * or with the per-candidate serial fallback. Returns the number of mod
+     * files that arrived on disk.
+     *
+     * @param array<string, array{archiveEntry: string|null, downloadUrls: array<int, string>, priority: string, bytes: int, sha1: string}> $content
+     */
+    private function fetchPackageMods(
+        array $content,
+        string $outputPath,
+        int &$networkBytesDone,
+        int $overridesWritten,
+        int $archiveBytes,
+    ): int {
+        $modTasks = [];
+
+        foreach ($content as $relative => $payload) {
+            if ($payload['archiveEntry'] !== null) {
+                continue;
+            }
+
+            $modTasks[] = [
+                'id' => $relative,
+                'sha1' => (string) ($payload['sha1'] ?? ''),
+                'urls' => $payload['downloadUrls'],
+                'bytes' => max(0, (int) $payload['bytes']),
+                'destination' => $this->packageOutputPath($outputPath, $relative),
+            ];
+        }
+
+        if ($modTasks === []) {
+            return 0;
+        }
+
+        $sha1ById = [];
+
+        foreach ($modTasks as $task) {
+            $sha1ById[$task['id']] = $task['sha1'];
+        }
+
+        if ($this->downloader instanceof ConcurrentDownloader) {
+            // Anchor the batch on the bytes already streamed (client pack plus
+            // its overrides) so the bar never steps backwards between phases.
+            $batchOffset = $networkBytesDone + $overridesWritten;
+
+            $this->downloader->setProgressOffset(
+                $batchOffset,
+                max($batchOffset, $archiveBytes),
+            );
+
+            $results = $this->downloader->downloadBatch($modTasks);
+
+            $downloadedMods = 0;
+
+            foreach ($results as $id => $destination) {
+                if ($destination === null) {
+                    continue;
+                }
+
+                // The parallel engine cannot hash-verify mid-flight, so every
+                // successful transfer is checked here. A body that fails its
+                // CurseForge digest is corrupt (truncated transfer, stale CDN
+                // mirror) and counts as a failed mod, never as installed.
+                $expectedSha1 = $sha1ById[$id] ?? '';
+
+                if ($expectedSha1 !== '' && !$this->matchesSha1($destination, $expectedSha1)) {
+                    @unlink($destination);
+
+                    continue;
+                }
+
+                $downloadedMods++;
+            }
+
+            return $downloadedMods;
+        }
+
+        $downloadedMods = 0;
+        $downloadedTemps = [];
+
+        try {
+            foreach ($modTasks as $task) {
+                $downloadPath = $this->downloadBestUrl(
+                    $task['urls'],
+                    $networkBytesDone,
+                    $archiveBytes,
+                    $task['sha1'],
+                );
+
+                if ($downloadPath === null) {
+                    // A dead mod must never freeze the progress store: keep
+                    // pinging so the card stays alive through long stretches of
+                    // failed downloads instead of the store expiring and the
+                    // frontend dropping the install.
+                    $this->downloader->reportProgress(
+                        $networkBytesDone,
+                        $archiveBytes,
+                    );
+
+                    continue;
+                }
+
+                // The source is a shared or disposable temp file; copy it into
+                // the package and let the shared cleanup unlink the temp.
+                if (!@copy($downloadPath, $task['destination'])) {
+                    throw new RuntimeException(
+                        'Unable to place a downloaded mod file.',
+                    );
+                }
+
+                $downloadedMods++;
+                $downloadedTemps[] = $downloadPath;
+                $networkBytesDone += $task['bytes'];
+            }
+
+            return $downloadedMods;
+        } finally {
+            foreach ($downloadedTemps as $downloadPath) {
+                @unlink($downloadPath);
+            }
+        }
+    }
+
+    /**
+     * Streams a single client-pack entry into the package directory, reporting
+     * cumulative progress and honouring cancellation per chunk.
+     */
+    private function writePackageEntry(
+        ZipArchive $source,
+        string $entry,
+        string $relative,
+        string $outputPath,
+        int $baseDone,
+        int $totalBytes,
+        int &$overridesWritten,
+    ): void {
+        $stream = $source->getStream($entry);
+
+        if ($stream === false) {
+            throw new RuntimeException(
+                'Unable to read an entry from the modpack archive.',
+            );
+        }
+
+        $destination = $this->packageOutputPath($outputPath, $relative);
+
+        $handle = @fopen($destination, 'wb');
+
+        if ($handle === false) {
+            fclose($stream);
+
+            throw new RuntimeException(
+                'Unable to write a modpack file into the package directory.',
+            );
+        }
+
+        try {
+            while (!feof($stream)) {
+                if ($this->downloader->isCancelled()) {
+                    throw new InstallationCancelledException(
+                        'Installation cancelled.'
+                    );
+                }
+
+                $chunk = fread($stream, 262144);
+
+                if ($chunk === false) {
+                    throw new RuntimeException(
+                        'Unable to read an entry from the modpack archive.',
+                    );
+                }
+
+                if ($chunk === '') {
+                    break;
+                }
+
+                $written = fwrite($handle, $chunk);
+
+                if ($written === false || $written !== strlen($chunk)) {
+                    throw new RuntimeException(
+                        'Unable to write a modpack file into the package directory.',
+                    );
+                }
+
+                $overridesWritten += strlen($chunk);
+
+                $this->downloader->reportProgress(
+                    $baseDone + $overridesWritten,
+                    $totalBytes,
+                );
+            }
+        } finally {
+            fclose($handle);
+            fclose($stream);
+        }
+    }
+
+    /**
+     * Resolves a safe relative path inside the package directory, creating any
+     * leading directories as needed.
+     */
+    private function packageOutputPath(string $outputPath, string $relative): string
+    {
+        $path = $outputPath . '/' . $relative;
+
+        $directory = dirname($path);
+
+        if (
+            !is_dir($directory)
+            && !@mkdir($directory, 0750, true)
+            && !is_dir($directory)
+        ) {
+            throw new RuntimeException(
+                'Unable to create a package directory.',
+            );
+        }
+
+        return $path;
+    }
+
+    private function createPackageDirectory(): string
+    {
         $root = rtrim($this->temporaryRoot, DIRECTORY_SEPARATOR);
 
         if (
@@ -828,127 +1177,44 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
             );
         }
 
-        $outputPath = $root . '/' . bin2hex(random_bytes(16)) . '.zip';
+        $outputPath = $root . '/' . bin2hex(random_bytes(16)) . '.dir';
 
-        $output = new ZipArchive();
-
-        if ($output->open($outputPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
+        if (!mkdir($outputPath, 0750, true) && !is_dir($outputPath)) {
             throw new RuntimeException(
-                'Unable to create the normalized package archive.',
+                'Unable to create the normalized package directory.',
             );
         }
 
-        $scratchPaths = [];
-        $downloadedTemps = [];
+        return $outputPath;
+    }
 
-        $downloadedMods = 0;
-
-        try {
-            foreach ($content as $relative => $payload) {
-                if ($this->downloader->isCancelled()) {
-                    throw new InstallationCancelledException(
-                        'Installation cancelled.'
-                    );
-                }
-
-                $stream = null;
-                $scratch = null;
-
-                try {
-                    if ($payload['archiveEntry'] !== null) {
-                        $stream = $source->getStream(
-                            $payload['archiveEntry'],
-                        );
-
-                        if ($stream === false) {
-                            throw new RuntimeException(
-                                'Unable to read an entry from the modpack archive.',
-                            );
-                        }
-                    } else {
-                        $downloadPath = $this->downloadBestUrl(
-                            $payload['downloadUrls'],
-                            $networkBytesDone,
-                            $archiveBytes,
-                        );
-
-                        if ($downloadPath === null) {
-                            continue;
-                        }
-
-                        $downloadedMods++;
-
-                        $downloadedTemps[] = $downloadPath;
-
-                        $networkBytesDone += max(
-                            0,
-                            (int) $payload['bytes'],
-                        );
-
-                        $stream = @fopen($downloadPath, 'rb');
-
-                        if ($stream === false) {
-                            throw new RuntimeException(
-                                'Unable to read a downloaded modpack file.',
-                            );
-                        }
-                    }
-
-                    $scratchPath = $root
-                        . '/'
-                        . bin2hex(random_bytes(16))
-                        . '.bin';
-
-                    $scratch = @fopen($scratchPath, 'wb');
-
-                    if ($scratch === false) {
-                        throw new RuntimeException(
-                            'Unable to create a scratch file for the normalized archive.',
-                        );
-                    }
-
-                    if (stream_copy_to_stream($stream, $scratch) === false) {
-                        throw new RuntimeException(
-                            'Unable to copy a modpack file into the normalized archive.',
-                        );
-                    }
-
-                    $scratchPaths[] = $scratchPath;
-
-                    if ($output->addFile($scratchPath, $relative) === false) {
-                        throw new RuntimeException(
-                            'Unable to add a modpack file to the normalized archive.',
-                        );
-                    }
-                } finally {
-                    if ($scratch !== null) {
-                        fclose($scratch);
-                    }
-
-                    if ($stream !== null) {
-                        fclose($stream);
-                    }
-                }
-            }
-
-            if ($wantedMods > 0 && $downloadedMods === 0) {
-                throw new UnsupportedModpackPackageException(
-                    'None of the CurseForge mod files referenced by the modpack could be downloaded, so no server mods could be installed.',
-                );
-            }
-        } finally {
-            $output->close();
-
-            foreach ($scratchPaths as $scratchPath) {
-                @unlink($scratchPath);
-            }
-
-            foreach ($downloadedTemps as $downloadPath) {
-                @unlink($downloadPath);
-            }
+    private function deleteDirectoryTree(string $directory): void
+    {
+        if (!is_dir($directory)) {
+            return;
         }
 
-        return $outputPath;
+        try {
+            $iterator = new \RecursiveIteratorIterator(
+                new \RecursiveDirectoryIterator(
+                    $directory,
+                    \FilesystemIterator::SKIP_DOTS,
+                ),
+                \RecursiveIteratorIterator::CHILD_FIRST,
+            );
+
+            foreach ($iterator as $item) {
+                if ($item->isDir()) {
+                    @rmdir($item->getPathname());
+                } else {
+                    @unlink($item->getPathname());
+                }
+            }
+
+            @rmdir($directory);
+        } catch (\Throwable) {
+            // Cleanup is best-effort and must never mask the outcome.
+        }
     }
 
     /**
@@ -966,6 +1232,12 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
         $prefix = $overridesPath . '/';
 
         for ($index = 0; $index < $source->numFiles; $index++) {
+            if ($this->downloader->isCancelled()) {
+                throw new InstallationCancelledException(
+                    'Installation cancelled.'
+                );
+            }
+
             $entry = $source->statIndex($index);
 
             if ($entry === false) {
@@ -1065,6 +1337,12 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
         $skipped = 0;
 
         foreach ($wanted as $fileId => $meta) {
+            if ($this->downloader->isCancelled()) {
+                throw new InstallationCancelledException(
+                    'Installation cancelled.'
+                );
+            }
+
             $file = $resolved[$fileId] ?? null;
             $fileName = $this->manifestFileName($file, (int) $fileId);
 
@@ -1090,6 +1368,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
                     'downloadUrls' => $candidates,
                     'priority' => 'mods',
                     'bytes' => max(0, (int) ($file['fileLength'] ?? 0)),
+                    'sha1' => $this->sha1FromHashes((array) ($file['hashes'] ?? [])),
                 ];
             }
 
@@ -1131,6 +1410,12 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
         $resolved = [];
 
         foreach (array_chunk(array_values(array_unique($fileIds)), 50) as $chunk) {
+            if ($this->downloader->isCancelled()) {
+                throw new InstallationCancelledException(
+                    'Installation cancelled.'
+                );
+            }
+
             try {
                 $response = $this->http->post(
                     self::API_BASE . '/mods/files',
@@ -1210,11 +1495,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
     ): array {
         $candidates = [];
 
-        $downloadUrl = $this->nullableString($file['downloadUrl'] ?? null);
-
-        if ($downloadUrl !== null) {
-            $candidates[] = $downloadUrl;
-        } elseif ($projectId !== '') {
+        if ($projectId !== '') {
             $resolvedUrl = $this->resolveDownloadUrl($projectId, (string) $fileId);
 
             if ($resolvedUrl !== null) {
@@ -1222,9 +1503,35 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
             }
         }
 
+        $downloadUrl = $this->nullableString($file['downloadUrl'] ?? null);
+
+        if ($downloadUrl !== null) {
+            $candidates[] = $downloadUrl;
+        }
+
         $candidates[] = $this->cdnDownloadUrl($fileId, $fileName);
 
+        if ($projectId !== '') {
+            $candidates[] = $this->websiteDownloadUrl($projectId, $fileId);
+        }
+
         return array_values(array_unique($candidates));
+    }
+
+    /**
+     * CurseForge's public website download page. Browsers (and any client that
+     * follows redirects) hit this page and are 302-redirected to the live CDN
+     * URL for the file. It stays the final fallback because it keeps
+     * resolving downloads for files whose metadata omits downloadUrl and whose
+     * reconstructed CDN path is stale, and it needs no API key of its own.
+     */
+    private function websiteDownloadUrl(string $projectId, int $fileId): string
+    {
+        return 'https://www.curseforge.com/minecraft/mc-mods/'
+            . $projectId
+            . '/files/'
+            . $fileId
+            . '/download';
     }
 
     /**
@@ -1280,6 +1587,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
         array $candidates,
         int &$networkBytesDone,
         int $archiveBytes,
+        string $expectedSha1 = '',
     ): ?string {
         foreach ($candidates as $candidate) {
             $this->downloader->setProgressOffset(
@@ -1288,7 +1596,17 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
             );
 
             try {
-                return $this->downloader->download($candidate);
+                $downloadPath = $this->downloader->download($candidate);
+
+                if ($expectedSha1 !== '') {
+                    if ($this->matchesSha1($downloadPath, $expectedSha1)) {
+                        return $downloadPath;
+                    }
+
+                    continue;
+                }
+
+                return $downloadPath;
             } catch (InvalidArgumentException | RuntimeException $exception) {
                 if ($exception instanceof InstallationCancelledException) {
                     throw $exception;
@@ -1351,6 +1669,17 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
         }
 
         return true;
+    }
+
+    /**
+     * Number of required mod files that may fail to download before an
+     * otherwise installable pack is rejected. A few mods dying upstream should
+     * not sink a whole pack, but losing a material fraction always leaves the
+     * server broken and must fail loudly instead of deploying a partial pack.
+     */
+    private function toleratedModFailures(int $wantedMods): int
+    {
+        return max(5, (int) floor($wantedMods * 0.05));
     }
 
     private function requestFailure(

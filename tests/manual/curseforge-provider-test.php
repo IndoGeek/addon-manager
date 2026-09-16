@@ -119,6 +119,10 @@ final class FakeDownloader implements Downloader
     {
         return false;
     }
+
+    public function reportProgress(int $downloadedBytes, ?int $totalBytes): void
+    {
+    }
 }
 
 function buildZip(string $path, array $files): void
@@ -134,6 +138,39 @@ function buildZip(string $path, array $files): void
 function pass(string $name): void
 {
     echo "PASS: {$name}\n";
+}
+
+/**
+ * Lists the relative paths inside a normalized package directory.
+ *
+ * @return list<string>
+ */
+function packageDirectoryFiles(string $directory): array
+{
+    $files = [];
+
+    $iterator = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator(
+            $directory,
+            FilesystemIterator::SKIP_DOTS,
+        ),
+        RecursiveIteratorIterator::LEAVES_ONLY,
+    );
+
+    foreach ($iterator as $file) {
+        if (!$file->isFile()) {
+            continue;
+        }
+
+        $files[] = ltrim(
+            substr($file->getPathname(), strlen($directory)),
+            DIRECTORY_SEPARATOR,
+        );
+    }
+
+    sort($files);
+
+    return $files;
 }
 
 const SECRET_KEY = 'SUPER-SECRET-CF-KEY';
@@ -474,45 +511,32 @@ $provider = new CurseForgeProvider(
 
 $package = $provider->getPackage('curseforge://314768');
 
-$normalized = new ZipArchive();
-$normalized->open($package->archivePath);
+$entries = packageDirectoryFiles($package->archivePath);
 
-try {
-    $entries = [];
+if ($entries !== ['config/install.toml', 'mods/essential-mod.jar']) {
+    throw new RuntimeException(
+        'Unexpected normalized client-pack contents: ' . implode(',', $entries),
+    );
+}
 
-    for ($index = 0; $index < $normalized->numFiles; $index++) {
-        $entries[] = $normalized->getNameIndex($index);
-    }
+if (file_get_contents($package->archivePath . '/mods/essential-mod.jar') !== 'MODJAR') {
+    throw new RuntimeException('Resolved manifest mod was not embedded.');
+}
 
-    sort($entries);
+if (file_get_contents($package->archivePath . '/config/install.toml') !== 'server-config') {
+    throw new RuntimeException('Overrides were not applied to the server root.');
+}
 
-    if ($entries !== ['config/install.toml', 'mods/essential-mod.jar']) {
-        throw new RuntimeException(
-            'Unexpected normalized client-pack contents: ' . implode(',', $entries),
-        );
-    }
+if (is_file($package->archivePath . '/manifest.json')) {
+    throw new RuntimeException(
+        'The client-pack manifest must not ship in the server package.',
+    );
+}
 
-    if ($normalized->getFromName('mods/essential-mod.jar') !== 'MODJAR') {
-        throw new RuntimeException('Resolved manifest mod was not embedded.');
-    }
-
-    if ($normalized->getFromName('config/install.toml') !== 'server-config') {
-        throw new RuntimeException('Overrides were not applied to the server root.');
-    }
-
-    if ($normalized->statName('manifest.json') !== false) {
-        throw new RuntimeException(
-            'The client-pack manifest must not ship in the server archive.',
-        );
-    }
-
-    if ($normalized->statName('config/client-only.toml') !== false) {
-        throw new RuntimeException(
-            'Non-override client-pack content leaked into the server archive.',
-        );
-    }
-} finally {
-    $normalized->close();
+if (is_file($package->archivePath . '/config/client-only.toml')) {
+    throw new RuntimeException(
+        'Non-override client-pack content leaked into the server package.',
+    );
 }
 
 if ($package->source !== 'curseforge://314768') {
@@ -525,8 +549,8 @@ if (is_file($clientPackPath)) {
 
 $provider->cleanup($package);
 
-if (is_file($package->archivePath)) {
-    throw new RuntimeException('Cleanup did not remove the normalized archive.');
+if (is_dir($package->archivePath)) {
+    throw new RuntimeException('Cleanup did not remove the normalized package.');
 }
 
 pass('client-pack archive resolved through the manifest into a normalized server archive');
@@ -621,23 +645,16 @@ $provider = new CurseForgeProvider(
 
 $package = $provider->getPackage('curseforge://314768');
 
-$partial = new ZipArchive();
-$partial->open($package->archivePath);
+if (file_get_contents($package->archivePath . '/mods/available-mod.jar') !== 'PARTIAL') {
+    throw new RuntimeException(
+        'Public manifest mods must still be installed when siblings lack a URL.',
+    );
+}
 
-try {
-    if ($partial->getFromName('mods/available-mod.jar') !== 'PARTIAL') {
-        throw new RuntimeException(
-            'Public manifest mods must still be installed when siblings lack a URL.',
-        );
-    }
-
-    if ($partial->getFromName('mods/dead-mod.jar') !== 'DEADMOD') {
-        throw new RuntimeException(
-            'A manifest mod without a download URL must fall back to the CurseForge CDN layout.',
-        );
-    }
-} finally {
-    $partial->close();
+if (file_get_contents($package->archivePath . '/mods/dead-mod.jar') !== 'DEADMOD') {
+    throw new RuntimeException(
+        'A manifest mod without a download URL must fall back to the CurseForge CDN layout.',
+    );
 }
 
 $provider->cleanup($package);
@@ -684,6 +701,8 @@ $downloader = new FakeDownloader(
     [
         'https://edge.forgecdn.net/files/2/3/dead-a.jar',
         'https://edge.forgecdn.net/files/2/4/dead-b.jar',
+        'https://www.curseforge.com/minecraft/mc-mods/11/files/2003/download',
+        'https://www.curseforge.com/minecraft/mc-mods/22/files/2004/download',
     ],
 );
 $http = new FakeProviderHttpClient([
@@ -768,17 +787,10 @@ $provider = new CurseForgeProvider(
 
 $package = $provider->getPackage('curseforge://314768');
 
-$fallback = new ZipArchive();
-$fallback->open($package->archivePath);
-
-try {
-    if ($fallback->getFromName('mods/fallback-mod.jar') !== 'FALLBACKCDN') {
-        throw new RuntimeException(
-            'A failed metadata download must fall back to the reconstructed CDN URL.',
-        );
-    }
-} finally {
-    $fallback->close();
+if (file_get_contents($package->archivePath . '/mods/fallback-mod.jar') !== 'FALLBACKCDN') {
+    throw new RuntimeException(
+        'A failed metadata download must fall back to the reconstructed CDN URL.',
+    );
 }
 
 $provider->cleanup($package);
@@ -939,6 +951,107 @@ if (str_contains(json_encode($info), SECRET_KEY)) {
 }
 
 pass('missing-download file yields normalized manual-download guidance');
+
+$massFailPackPath = $temporaryRoot . '/mass-fail-client-pack.zip';
+
+$massManifestFiles = [];
+
+for ($index = 1; $index <= 60; $index++) {
+    $massManifestFiles[] = [
+        'projectID' => 1000 + $index,
+        'fileID' => 100000 + $index,
+        'required' => true,
+    ];
+}
+
+buildZip($massFailPackPath, [
+    'manifest.json' => json_encode([
+        'minecraft' => ['version' => '1.20.4'],
+        'overrides' => 'overrides',
+        'files' => $massManifestFiles,
+    ]),
+    'overrides/config/x.toml' => 'x',
+]);
+
+$massResolveData = [];
+$massFailedUrls = [];
+
+foreach ($massManifestFiles as $entry) {
+    $fileId = $entry['fileID'];
+    $fileName = 'mod-' . $fileId . '.jar';
+
+    if ($fileId === 100001) {
+        $massResolveData[] = [
+            'id' => $fileId,
+            'fileName' => $fileName,
+            'downloadUrl' => 'https://cdn.example/mods/available-' . $fileName,
+            'fileLength' => 1024,
+            'fileStatus' => 4,
+            'isAvailable' => true,
+        ];
+        continue;
+    }
+
+    $massResolveData[] = [
+        'id' => $fileId,
+        'fileName' => $fileName,
+        'downloadUrl' => null,
+        'fileLength' => 1024,
+        'fileStatus' => 4,
+        'isAvailable' => true,
+    ];
+
+    $massFailedUrls[] = 'https://edge.forgecdn.net/files/'
+        . intdiv($fileId, 1000)
+        . '/'
+        . ($fileId % 1000)
+        . '/'
+        . $fileName;
+
+    $massFailedUrls[] = 'https://www.curseforge.com/minecraft/mc-mods/'
+        . $entry['projectID']
+        . '/files/'
+        . $fileId
+        . '/download';
+}
+
+$massFailResolve = new ProviderHttpResponse(200, [
+    'data' => $massResolveData,
+]);
+
+$downloader = new FakeDownloader($massFailPackPath, [], $massFailedUrls);
+$http = new FakeProviderHttpClient([
+    $projectResponse,
+    $filesResponse,
+    $massFailResolve,
+    $massFailResolve,
+]);
+$provider = new CurseForgeProvider(
+    $http,
+    $downloader,
+    SECRET_KEY,
+    $temporaryRoot,
+);
+
+try {
+    $provider->getPackage('curseforge://314768');
+    throw new RuntimeException(
+        'A client pack losing most of its mods must be rejected, not partially installed.',
+    );
+} catch (UnsupportedModpackPackageException $exception) {
+    if (!str_contains($exception->getMessage(), 'would leave the server broken')) {
+        throw new RuntimeException('Unexpected partial-install rejection message.');
+    }
+    if (str_contains($exception->getMessage(), SECRET_KEY)) {
+        throw new RuntimeException('API key leaked into error message.');
+    }
+}
+
+if (is_file($massFailPackPath)) {
+    throw new RuntimeException('Mass-failed client pack was not cleaned up.');
+}
+
+pass('client pack losing a majority of its mods fails loudly');
 
 $iterator = new RecursiveIteratorIterator(
     new RecursiveDirectoryIterator(

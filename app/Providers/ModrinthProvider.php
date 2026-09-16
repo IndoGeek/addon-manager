@@ -4,6 +4,7 @@ namespace Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Providers;
 
 use InvalidArgumentException;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Models\ModpackMetadata;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Download\ConcurrentDownloader;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Download\Downloader;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\InstallationCancelledException;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Provider\ProviderHttpClient;
@@ -213,6 +214,8 @@ final class ModrinthProvider implements ModpackProvider
 
         if (is_file($path)) {
             @unlink($path);
+        } elseif (is_dir($path)) {
+            $this->deleteDirectoryTree($path);
         }
 
         unset($this->temporaryPackages[$path]);
@@ -496,137 +499,299 @@ final class ModrinthProvider implements ModpackProvider
                 max($networkBytesDone, $archiveBytes),
             );
 
-            $root = rtrim($this->temporaryRoot, DIRECTORY_SEPARATOR);
+            $outputPath = $this->createPackageDirectory();
 
-            if (
-                !is_dir($root)
-                && !mkdir($root, 0750, true)
-                && !is_dir($root)
-            ) {
-                throw new RuntimeException(
-                    'Unable to create the temporary package directory.',
-                );
-            }
-
-            $outputPath = $root . '/' . bin2hex(random_bytes(16)) . '.zip';
-
-            $output = new ZipArchive();
-
-            if ($output->open($outputPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
-                throw new RuntimeException(
-                    'Unable to create the normalized package archive.',
-                );
-            }
-
-            // Source entries are streamed into scratch files and added to the
-            // normalized archive via addFile() so a single large file (an
-            // override or an index-file mod) never has to be decompressed
-            // fully in memory. Index-file sources are downloaded on the fly
-            // with the injected Downloader and streamed the same way. A fresh
-            // scratch file is used per entry because ZipArchive reads it
-            // lazily when the archive is closed.
-            $scratchPaths = [];
-            $downloadedTemps = [];
+            // Materialize every embedded entry (overrides, server-overrides
+            // and any mods shipped inside the mrpack) straight into the
+            // package directory.
+            $overridesWritten = 0;
 
             try {
                 foreach ($content as $relative => $payload) {
+                    if ($payload['archiveEntry'] === null) {
+                        continue;
+                    }
+
                     if ($this->downloader->isCancelled()) {
                         throw new InstallationCancelledException(
                             'Installation cancelled.'
                         );
                     }
 
-                    $stream = null;
-                    $scratch = null;
-
-                    try {
-                        if ($payload['archiveEntry'] !== null) {
-                            $stream = $source->getStream(
-                                $payload['archiveEntry'],
-                            );
-
-                            if ($stream === false) {
-                                throw new RuntimeException(
-                                    'Unable to read an entry from the modpack archive.',
-                                );
-                            }
-                        } else {
-                            $this->downloader->setProgressOffset(
-                                $networkBytesDone,
-                                max($networkBytesDone, $archiveBytes),
-                            );
-
-                            $downloadPath = $this->downloader->download(
-                                (string) $payload['downloadUrl'],
-                            );
-
-                            $downloadedTemps[] = $downloadPath;
-
-                            $networkBytesDone += max(
-                                0,
-                                (int) ($payload['bytes'] ?? 0),
-                            );
-
-                            $stream = @fopen($downloadPath, 'rb');
-
-                            if ($stream === false) {
-                                throw new RuntimeException(
-                                    'Unable to read a downloaded modpack file.',
-                                );
-                            }
-                        }
-
-                        $scratchPath = $root
-                            . '/'
-                            . bin2hex(random_bytes(16))
-                            . '.bin';
-
-                        $scratch = @fopen($scratchPath, 'wb');
-
-                        if ($scratch === false) {
-                            throw new RuntimeException(
-                                'Unable to create a scratch file for the normalized archive.',
-                            );
-                        }
-
-                        if (stream_copy_to_stream($stream, $scratch) === false) {
-                            throw new RuntimeException(
-                                'Unable to copy a modpack file into the normalized archive.',
-                            );
-                        }
-
-                        $scratchPaths[] = $scratchPath;
-
-                        if ($output->addFile($scratchPath, $relative) === false) {
-                            throw new RuntimeException(
-                                'Unable to add a modpack file to the normalized archive.',
-                            );
-                        }
-                    } finally {
-                        if ($scratch !== null) {
-                            fclose($scratch);
-                        }
-
-                        if ($stream !== null) {
-                            fclose($stream);
-                        }
-                    }
-                }
-            } finally {
-                $output->close();
-
-                foreach ($scratchPaths as $scratchPath) {
-                    @unlink($scratchPath);
+                    $this->writePackageEntry(
+                        $source,
+                        $payload['archiveEntry'],
+                        $relative,
+                        $outputPath,
+                        $networkBytesDone,
+                        $archiveBytes,
+                        $overridesWritten,
+                    );
                 }
 
-                foreach ($downloadedTemps as $downloadPath) {
-                    @unlink($downloadPath);
-                }
+                $this->fetchIndexFilesFromNetwork(
+                    $content,
+                    $outputPath,
+                    $networkBytesDone,
+                    $overridesWritten,
+                    $archiveBytes,
+                );
+            } catch (\Throwable $exception) {
+                $this->deleteDirectoryTree($outputPath);
+
+                throw $exception;
             }
 
             return $outputPath;
         } finally {
             $source->close();
+        }
+    }
+
+    /**
+     * Downloads every index-file member into the package directory, resolving
+     * them either through the parallel batch engine when the transport
+     * supports it or serially. Index mods carry exactly one download source,
+     * so a file that cannot be fetched fails loudly — an mrpack without its
+     * mods would otherwise install a mod-less server.
+     *
+     * @param array<string, array{archiveEntry: string|null, downloadUrl: string|null, priority: string, bytes: int}> $content
+     */
+    private function fetchIndexFilesFromNetwork(
+        array $content,
+        string $outputPath,
+        int &$networkBytesDone,
+        int $overridesWritten,
+        int $archiveBytes,
+    ): void {
+        $modTasks = [];
+
+        foreach ($content as $relative => $payload) {
+            if (
+                $payload['archiveEntry'] !== null
+                || $payload['downloadUrl'] === null
+                || $payload['downloadUrl'] === ''
+            ) {
+                continue;
+            }
+
+            $modTasks[] = [
+                'id' => $relative,
+                'urls' => [(string) $payload['downloadUrl']],
+                'bytes' => max(0, (int) ($payload['bytes'] ?? 0)),
+                'destination' => $this->packageOutputPath(
+                    $outputPath,
+                    $relative,
+                ),
+            ];
+        }
+
+        if ($modTasks === []) {
+            return;
+        }
+
+        if ($this->downloader instanceof ConcurrentDownloader) {
+            // Anchor the batch on the bytes already streamed (mrpack plus its
+            // embedded entries) so the bar never steps backwards between the
+            // packaging and download phases.
+            $batchOffset = $networkBytesDone + $overridesWritten;
+
+            $this->downloader->setProgressOffset(
+                $batchOffset,
+                max($batchOffset, $archiveBytes),
+            );
+
+            $results = $this->downloader->downloadBatch($modTasks);
+
+            foreach ($results as $destination) {
+                if ($destination === null) {
+                    throw new RuntimeException(
+                        'A modpack file referenced by the index could not be downloaded.',
+                    );
+                }
+            }
+
+            return;
+        }
+
+        $downloadedTemps = [];
+
+        try {
+            foreach ($modTasks as $task) {
+                $this->downloader->setProgressOffset(
+                    $networkBytesDone,
+                    max($networkBytesDone, $archiveBytes),
+                );
+
+                $downloadPath = $this->downloader->download(
+                    (string) $task['urls'][0],
+                );
+
+                $downloadedTemps[] = $downloadPath;
+
+                $networkBytesDone += $task['bytes'];
+
+                if (!@copy($downloadPath, $task['destination'])) {
+                    throw new RuntimeException(
+                        'Unable to place a downloaded modpack file.',
+                    );
+                }
+            }
+        } finally {
+            foreach ($downloadedTemps as $downloadPath) {
+                @unlink($downloadPath);
+            }
+        }
+    }
+
+    /**
+     * Streams a single mrpack entry into the package directory, reporting
+     * cumulative progress and honouring cancellation per chunk.
+     */
+    private function writePackageEntry(
+        ZipArchive $source,
+        string $entry,
+        string $relative,
+        string $outputPath,
+        int $baseDone,
+        int $totalBytes,
+        int &$overridesWritten,
+    ): void {
+        $stream = $source->getStream($entry);
+
+        if ($stream === false) {
+            throw new RuntimeException(
+                'Unable to read an entry from the modpack archive.',
+            );
+        }
+
+        $destination = $this->packageOutputPath($outputPath, $relative);
+
+        $handle = @fopen($destination, 'wb');
+
+        if ($handle === false) {
+            fclose($stream);
+
+            throw new RuntimeException(
+                'Unable to write a modpack file into the package directory.',
+            );
+        }
+
+        try {
+            while (!feof($stream)) {
+                if ($this->downloader->isCancelled()) {
+                    throw new InstallationCancelledException(
+                        'Installation cancelled.'
+                    );
+                }
+
+                $chunk = fread($stream, 262144);
+
+                if ($chunk === false) {
+                    throw new RuntimeException(
+                        'Unable to read an entry from the modpack archive.',
+                    );
+                }
+
+                if ($chunk === '') {
+                    break;
+                }
+
+                $written = fwrite($handle, $chunk);
+
+                if ($written === false || $written !== strlen($chunk)) {
+                    throw new RuntimeException(
+                        'Unable to write a modpack file into the package directory.',
+                    );
+                }
+
+                $overridesWritten += strlen($chunk);
+
+                $this->downloader->reportProgress(
+                    $baseDone + $overridesWritten,
+                    $totalBytes,
+                );
+            }
+        } finally {
+            fclose($handle);
+            fclose($stream);
+        }
+    }
+
+    /**
+     * Resolves a safe relative path inside the package directory, creating any
+     * leading directories as needed.
+     */
+    private function packageOutputPath(string $outputPath, string $relative): string
+    {
+        $path = $outputPath . '/' . $relative;
+
+        $directory = dirname($path);
+
+        if (
+            !is_dir($directory)
+            && !@mkdir($directory, 0750, true)
+            && !is_dir($directory)
+        ) {
+            throw new RuntimeException(
+                'Unable to create a package directory.',
+            );
+        }
+
+        return $path;
+    }
+
+    private function createPackageDirectory(): string
+    {
+        $root = rtrim($this->temporaryRoot, DIRECTORY_SEPARATOR);
+
+        if (
+            !is_dir($root)
+            && !mkdir($root, 0750, true)
+            && !is_dir($root)
+        ) {
+            throw new RuntimeException(
+                'Unable to create the temporary package directory.',
+            );
+        }
+
+        $outputPath = $root . '/' . bin2hex(random_bytes(16)) . '.dir';
+
+        if (!mkdir($outputPath, 0750, true) && !is_dir($outputPath)) {
+            throw new RuntimeException(
+                'Unable to create the normalized package directory.',
+            );
+        }
+
+        return $outputPath;
+    }
+
+    private function deleteDirectoryTree(string $directory): void
+    {
+        if (!is_dir($directory)) {
+            return;
+        }
+
+        try {
+            $iterator = new \RecursiveIteratorIterator(
+                new \RecursiveDirectoryIterator(
+                    $directory,
+                    \FilesystemIterator::SKIP_DOTS,
+                ),
+                \RecursiveIteratorIterator::CHILD_FIRST,
+            );
+
+            foreach ($iterator as $item) {
+                if ($item->isDir()) {
+                    @rmdir($item->getPathname());
+                } else {
+                    @unlink($item->getPathname());
+                }
+            }
+
+            @rmdir($directory);
+        } catch (\Throwable) {
+            // Cleanup is best-effort and must never mask the outcome.
         }
     }
 

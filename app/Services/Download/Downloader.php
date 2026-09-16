@@ -29,4 +29,17 @@ interface Downloader
      * even when no transfer is actively in flight.
      */
     public function isCancelled(): bool;
+
+    /**
+     * Reports an absolute, monotonic progress value for composition steps that
+     * do not stream a transfer themselves (reverse-proxying override files,
+     * building a normalized archive). Callers pass the cumulative bytes done
+     * and the operation total; throttling is handled by the implementation so
+     * hot loops can call this as often as they like.
+     *
+     * @param int      $downloadedBytes Cumulative bytes completed so far.
+     * @param int|null $totalBytes      Grand total for the step, or null to
+     *                                  report indeterminate progress.
+     */
+    public function reportProgress(int $downloadedBytes, ?int $totalBytes): void;
 }

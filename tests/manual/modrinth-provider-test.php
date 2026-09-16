@@ -129,6 +129,10 @@ final class FakeDownloader implements Downloader
     {
         return false;
     }
+
+    public function reportProgress(int $downloadedBytes, ?int $totalBytes): void
+    {
+    }
 }
 
 function buildZip(string $path, array $files): void
@@ -178,6 +182,64 @@ function sampleResponses(): array
 function pass(string $name): void
 {
     echo "PASS: {$name}\n";
+}
+
+/**
+ * @return list<string>
+ */
+function packageDirectoryFiles(string $directory): array
+{
+    $files = [];
+
+    $iterator = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator(
+            $directory,
+            FilesystemIterator::SKIP_DOTS,
+        ),
+        RecursiveIteratorIterator::LEAVES_ONLY,
+    );
+
+    foreach ($iterator as $file) {
+        if (!$file->isFile()) {
+            continue;
+        }
+
+        $files[] = ltrim(
+            substr($file->getPathname(), strlen($directory)),
+            DIRECTORY_SEPARATOR,
+        );
+    }
+
+    sort($files);
+
+    return $files;
+}
+
+function removeDirectoryTree(string $directory): void
+{
+    if (!is_dir($directory)) {
+        @unlink($directory);
+
+        return;
+    }
+
+    $iterator = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator(
+            $directory,
+            FilesystemIterator::SKIP_DOTS,
+        ),
+        RecursiveIteratorIterator::CHILD_FIRST,
+    );
+
+    foreach ($iterator as $item) {
+        if ($item->isDir()) {
+            @rmdir($item->getPathname());
+        } else {
+            @unlink($item->getPathname());
+        }
+    }
+
+    @rmdir($directory);
 }
 
 $temporaryRoot = sys_get_temp_dir() . '/modrinth-provider-test';
@@ -420,32 +482,23 @@ $provider = new ModrinthProvider(
 
 $package = $provider->getPackage('modrinth://prominence-2-rpg');
 
-if (!is_file($package->archivePath)) {
-    throw new RuntimeException('Normalized package archive does not exist.');
+if (!is_dir($package->archivePath)) {
+    throw new RuntimeException('Normalized package directory does not exist.');
 }
 
 if ($package->source !== 'modrinth://prominence-2-rpg@version-001') {
     throw new RuntimeException('Unexpected package source.');
 }
 
-$zip = new ZipArchive();
-$zip->open($package->archivePath);
-$names = [];
-for ($index = 0; $index < $zip->numFiles; $index++) {
-    $names[] = $zip->statIndex($index)['name'];
-}
-$serverToml = $zip->getFromName('config/server.toml');
-$zip->close();
-
-sort($names);
+$names = packageDirectoryFiles($package->archivePath);
 
 if ($names !== ['config/normal.json', 'config/server.toml', 'ops.json']) {
     throw new RuntimeException(
-        'Unexpected normalized archive contents: ' . implode(',', $names),
+        'Unexpected normalized contents: ' . implode(',', $names),
     );
 }
 
-if ($serverToml !== 'server-version') {
+if (file_get_contents($package->archivePath . '/config/server.toml') !== 'server-version') {
     throw new RuntimeException('server-overrides did not win the merge.');
 }
 
@@ -457,8 +510,8 @@ pass('mrpack normalized to server archive (overrides + server-overrides)');
 
 $provider->cleanup($package);
 
-if (is_file($package->archivePath)) {
-    throw new RuntimeException('Cleanup did not remove the normalized archive.');
+if (is_dir($package->archivePath)) {
+    throw new RuntimeException('Cleanup did not remove the normalized directory.');
 }
 
 pass('cleanup removes temporary package archive');
@@ -520,16 +573,14 @@ $provider = new ModrinthProvider(
 
 $package = $provider->getPackage('modrinth://prominence-2-rpg');
 
-$zip = new ZipArchive();
-$zip->open($package->archivePath);
-$names = [];
-for ($index = 0; $index < $zip->numFiles; $index++) {
-    $names[] = $zip->statIndex($index)['name'];
+if (!is_dir($package->archivePath)) {
+    throw new RuntimeException('Index-normalized package directory does not exist.');
 }
-$one = $zip->getFromName('mods/one.jar');
-$three = $zip->getFromName('mods/three.jar');
-$indexServerToml = $zip->getFromName('config/server.toml');
-$zip->close();
+
+$names = packageDirectoryFiles($package->archivePath);
+$one = file_get_contents($package->archivePath . '/mods/one.jar');
+$three = file_get_contents($package->archivePath . '/mods/three.jar');
+$indexServerToml = file_get_contents($package->archivePath . '/config/server.toml');
 
 sort($names);
 
@@ -586,10 +637,11 @@ $provider = new ModrinthProvider(
 
 $package = $provider->getPackage('modrinth://prominence-2-rpg');
 
-$zip = new ZipArchive();
-$zip->open($package->archivePath);
-$embedded = $zip->getFromName('mods/embedded.jar');
-$zip->close();
+$embedded = file_get_contents($package->archivePath . '/mods/embedded.jar');
+
+if (!is_dir($package->archivePath)) {
+    throw new RuntimeException('Embedded-mods normalized directory is missing.');
+}
 
 if ($embedded !== 'embedded-bytes') {
     throw new RuntimeException('Embedded mods directory was not preserved.');

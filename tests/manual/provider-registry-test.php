@@ -65,6 +65,10 @@ final class StubDownloader implements Downloader
         return false;
     }
 
+    public function reportProgress(int $downloadedBytes, ?int $totalBytes): void
+    {
+    }
+
     public function markForCleanup(string $path): void
     {
     }

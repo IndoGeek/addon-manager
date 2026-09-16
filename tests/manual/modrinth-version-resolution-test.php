@@ -112,6 +112,10 @@ final class FakeDownloader implements Downloader
     {
         return false;
     }
+
+    public function reportProgress(int $downloadedBytes, ?int $totalBytes): void
+    {
+    }
 }
 
 function buildZip(string $path, array $files): void
@@ -335,14 +339,11 @@ if ((string) $downloader->url !== 'https://cdn.example/2.0.1.mrpack') {
     );
 }
 
-if (!is_file($package->archivePath)) {
-    throw new RuntimeException('Normalized archive missing.');
+if (!is_dir($package->archivePath)) {
+    throw new RuntimeException('Normalized package directory missing.');
 }
 
-$zip = new ZipArchive();
-$zip->open($package->archivePath);
-$serverToml = $zip->getFromName('config/server.toml');
-$zip->close();
+$serverToml = file_get_contents($package->archivePath . '/config/server.toml');
 
 if ($serverToml !== 'pinned-version') {
     throw new RuntimeException('Pinned package content did not match.');

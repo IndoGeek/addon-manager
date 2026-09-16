@@ -18,7 +18,7 @@ use Pterodactyl\Models\Server;
 final class WingsServerFileTargetFactory
 {
     public function __construct(
-        private readonly int $timeout = 30,
+        private readonly int $timeout = 600,
         private readonly int $connectTimeout = 10,
         private readonly bool $verifySsl = true,
         private readonly ?WingsTransport $transport = null,

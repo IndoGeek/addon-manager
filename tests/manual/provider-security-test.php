@@ -105,6 +105,10 @@ final class FakeDownloader implements Downloader
     {
         return false;
     }
+
+    public function reportProgress(int $downloadedBytes, ?int $totalBytes): void
+    {
+    }
 }
 
 function pass(string $name): void
