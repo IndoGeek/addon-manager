@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { Dropdown } from '../common/Dropdown';
-import { FilterIcon, GridIcon, ListIcon, PackageIcon, SearchIcon } from '../icons';
+import { FilterIcon, GridIcon, ListIcon, PackageIcon, SearchIcon, StackIcon } from '../icons';
+import { STACK_OPTIONS } from '../utils/constants';
 import { SORT_OPTIONS } from '../utils/constants';
 
 interface ToolbarProps {
@@ -21,6 +22,9 @@ interface ToolbarProps {
 
     sortValue: string;
     onSortChange: (value: string) => void;
+
+    stackValue: string;
+    onStackChange: (value: string) => void;
 
     filtersOpen: boolean;
     onToggleFilters: () => void;
@@ -45,6 +49,8 @@ export const CatalogToolbar = ({
     providerOptions,
     sortValue,
     onSortChange,
+    stackValue,
+    onStackChange,
     filtersOpen,
     onToggleFilters,
     activeFilterCount,
@@ -230,6 +236,17 @@ export const CatalogToolbar = ({
                     onChange={onSortChange}
                     options={SORT_OPTIONS}
                     disabled={catalogBusy}
+                />
+
+                <Dropdown
+                    id="modpackinstaller-stack"
+                    label="Stack"
+                    value={stackValue}
+                    onChange={onStackChange}
+                    options={STACK_OPTIONS}
+                    disabled={catalogBusy}
+                    compact
+                    icon={<StackIcon />}
                 />
 
                 <button

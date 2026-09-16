@@ -284,6 +284,24 @@ export const ListIcon = () => (
     </svg>
 );
 
+export const DownloadIcon = () => (
+    <svg
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+    >
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+        <polyline points="7 10 12 15 17 10" />
+        <line x1="12" y1="15" x2="12" y2="3" />
+    </svg>
+);
+
 export const OpenIcon = () => (
     <svg
         width="16"
@@ -316,6 +334,40 @@ export const ViewIcon = () => (
     >
         <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
         <circle cx="12" cy="12" r="3" />
+    </svg>
+);
+
+export const EraserIcon = () => (
+    <svg
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+    >
+        <path d="M20 20H8.5L3.6 15.1a1.5 1.5 0 0 1 0-2.12L12.98 3.6a1.5 1.5 0 0 1 2.12 0l5.3 5.3a1.5 1.5 0 0 1 0 2.12L13.5 18" />
+        <line x1="9" y1="9" x2="15" y2="15" />
+    </svg>
+);
+
+export const StackIcon = () => (
+    <svg
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+    >
+        <polygon points="12 2 22 8.5 12 15 2 8.5 12 2" />
+        <polyline points="2 15.5 12 22 22 15.5" />
     </svg>
 );
 

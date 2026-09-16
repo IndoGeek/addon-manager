@@ -165,6 +165,34 @@ final class CatalogService
         return $item;
     }
 
+    public function description(CatalogProjectQuery $query): CatalogDescription
+    {
+        $provider = $this->registry->get($query->provider);
+
+        if (!$provider->available()) {
+            throw new CatalogUnavailableException(
+                $this->unavailableMessage($provider),
+            );
+        }
+
+        $key = CatalogCache::key('description', [
+            'provider' => $query->provider,
+            'project' => $query->project,
+        ]);
+
+        $cached = $this->cache?->get($key);
+
+        if (is_array($cached)) {
+            return CatalogDescription::fromArray($cached);
+        }
+
+        $description = $provider->description($query);
+
+        $this->cache?->put($key, $description->toArray());
+
+        return $description;
+    }
+
     private function unavailableMessage(CatalogProvider $provider): string
     {
         $reason = $provider->unavailableReason();

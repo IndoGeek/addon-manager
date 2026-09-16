@@ -7,7 +7,9 @@ use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogPagination;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogProvider;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogProviderException;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogDescription;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogProjectQuery;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\DescriptionSanitizer;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogResult;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogSearchQuery;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogSort;
@@ -573,6 +575,58 @@ final class CurseForgeCatalogProvider implements CatalogProvider
             }
 
             return $this->mapItem($response->body['data']);
+        } catch (InvalidArgumentException $exception) {
+            throw $exception;
+        } catch (CatalogProviderException $exception) {
+            throw $exception;
+        } catch (ProviderHttpException $exception) {
+            throw $this->requestFailure($exception);
+        }
+    }
+
+    public function description(CatalogProjectQuery $query): CatalogDescription
+    {
+        $this->assertConfigured();
+
+        if (!ctype_digit($query->project)) {
+            throw new InvalidArgumentException(
+                'Invalid CurseForge project id.',
+            );
+        }
+
+        try {
+            // The project payload's `description` field is usually empty; the
+            // long-form body lives on its dedicated endpoint.
+            $response = $this->http->get(
+                self::API_BASE
+                    . '/mods/'
+                    . $query->project
+                    . '/description',
+                headers: $this->headers(),
+            );
+
+            $raw = is_array($response->body)
+                && is_string($response->body['data'] ?? null)
+                ? $response->body['data']
+                : '';
+
+            if (trim($raw) === '') {
+                return new CatalogDescription(
+                    provider: $this->name(),
+                    project: $query->project,
+                    html: '',
+                );
+            }
+
+            // CurseForge serves the description as raw HTML (wrapped in its
+            // own page markup). Reduce it to the sanitized fragment directly.
+            $html = (new DescriptionSanitizer())->sanitize($raw);
+
+            return new CatalogDescription(
+                provider: $this->name(),
+                project: $query->project,
+                html: $html,
+            );
         } catch (InvalidArgumentException $exception) {
             throw $exception;
         } catch (CatalogProviderException $exception) {
@@ -1338,6 +1392,9 @@ final class CurseForgeCatalogProvider implements CatalogProvider
                 continue;
             }
 
+            // Each index entry carries BOTH a mod loader and a Minecraft
+            // game version; they are independent facts, so the loader being
+            // mapped must not skip the version collection.
             $modLoader = $this->intOrNull($entry['modLoader'] ?? null);
             $loaderSlug = $modLoader !== null
                 ? (self::MOD_LOADER_TO_SLUG[$modLoader] ?? null)
@@ -1345,8 +1402,6 @@ final class CurseForgeCatalogProvider implements CatalogProvider
 
             if ($loaderSlug !== null) {
                 $loaders[$loaderSlug] = true;
-
-                continue;
             }
 
             $gameVersion = $this->stringOrNull(

@@ -12,6 +12,44 @@ import {
     ViewIcon,
 } from '../icons';
 
+/** Icon-only Open/View pair used inside the list card's meta row. */
+const ListCardActions = ({
+    item,
+    onOpen,
+    disabled,
+}: {
+    item: CatalogItem;
+    onOpen: (item: CatalogItem) => void;
+    disabled: boolean;
+}) => (
+    <div className="modpackinstaller-catalog-card-actions">
+        <button
+            type="button"
+            className="modpackinstaller-card-action-open modpackinstaller-card-action-icon"
+            onClick={() => onOpen(item)}
+            disabled={disabled}
+            aria-label="Open modpack"
+            title="Open"
+        >
+            <OpenIcon />
+        </button>
+
+        {item.project_url && (
+            <a
+                className="modpackinstaller-card-action-details modpackinstaller-card-action-icon"
+                href={item.project_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                referrerPolicy="no-referrer"
+                aria-label="View on provider page"
+                title="View"
+            >
+                <ViewIcon />
+            </a>
+        )}
+    </div>
+);
+
 export const CatalogCard = ({
     item,
     view,
@@ -73,7 +111,9 @@ export const CatalogCard = ({
                     </div>
 
                     <span className="modpackinstaller-catalog-card-author">
-                        {item.author || 'Unknown author'}
+                        {view === 'list'
+                            ? `by ${item.author || 'unknown'}`
+                            : (item.author || 'Unknown author')}
                     </span>
                     </div>
 
@@ -91,57 +131,56 @@ export const CatalogCard = ({
                     </div>
                 )}
 
-                {view === 'list' && (tags.length > 0
-                    || statItems.length > 0) && (
-                    <div className="modpackinstaller-catalog-card-meta">
-                        {tags.length > 0 && <PillTags tags={tags} />}
+                {view === 'list' && tags.length > 0 && (
+                    <PillTags tags={tags} />
+                )}
 
+                {view === 'list' && (
+                    <div className="modpackinstaller-catalog-card-meta">
                         {statItems.length > 0 && (
                             <div className="modpackinstaller-catalog-card-stats">
                                 {statItems}
                             </div>
                         )}
+
+                        {/* The two actions share the stats row, filling the
+                         * free space after the last stat — no empty band. */}
+                        <ListCardActions
+                            item={item}
+                            onOpen={onOpen}
+                            disabled={disabled}
+                        />
                     </div>
                 )}
 
-                <div className="modpackinstaller-catalog-card-actions">
-                    <button
-                        type="button"
-                        className={`modpackinstaller-card-action-open${
-                            view === 'list'
-                                ? ' modpackinstaller-card-action-icon'
-                                : ''
-                        }`}
-                        onClick={() => onOpen(item)}
-                        disabled={disabled}
-                        aria-label="Open modpack"
-                        title="Open"
-                    >
-                        {view === 'list'
-                            ? <OpenIcon />
-                            : 'Open'}
-                    </button>
-
-                    {item.project_url && (
-                        <a
-                            className={`modpackinstaller-card-action-details${
-                                view === 'list'
-                                    ? ' modpackinstaller-card-action-icon'
-                                    : ''
-                            }`}
-                            href={item.project_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            referrerPolicy="no-referrer"
-                            aria-label="View on provider page"
-                            title="View"
+                {view === 'grid' && (
+                    <div className="modpackinstaller-catalog-card-actions">
+                        <button
+                            type="button"
+                            className="modpackinstaller-card-action-open"
+                            onClick={() => onOpen(item)}
+                            disabled={disabled}
+                            aria-label="Open modpack"
+                            title="Open"
                         >
-                            {view === 'list'
-                                ? <ViewIcon />
-                                : 'Details'}
-                        </a>
-                    )}
-                </div>
+                            Open
+                        </button>
+
+                        {item.project_url && (
+                            <a
+                                className="modpackinstaller-card-action-details"
+                                href={item.project_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                referrerPolicy="no-referrer"
+                                aria-label="View on provider page"
+                                title="View"
+                            >
+                                Details
+                            </a>
+                        )}
+                    </div>
+                )}
             </div>
         </article>
     );

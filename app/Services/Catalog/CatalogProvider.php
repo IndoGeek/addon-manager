@@ -101,4 +101,18 @@ interface CatalogProvider
      * @throws InvalidArgumentException    When the query itself is invalid.
      */
     public function project(CatalogProjectQuery $query): CatalogItem;
+
+    /**
+     * Returns the provider's full project description as a sanitized HTML
+     * fragment (see DescriptionSanitizer for the safety contract). Providers
+     * with no long-form body may return an empty html string; the UI then
+     * falls back to the item summary.
+     *
+     * @throws CatalogUnavailableException When the provider is unreachable,
+     *                                     timing out, rate limited, or disabled.
+     * @throws CatalogProviderException    When the provider responds with a
+     *                                     payload this provider cannot validate.
+     * @throws InvalidArgumentException    When the query itself is invalid.
+     */
+    public function description(CatalogProjectQuery $query): CatalogDescription;
 }

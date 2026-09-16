@@ -249,6 +249,68 @@ final class ModpackController extends Controller
         }
     }
 
+    public function catalogDescription(Request $request): JsonResponse
+    {
+        try {
+            $provider = $this->paramString(
+                $request,
+                'provider',
+                CatalogProjectQuery::DEFAULT_PROVIDER,
+                32,
+                '/^[a-z0-9-]{1,32}$/',
+            );
+
+            $projectValue = $request->query('project');
+
+            if (!is_string($projectValue) || trim($projectValue) === '') {
+                throw new InvalidArgumentException(
+                    'The project parameter is required.',
+                );
+            }
+
+            $project = trim($projectValue);
+
+            if (
+                strlen($project) > 64
+                || preg_match(
+                    CatalogProjectQuery::PROJECT_PATTERN,
+                    $project,
+                ) !== 1
+            ) {
+                throw new InvalidArgumentException(
+                    'Invalid project parameter.',
+                );
+            }
+
+            $description = $this->catalogService()->description(new CatalogProjectQuery(
+                provider: $provider,
+                project: $project,
+            ));
+
+            return response()->json([
+                'data' => $description->toArray(),
+            ]);
+        } catch (InvalidArgumentException $exception) {
+            return response()->json([
+                'error' => $exception->getMessage(),
+            ], 422);
+        } catch (CatalogUnavailableException $exception) {
+            return response()->json([
+                'error' => $exception->getMessage(),
+            ], 503);
+        } catch (CatalogProviderException $exception) {
+            return response()->json([
+                'error' => $exception->getMessage(),
+            ], 502);
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return response()->json([
+                'error' => 'Unable to load the modpack description.',
+            ], 500);
+        }
+    }
+
     public function install(
         Request $request,
         Server $server,
@@ -357,6 +419,46 @@ final class ModpackController extends Controller
             ]);
 
             $target = $this->serverTarget($server);
+
+            // Replace semantics: the previous modpack's files must not survive
+            // alongside the new install. The deployment planner only overwrites
+            // paths the new pack also uses — every other file the old pack owns
+            // would be orphaned in the server root (most visibly its mods).
+            // Remove exactly those owned files (the same OwnershipRemover the
+            // uninstall endpoint uses, so nothing outside the record's manifest
+            // is ever touched), then drop the stale records. This runs after
+            // the download has fully succeeded — the point where the install is
+            // definitely proceeding — and before the new files deploy. Record
+            // deletion happens only after complete file removal, mirroring the
+            // uninstall endpoint's all-or-nothing behavior.
+            $existingRecords = $this->store()->all((string) $server->uuid);
+
+            if ($existingRecords !== []) {
+                $remover = new OwnershipRemover($target);
+
+                foreach ($existingRecords as $existingRecord) {
+                    $outcome = $remover->remove(
+                        $existingRecord->ownedFiles(),
+                    );
+
+                    if ($outcome['errors'] !== []) {
+                        report(new RuntimeException(
+                            'Modpack replace failed to remove the previously installed modpack files: '
+                                . implode('; ', $outcome['errors']),
+                        ));
+
+                        throw new RuntimeException(
+                            'Unable to remove the previously installed modpack. '
+                            . 'No new files were deployed. Please uninstall it manually and try again.',
+                        );
+                    }
+
+                    $this->store()->delete(
+                        (string) $server->uuid,
+                        $existingRecord->id,
+                    );
+                }
+            }
 
             $orchestrator = $this->orchestrator(
                 $target,

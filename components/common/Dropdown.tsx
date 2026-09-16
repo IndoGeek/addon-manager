@@ -8,6 +8,8 @@ export const Dropdown = ({
     onChange,
     options,
     disabled,
+    compact = false,
+    icon,
 }: {
     id: string;
     label: string;
@@ -15,6 +17,9 @@ export const Dropdown = ({
     onChange: (value: string) => void;
     options: DropdownOption[];
     disabled?: boolean;
+    /** Compact mode: square icon-only trigger sized like the view toggle. */
+    compact?: boolean;
+    icon?: React.ReactNode;
 }) => {
     const [open, setOpen] = useState(false);
 
@@ -144,10 +149,19 @@ export const Dropdown = ({
     }, [open]);
 
     return (
-        <div ref={wrapperRef} className="modpackinstaller-dropdown">
-            <label id={`${id}-label`} htmlFor={id}>
-                {label}
-            </label>
+        <div
+            ref={wrapperRef}
+            className={`modpackinstaller-dropdown${
+                compact
+                    ? ' modpackinstaller-dropdown--compact'
+                    : ''
+            }`}
+        >
+            {!compact && (
+                <label id={`${id}-label`} htmlFor={id}>
+                    {label}
+                </label>
+            )}
 
             <button
                 id={id}
@@ -156,13 +170,25 @@ export const Dropdown = ({
                 aria-haspopup="listbox"
                 aria-expanded={open}
                 aria-labelledby={`${id}-label ${id}`}
+                aria-label={compact ? label : undefined}
+                title={compact ? `${label}: ${selected?.label ?? ''}` : undefined}
                 disabled={disabled || options.length === 0}
                 onClick={() => setOpen((current) => !current)}
                 onKeyDown={onTriggerKeyDown}
             >
-                <span className="modpackinstaller-dropdown-value">
-                    {selected ? selected.label : 'Any'}
-                </span>
+                {compact ? (
+                    <>
+                        {icon}
+
+                        <span className="modpackinstaller-dropdown-value">
+                            {label}
+                        </span>
+                    </>
+                ) : (
+                    <span className="modpackinstaller-dropdown-value">
+                        {selected ? selected.label : 'Any'}
+                    </span>
+                )}
 
                 <span
                     className="modpackinstaller-dropdown-caret"
@@ -192,6 +218,8 @@ export const Dropdown = ({
                                     : ''
                             }`}
                             disabled={option.disabled}
+                            aria-label={compact ? option.label : undefined}
+                            title={compact ? option.label : undefined}
                             onClick={() => {
                                 onChange(option.value);
                                 setOpen(false);

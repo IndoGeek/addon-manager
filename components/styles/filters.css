@@ -8,16 +8,28 @@
 .modpackinstaller-filter-panel {
   margin-top: 14px;
   padding: 18px;
-  border: 1px solid rgba(127, 127, 127, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 8px;
-  background: rgba(0, 0, 0, 0.2);
+  background: rgba(35, 40, 48, 0.96);
   animation: modpackinstaller-panel-in 0.18s ease-out;
 }
 
+@supports (backdrop-filter: blur(1px)) {
+  .modpackinstaller-filter-panel {
+    background: rgba(35, 40, 48, 0.78);
+    backdrop-filter: blur(16px) saturate(1.15);
+    -webkit-backdrop-filter: blur(16px) saturate(1.15);
+  }
+}
+
 .modpackinstaller-filter-groups {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.modpackinstaller-filter-group legend {
+  margin-bottom: 10px;
 }
 
 .modpackinstaller-filter-group {
@@ -37,35 +49,49 @@
 }
 
 .modpackinstaller-filter-options {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
+/*
+ * Options render as pill-shaped toggle buttons, not checkboxes: selected
+ * options take the filter toggle's green, unselected ones sit just a step
+ * lighter than the panel background so they read as buttons without
+ * fighting it.
+ */
 .modpackinstaller-filter-option {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
+  justify-content: center;
+  box-sizing: border-box;
   min-width: 0;
-  padding: 7px 10px;
-  border-radius: 6px;
-  background: rgba(127, 127, 127, 0.08);
+  padding: 7px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  color: inherit;
+  font-size: 0.85rem;
+  text-align: center;
+  overflow-wrap: anywhere;
   cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
 }
 
 .modpackinstaller-filter-option:hover {
-  background: rgba(127, 127, 127, 0.15);
+  background: rgba(255, 255, 255, 0.17);
 }
 
-.modpackinstaller-filter-option input {
-  flex: 0 0 auto;
-  margin: 0;
+.modpackinstaller-filter-option--active,
+.modpackinstaller-filter-option--active:hover {
+  border-color: #16a34a;
+  background: #16a34a;
+  color: #ffffff;
 }
 
-.modpackinstaller-filter-option span {
-  min-width: 0;
-  overflow-wrap: anywhere;
-  font-size: 0.85rem;
+.modpackinstaller-filter-option:focus-visible {
+  outline: 2px solid #16a34a;
+  outline-offset: 1px;
 }
 
 .modpackinstaller-filter-actions {
@@ -75,11 +101,35 @@
   margin-top: 16px;
 }
 
+/* Rounded-square icon buttons: green tick to apply, red eraser to clear. */
 .modpackinstaller-filter-actions button {
-  padding: 9px 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
   border: 0;
-  border-radius: 6px;
+  border-radius: 8px;
+  color: #ffffff;
   cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.modpackinstaller-filter-apply {
+  background: #16a34a;
+}
+
+.modpackinstaller-filter-apply:hover {
+  background: #15803d;
+}
+
+.modpackinstaller-filter-reset {
+  background: #dc2626;
+}
+
+.modpackinstaller-filter-reset:hover:not(:disabled) {
+  background: #b91c1c;
 }
 
 .modpackinstaller-filter-actions button:disabled {

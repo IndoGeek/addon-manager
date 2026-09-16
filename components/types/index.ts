@@ -133,6 +133,16 @@ export interface StatusMessage {
     message: string;
 }
 
+export interface CatalogDescriptionData {
+    provider: string;
+    project: string;
+    html: string;
+}
+
+export interface CatalogDescriptionResponse {
+    data: CatalogDescriptionData;
+}
+
 export interface CatalogItem {
     provider: string;
     provider_project_id: string;
@@ -256,6 +266,7 @@ export interface CatalogFilters {
     categories: string[];
     environment: string;
     sort: string;
+    stack: string;
     page: number;
 }
 

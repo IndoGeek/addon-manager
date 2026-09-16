@@ -2,6 +2,7 @@
 
 namespace Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Providers\Catalog;
 
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogDescription;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogItem;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogPagination;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogProvider;
@@ -296,6 +297,26 @@ final class MockCatalogProvider implements CatalogProvider
         }
 
         return $this->buildItem($modpack);
+    }
+
+    public function description(CatalogProjectQuery $query): CatalogDescription
+    {
+        $modpack = $this->findModpack($query->project);
+
+        if ($modpack === null) {
+            throw new CatalogUnavailableException(
+                'The requested modpack was not found.',
+            );
+        }
+
+        $summary = self::optionalString($modpack['summary'] ?? null) ?? '';
+
+        return new CatalogDescription(
+            provider: $this->name(),
+            project: $query->project,
+            html: '<p>' . htmlspecialchars($summary, ENT_QUOTES, 'UTF-8')
+                . '</p>',
+        );
     }
 
     /**

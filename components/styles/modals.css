@@ -22,6 +22,12 @@
   animation: modpackinstaller-fade-out 0.2s ease-in forwards;
 }
 
+/*
+ * Frosted window surface shared by modals, dropdown menus and the filter
+ * panel: Pterodactyl's own slate background tone, translucent, with a
+ * backdrop blur. Browsers without backdrop-filter fall back to a nearly
+ * opaque fill so text stays readable.
+ */
 .modpackinstaller-modal {
   width: 100%;
   max-width: 640px;
@@ -29,15 +35,506 @@
   overflow-y: auto;
   box-sizing: border-box;
   padding: 20px;
-  border: 1px solid rgba(127, 127, 127, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 10px;
-  background: rgba(18, 18, 18, 0.98);
+  background: rgba(35, 40, 48, 0.92);
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
   animation: modpackinstaller-slide-up 0.2s ease-out;
 }
 
+@supports (backdrop-filter: blur(1px)) {
+  .modpackinstaller-modal {
+    background: rgba(35, 40, 48, 0.72);
+    backdrop-filter: blur(16px) saturate(1.15);
+    -webkit-backdrop-filter: blur(16px) saturate(1.15);
+  }
+}
+
 .modpackinstaller-modal--out {
   animation: modpackinstaller-slide-down 0.2s ease-in forwards;
+}
+
+/*
+ * Detail modal section cards: every logical group (header, version,
+ * description, compatibility, author) sits in its own frosted card so the
+ * modal reads like Modrinth's project page at every screen width.
+ */
+.modpackinstaller-detail-card {
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+/*
+ * The detail modal's section cards need real space between them so they
+ * read as separate panels, not one jumbled block. The details modal body
+ * renders the cards directly (no wrapper), so scope the rhythm to the
+ * modal box itself.
+ */
+.modpackinstaller-modal > .modpackinstaller-status + .modpackinstaller-detail-card,
+.modpackinstaller-detail-card + .modpackinstaller-detail-card,
+.modpackinstaller-detail-card + .modpackinstaller-modal-result {
+  margin-top: 14px;
+}
+
+.modpackinstaller-modal-result {
+  margin-top: 14px;
+}
+
+.modpackinstaller-detail-section-title {
+  margin: 0 0 10px;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.modpackinstaller-detail-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.modpackinstaller-detail-header-logo {
+  flex: 0 0 72px;
+  width: 72px;
+  height: 72px;
+}
+
+.modpackinstaller-detail-header-logo .modpackinstaller-card-image,
+.modpackinstaller-detail-header-logo .modpackinstaller-card-image--fallback {
+  width: 72px;
+  height: 72px;
+  border-radius: 8px;
+}
+
+.modpackinstaller-detail-header-main {
+  flex: 1 1 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.modpackinstaller-detail-header-titlerow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.modpackinstaller-detail-header-titlerow h4 {
+  margin: 0;
+  font-size: 1.1rem;
+  line-height: 1.25;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.modpackinstaller-detail-header-author {
+  font-size: 0.78rem;
+  opacity: 0.65;
+}
+
+.modpackinstaller-detail-header-summary {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.35;
+  opacity: 0.8;
+}
+
+.modpackinstaller-detail-header-stats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.modpackinstaller-detail-header-stats span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.modpackinstaller-detail-header-stats svg {
+  width: 11px;
+  height: 11px;
+}
+
+/* Round action buttons on the header's right edge: grey View, green
+ * Download — like Modrinth's heart/share circles. */
+.modpackinstaller-detail-header-actions {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.modpackinstaller-detail-view-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.14);
+  transition: background 0.12s ease;
+}
+
+.modpackinstaller-detail-view-button:hover,
+.modpackinstaller-detail-view-button:focus-visible {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.modpackinstaller-detail-download-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 50%;
+  color: #ffffff;
+  background: #16a34a;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.modpackinstaller-detail-download-button:hover:not(:disabled) {
+  background: #15803d;
+}
+
+.modpackinstaller-detail-download-button--armed {
+  background: #16a34a;
+}
+
+.modpackinstaller-detail-download-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+/* Version dropdown inside the version card. */
+.modpackinstaller-version-dropdown {
+  position: relative;
+}
+
+.modpackinstaller-version-dropdown-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 42px;
+  padding: 8px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.25);
+  color: inherit;
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+
+.modpackinstaller-version-dropdown-trigger--selected {
+  border-color: #16a34a;
+  background: #16a34a;
+  color: #ffffff;
+}
+
+/* Version picker popup: the selected option reads green, and the install
+ * button keeps its normal green here (the warning state below overrides). */
+.modpackinstaller-version-picker .modpackinstaller-version-option--selected {
+  border-color: #16a34a;
+  background: #16a34a;
+  color: #ffffff;
+}
+
+.modpackinstaller-version-picker .modpackinstaller-version-option--selected .modpackinstaller-version-option-meta {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.modpackinstaller-version-picker
+  .modpackinstaller-install-button:not(.modpackinstaller-install-button--warning):not(.modpackinstaller-modal-actions-button--locked):not(.modpackinstaller-modal-actions-button--success) {
+  background: #16a34a;
+}
+
+.modpackinstaller-version-picker
+  .modpackinstaller-install-button:not(.modpackinstaller-install-button--warning):not(.modpackinstaller-modal-actions-button--locked):not(.modpackinstaller-modal-actions-button--success):hover:not(:disabled) {
+  background: #15803d;
+}
+
+/* Warning state: icon + label centered as one unit. */
+.modpackinstaller-install-button--warning {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.modpackinstaller-version-dropdown-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.modpackinstaller-version-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  max-height: 260px;
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(35, 40, 48, 0.98);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+
+.modpackinstaller-version-dropdown-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.modpackinstaller-version-dropdown-option:hover,
+.modpackinstaller-version-dropdown-option:focus-visible {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.modpackinstaller-version-dropdown-option--active {
+  background: #16a34a;
+  color: #ffffff;
+}
+
+/* Long description rendered from the sanitized provider HTML. */
+.modpackinstaller-detail-description {
+  font-size: 0.84rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.modpackinstaller-detail-description img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+}
+
+.modpackinstaller-detail-description a {
+  color: #93c5fd;
+}
+
+.modpackinstaller-detail-description h1,
+.modpackinstaller-detail-description h2,
+.modpackinstaller-detail-description h3,
+.modpackinstaller-detail-description h4 {
+  margin: 14px 0 6px;
+  font-size: 1rem;
+}
+
+.modpackinstaller-detail-description p {
+  margin: 6px 0;
+}
+
+.modpackinstaller-detail-description pre {
+  overflow-x: auto;
+  padding: 10px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.modpackinstaller-detail-description blockquote {
+  margin: 8px 0;
+  padding: 4px 12px;
+  border-left: 3px solid rgba(255, 255, 255, 0.2);
+  opacity: 0.85;
+}
+
+/* Collapsible <details> disclosures render as sub-cards inside the
+ * description: slightly darker surface, rounded, padded — matching how
+ * Modrinth presents them. */
+.modpackinstaller-detail-description details {
+  margin: 10px 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.modpackinstaller-detail-description details[open] {
+  padding-bottom: 4px;
+}
+
+.modpackinstaller-detail-description summary {
+  margin: -2px -4px 4px;
+  padding: 4px;
+  font-weight: 700;
+  cursor: pointer;
+  user-select: none;
+}
+
+.modpackinstaller-detail-description summary:hover {
+  opacity: 0.85;
+}
+
+.modpackinstaller-detail-description details > :last-child {
+  margin-bottom: 2px;
+}
+
+.modpackinstaller-detail-description table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.modpackinstaller-detail-description th,
+.modpackinstaller-detail-description td {
+  padding: 4px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+/* Compatibility groups. */
+.modpackinstaller-detail-compat {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.modpackinstaller-detail-compat-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.modpackinstaller-detail-compat-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.6;
+}
+
+.modpackinstaller-detail-compat-values {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.modpackinstaller-detail-compat-unknown {
+  font-size: 0.8rem;
+  opacity: 0.6;
+}
+
+/* Author card. */
+.modpackinstaller-detail-author-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.modpackinstaller-detail-author-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.modpackinstaller-detail-author-row .modpackinstaller-detail-view-button {
+  width: 38px;
+  height: 38px;
+}
+
+/* Version picker popup: opened by the header download button, layered
+ * above the details modal with its own overlay. */
+.modpackinstaller-version-picker-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  background: rgba(0, 0, 0, 0.55);
+  animation: modpackinstaller-fade-in 0.15s ease-out;
+}
+
+.modpackinstaller-version-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  max-width: 520px;
+  max-height: min(560px, calc(100vh - 48px));
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  background: rgba(35, 40, 48, 0.98);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  animation: modpackinstaller-slide-up 0.18s ease-out;
+}
+
+@supports (backdrop-filter: blur(1px)) {
+  .modpackinstaller-version-picker {
+    background: rgba(35, 40, 48, 0.85);
+    backdrop-filter: blur(16px) saturate(1.15);
+    -webkit-backdrop-filter: blur(16px) saturate(1.15);
+  }
+}
+
+.modpackinstaller-version-picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.modpackinstaller-version-picker-header h5 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.modpackinstaller-version-picker-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+/* Stacked header on phones: logo and actions share the first row. */
+@media (max-width: 560px) {
+  .modpackinstaller-detail-header-actions {
+    flex-direction: row;
+    margin-left: 0;
+  }
+
+  .modpackinstaller-detail-card {
+    padding: 12px;
+  }
+
+  .modpackinstaller-version-picker-overlay {
+    padding: 12px;
+    align-items: flex-end;
+  }
 }
 
 .modpackinstaller-modal[aria-busy="true"]
@@ -324,6 +821,10 @@
 .modpackinstaller-install-progress-label {
   position: relative;
   z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
 }
 
 .modpackinstaller-modal-actions button:hover:not(:disabled) {
@@ -383,7 +884,8 @@
 }
 
 .modpackinstaller-modal-result {
-  margin-top: 4px;
+  margin-top: 14px;
   padding-top: 16px;
+  padding-bottom: 4px;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
 }

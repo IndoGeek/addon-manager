@@ -1,18 +1,15 @@
 import React from 'react';
 import { CatalogFilters, MultiFilterKey } from '../types';
-import { ENVIRONMENT_OPTIONS } from '../utils/constants';
 
 interface ActiveFilterChipsProps {
     filters: CatalogFilters;
     onToggleListValue: (key: MultiFilterKey, value: string) => void;
-    onToggleEnvironment: (value: string) => void;
     searching: boolean;
 }
 
 export const buildActiveChips = (
     filters: CatalogFilters,
     onToggleListValue: (key: MultiFilterKey, value: string) => void,
-    onToggleEnvironment: (value: string) => void,
 ): Array<{
     key: string;
     label: string;
@@ -60,32 +57,17 @@ export const buildActiveChips = (
         });
     });
 
-    if (filters.environment !== '') {
-        const environmentLabel =
-            ENVIRONMENT_OPTIONS.find(
-                (option) => option.value === filters.environment,
-            )?.label ?? filters.environment;
-
-        chips.push({
-            key: `environment:${filters.environment}`,
-            label: `Environment: ${environmentLabel}`,
-            onRemove: () => onToggleEnvironment(filters.environment),
-        });
-    }
-
     return chips;
 };
 
 export const ActiveFilterChips = ({
     filters,
     onToggleListValue,
-    onToggleEnvironment,
     searching,
 }: ActiveFilterChipsProps) => {
     const chips = buildActiveChips(
         filters,
         onToggleListValue,
-        onToggleEnvironment,
     );
 
     if (chips.length === 0) {

@@ -23,7 +23,10 @@ import axios from 'axios';
 import {
     API_BASE,
     DEFAULT_PROVIDER,
+    DEFAULT_STACK,
+    EXTENSION_VERSION,
     PAGE_LIMIT,
+    STACK_OPTIONS,
     VIEW_STORAGE_KEY,
     activeInstallStorageKey,
     getServerIdentifier,
@@ -31,6 +34,8 @@ import {
 
 import {
     ActiveInstallRecord,
+    CatalogDescriptionData,
+    CatalogDescriptionResponse,
     CatalogFilters,
     CatalogItem,
     CatalogPagination,
@@ -150,6 +155,7 @@ export default () => {
         categories: [],
         environment: '',
         sort: 'relevance',
+        stack: DEFAULT_STACK,
         page: 1,
     });
 
@@ -221,6 +227,9 @@ export default () => {
     const [modalVersionSource, setModalVersionSource] =
         useState<string | null>(null);
 
+    const [versionPickerOpen, setVersionPickerOpen] =
+        useState(false);
+
     const [modalMetadata, setModalMetadata] =
         useState<ModpackMetadata | null>(null);
 
@@ -229,6 +238,17 @@ export default () => {
 
     const [modalMetadataError, setModalMetadataError] =
         useState<string | null>(null);
+
+    const [modalDescription, setModalDescription] =
+        useState<CatalogDescriptionData | null>(null);
+
+    const [modalDescriptionLoading, setModalDescriptionLoading] =
+        useState(false);
+
+    const [modalDescriptionError, setModalDescriptionError] =
+        useState<string | null>(null);
+
+    const descriptionRequestId = useRef(0);
 
     const [modalStatus, setModalStatus] =
         useState<StatusMessage | null>(null);
@@ -350,7 +370,7 @@ export default () => {
             provider: next.provider,
             sort: next.sort,
             page: next.page,
-            limit: PAGE_LIMIT,
+            limit: Number.parseInt(next.stack, 10) || PAGE_LIMIT,
         };
 
         if (next.query.trim() !== '') {
@@ -756,6 +776,10 @@ export default () => {
         applyFilters({ sort });
     };
 
+    const changeStack = (stack: string) => {
+        applyFilters({ stack, page: 1 });
+    };
+
     const toggleListValue = (
         key: MultiFilterKey,
         value: string,
@@ -767,13 +791,6 @@ export default () => {
             : [...current, value];
 
         applyFilters({ [key]: next } as Partial<CatalogFilters>);
-    };
-
-    const toggleEnvironment = (value: string) => {
-        const next =
-            filtersRef.current.environment === value ? '' : value;
-
-        applyFilters({ environment: next });
     };
 
     const resetFilters = () => {
@@ -816,6 +833,7 @@ export default () => {
 
         versionsRequestId.current++;
         metadataRequestId.current++;
+        descriptionRequestId.current++;
 
         setDetailsItem(item);
         setModalVersions(null);
@@ -825,14 +843,21 @@ export default () => {
         setModalMetadata(null);
         setModalMetadataLoading(false);
         setModalMetadataError(null);
+        setModalDescription(null);
+        setModalDescriptionLoading(false);
+        setModalDescriptionError(null);
         setModalStatus(null);
         setModalResult(null);
         setModalInstallLoading(false);
+        setVersionPickerOpen(false);
+
+        loadDescription(item);
     };
 
     const closeDetailsModal = () => {
         versionsRequestId.current++;
         metadataRequestId.current++;
+        descriptionRequestId.current++;
 
         setDetailsItem(null);
         setModalVersions(null);
@@ -842,9 +867,58 @@ export default () => {
         setModalMetadataLoading(false);
         setModalMetadataError(null);
         setModalVersionSource(null);
+        setModalDescription(null);
+        setModalDescriptionLoading(false);
+        setModalDescriptionError(null);
         setModalResult(null);
         setModalInstallLoading(false);
         setModalStatus(null);
+        setVersionPickerOpen(false);
+    };
+
+    const loadDescription = async (
+        item: CatalogItem,
+    ) => {
+        const id = ++descriptionRequestId.current;
+
+        setModalDescriptionLoading(true);
+        setModalDescriptionError(null);
+        setModalDescription(null);
+
+        try {
+            const response =
+                await axios.get<CatalogDescriptionResponse>(
+                    `${API_BASE}/catalog/description`,
+                    {
+                        params: {
+                            provider: item.provider,
+                            project: item.provider_project_id,
+                        },
+                    },
+                );
+
+            if (
+                !alive.current
+                || id !== descriptionRequestId.current
+            ) {
+                return;
+            }
+
+            setModalDescription(response.data.data);
+            setModalDescriptionLoading(false);
+        } catch {
+            if (
+                !alive.current
+                || id !== descriptionRequestId.current
+            ) {
+                return;
+            }
+
+            setModalDescriptionLoading(false);
+            setModalDescriptionError(
+                'Unable to load the modpack description.',
+            );
+        }
     };
 
     const loadVersions = async () => {
@@ -1837,6 +1911,8 @@ export default () => {
                     providerOptions={providerOptions}
                     sortValue={filters.sort}
                     onSortChange={changeSort}
+                    stackValue={filters.stack}
+                    onStackChange={changeStack}
                     filtersOpen={filtersOpen}
                     onToggleFilters={() =>
                         setFiltersOpen((current) => !current)
@@ -1857,7 +1933,6 @@ export default () => {
                         facets={facets}
                         filters={filters}
                         onToggleListValue={toggleListValue}
-                        onToggleEnvironment={toggleEnvironment}
                         onReset={resetFilters}
                         onClose={() => setFiltersOpen(false)}
                         activeFilterCount={activeFilterCount}
@@ -1869,7 +1944,6 @@ export default () => {
                     <ActiveFilterChips
                         filters={filters}
                         onToggleListValue={toggleListValue}
-                        onToggleEnvironment={toggleEnvironment}
                         searching={searching}
                     />
                 )}
@@ -2150,6 +2224,9 @@ export default () => {
                         modalMetadata={modalMetadata}
                         modalMetadataLoading={modalMetadataLoading}
                         modalMetadataError={modalMetadataError}
+                        modalDescription={modalDescription}
+                        modalDescriptionLoading={modalDescriptionLoading}
+                        modalDescriptionError={modalDescriptionError}
                         modalStatus={modalStatus}
                         modalResult={modalResult}
                         modalInstallLoading={modalInstallLoading}
@@ -2158,8 +2235,19 @@ export default () => {
                         willReplace={hasInstalledModpack}
                         onSelectVersion={selectModalVersion}
                         onRetryVersions={retryModalVersions}
-                        onRetryMetadata={retryModalMetadata}
+                        onRetryDescription={() =>
+                            detailsItem !== null
+                                ? loadDescription(detailsItem)
+                                : undefined
+                        }
                         onInstall={installModalModpack}
+                        onOpenVersionPicker={() =>
+                            setVersionPickerOpen(true)
+                        }
+                        versionPickerOpen={versionPickerOpen}
+                        onCloseVersionPicker={() =>
+                            setVersionPickerOpen(false)
+                        }
                     />
                 )}
             </Modal>
@@ -2193,6 +2281,17 @@ export default () => {
                     onConfirm={confirmReplaceInstall}
                 />
             </Modal>
+
+            <footer className="modpackinstaller-footer">
+                <a
+                    href="https://github.com/IndoGeek/modpack-installer"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                >
+                    Modpack Installer
+                </a>
+                {' '}by IndoGeek · v{EXTENSION_VERSION}
+            </footer>
         </div>
     );
 };

@@ -178,11 +178,7 @@
     flex-direction: column;
   }
 
-  .modpackinstaller-filter-groups {
-    grid-template-columns: 1fr;
-  }
-
   .modpackinstaller-filter-options {
-    grid-template-columns: 1fr 1fr;
+    gap: 6px;
   }
 }

@@ -59,3 +59,21 @@
 .modpackinstaller-card h3 + p {
   margin-top: 4px;
 }
+
+.modpackinstaller-footer {
+  margin-top: 20px;
+  text-align: center;
+  font-size: 0.8rem;
+  opacity: 0.6;
+}
+
+.modpackinstaller-footer a {
+  color: inherit;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.modpackinstaller-footer a:hover {
+  text-decoration: underline;
+  opacity: 1;
+}

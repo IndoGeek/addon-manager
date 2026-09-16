@@ -7,7 +7,9 @@ use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogPagination;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogProvider;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogProviderException;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogDescription;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogProjectQuery;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\DescriptionSanitizer;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogResult;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogSearchQuery;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogUnavailableException;
@@ -225,6 +227,219 @@ final class ModrinthCatalogProvider implements CatalogProvider
         } catch (ProviderHttpException $exception) {
             throw $this->requestFailure($exception);
         }
+    }
+
+    public function description(CatalogProjectQuery $query): CatalogDescription
+    {
+        try {
+            $response = $this->http->get(
+                self::API_BASE
+                    . '/project/'
+                    . rawurlencode($query->project),
+            );
+
+            if (!is_array($response->body)) {
+                throw new CatalogProviderException(
+                    'The modpack catalog provider returned an invalid response.',
+                );
+            }
+
+            // Modrinth serves the body as Markdown; the rendered HTML endpoint
+            // (/project/:slug/body) would be a second request, so convert the
+            // common Markdown constructs here after escaping, then sanitize.
+            $body = is_string($response->body['body'] ?? null)
+                ? $response->body['body']
+                : '';
+
+            $html = (new DescriptionSanitizer())->sanitize(
+                $this->markdownToHtml($body),
+            );
+
+            return new CatalogDescription(
+                provider: $this->name(),
+                project: $query->project,
+                html: $html,
+            );
+        } catch (InvalidArgumentException $exception) {
+            throw $exception;
+        } catch (CatalogProviderException $exception) {
+            throw $exception;
+        } catch (ProviderHttpException $exception) {
+            throw $this->requestFailure($exception);
+        }
+    }
+
+    /**
+     * Minimal, escape-first Markdown-to-HTML conversion covering the constructs
+     * Modrinth project bodies actually use: headings, bold/italic, inline and
+     * fenced code, links, images, lists, blockquotes and paragraphs. Every text
+     * fragment is htmlspecialchars-escaped BEFORE any tag is produced, so the
+     * sanitizer downstream never sees injected markup from the source text.
+     */
+    private function markdownToHtml(string $markdown): string
+    {
+        $escape = static fn (string $text): string =>
+            htmlspecialchars($text, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+
+        $lines = preg_split('/\r\n|\r|\n/', $markdown) ?: [];
+
+        $html = [];
+        $inCode = false;
+        $listOpen = false;
+
+        $inline = static function (string $text) use ($escape): string {
+            // Inline HTML (e.g. <summary>…</summary> or <b>…</b> between
+            // words) must survive as real tags, exactly like on Modrinth.
+            // Split the line into tag / non-tag segments and escape only the
+            // non-tag parts, so injected markup never slips through either.
+            $segments = preg_split(
+                '/(<[^<>]+>)/',
+                $text,
+                -1,
+                PREG_SPLIT_DELIM_CAPTURE,
+            ) ?: [$text];
+
+            $text = '';
+
+            foreach ($segments as $index => $segment) {
+                if ($index % 2 === 1) {
+                    $text .= $segment;
+
+                    continue;
+                }
+
+                $text .= $escape($segment);
+            }
+
+            // Images then links; URL already escaped by $escape, so quotes
+            // inside cannot break out of the attribute.
+            $text = preg_replace(
+                '/!\[([^\]]*)\]\(([^)\s]+)\)/',
+                '<img src="$2" alt="$1">',
+                $text,
+            ) ?? $text;
+
+            $text = preg_replace(
+                '/\[([^\]]+)\]\(([^)\s]+)\)/',
+                '<a href="$2">$1</a>',
+                $text,
+            ) ?? $text;
+
+            $text = preg_replace('/\*\*([^*]+)\*\*/', '<strong>$1</strong>', $text)
+                ?? $text;
+            $text = preg_replace('/(^|\W)\*([^*]+)\*/', '$1<em>$2</em>', $text)
+                ?? $text;
+            $text = preg_replace('/`([^`]+)`/', '<code>$1</code>', $text)
+                ?? $text;
+
+            return $text;
+        };
+
+        foreach ($lines as $line) {
+            $trimmed = trim($line);
+
+            if (str_starts_with($trimmed, '```')) {
+                if ($inCode) {
+                    $html[] = '</code></pre>';
+                    $inCode = false;
+                } else {
+                    $html[] = '<pre><code>';
+                    $inCode = true;
+                }
+
+                continue;
+            }
+
+            if ($inCode) {
+                $html[] = $escape($line);
+
+                continue;
+            }
+
+            // Modrinth bodies legitimately embed raw HTML blocks (details/
+            // summary disclosures, images, divs, multi-tag lines like
+            // '<h3 align="center">title</h3>'). Any line that is delimited
+            // as one or more tags passes through untouched; the sanitizer
+            // downstream enforces the safety rules.
+            if ($trimmed !== ''
+                && str_starts_with($trimmed, '<')
+                && str_ends_with($trimmed, '>')
+            ) {
+                if ($listOpen) {
+                    $html[] = '</ul>';
+                    $listOpen = false;
+                }
+
+                $html[] = $trimmed;
+
+                continue;
+            }
+
+            if ($trimmed === '') {
+                if ($listOpen) {
+                    $html[] = '</ul>';
+                    $listOpen = false;
+                }
+
+                continue;
+            }
+
+            if (preg_match('/^(#{1,6})\s+(.*)$/', $trimmed, $m) === 1) {
+                if ($listOpen) {
+                    $html[] = '</ul>';
+                    $listOpen = false;
+                }
+
+                $level = strlen($m[1]);
+                $html[] = '<h' . $level . '>'
+                    . $inline($m[2])
+                    . '</h' . $level . '>';
+
+                continue;
+            }
+
+            if (preg_match('/^[-*]\s+(.*)$/', $trimmed, $m) === 1) {
+                if (!$listOpen) {
+                    $html[] = '<ul>';
+                    $listOpen = true;
+                }
+
+                $html[] = '<li>' . $inline($m[1]) . '</li>';
+
+                continue;
+            }
+
+            if (str_starts_with($trimmed, '&gt;')
+                || str_starts_with($trimmed, '>')
+            ) {
+                if ($listOpen) {
+                    $html[] = '</ul>';
+                    $listOpen = false;
+                }
+
+                $html[] = '<blockquote>' . $inline(ltrim($trimmed, '> '))
+                    . '</blockquote>';
+
+                continue;
+            }
+
+            if ($listOpen) {
+                $html[] = '</ul>';
+                $listOpen = false;
+            }
+
+            $html[] = '<p>' . $inline($trimmed) . '</p>';
+        }
+
+        if ($inCode) {
+            $html[] = '</code></pre>';
+        }
+
+        if ($listOpen) {
+            $html[] = '</ul>';
+        }
+
+        return implode("\n", $html);
     }
 
     /**
