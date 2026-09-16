@@ -33,6 +33,10 @@ final class InstallProgressStore
 
         $payload = json_encode([
             'expires_at' => time() + max(1, $ttlSeconds),
+            // Server-side heartbeat so consumers can tell an actively
+            // updating install from one whose PHP request died mid-flight
+            // (the last snapshot would otherwise look frozen forever).
+            'updated_at' => time(),
             'state' => $state,
         ], JSON_UNESCAPED_SLASHES);
 
@@ -92,7 +96,13 @@ final class InstallProgressStore
             return null;
         }
 
-        return $decoded['state'];
+        $state = $decoded['state'];
+
+        if (is_array($state)) {
+            $state['updated_at'] = (int) ($decoded['updated_at'] ?? 0);
+        }
+
+        return $state;
     }
 
     private function path(string $token): string

@@ -19,6 +19,13 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
 
     private const CDN_BASE = 'https://edge.forgecdn.net/files';
 
+    /**
+     * The host the edge CDN 302-redirects file downloads onto. Same file
+     * layout, same bytes, one less redirect hop and an independent mirror to
+     * fail over to when the edge host throttles.
+     */
+    private const MEDIA_MIRROR_BASE = 'https://mediafilez.forgecdn.net/files';
+
     private const API_KEY_HEADER = 'X-Api-Key';
 
     private const MODPACK_CLASS_ID = 4471;
@@ -850,23 +857,22 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
             );
         }
 
-        // Re-anchor cumulative progress on the whole network footprint: the
-        // downloaded client-pack bytes plus every manifest mod file still to
-        // fetch. Offsets only ever grow, so the bar moves forward without
-        // resetting between the per-mod downloads.
-        $archiveBytes = max(0, (int) @filesize($archivePath));
+        // Phase 2 of the download display: the client-pack zip already
+        // rendered 0..100% on its own, so the manifest phase re-anchors the
+        // progress window to the mods footprint only (overrides bytes streamed
+        // out of the archive plus every manifest mod still to fetch). The bar
+        // resets to 0 and fills again across this second, larger transfer.
+        $archiveBytes = 0;
 
         foreach ($content as $payload) {
-            if ($payload['archiveEntry'] === null) {
-                $archiveBytes += max(0, (int) $payload['bytes']);
-            }
+            $archiveBytes += max(0, (int) $payload['bytes']);
         }
 
-        $networkBytesDone = max(0, (int) @filesize($archivePath));
+        $networkBytesDone = 0;
 
         $this->downloader->setProgressOffset(
-            $networkBytesDone,
-            max($networkBytesDone, $archiveBytes),
+            0,
+            $archiveBytes,
         );
 
         $outputPath = $this->createPackageDirectory();
@@ -898,12 +904,15 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
                 );
             }
 
+            $failedMods = [];
+
             $downloadedMods = $this->fetchPackageMods(
                 $content,
                 $outputPath,
                 $networkBytesDone,
                 $overridesWritten,
                 $archiveBytes,
+                $failedMods,
             );
 
             if ($wantedMods > 0 && $downloadedMods === 0) {
@@ -913,9 +922,9 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
             }
 
             if ($wantedMods > 0 && $downloadedMods < $wantedMods) {
-                $failedMods = $wantedMods - $downloadedMods;
+                $failedCount = count($failedMods);
 
-                if ($failedMods > $this->toleratedModFailures($wantedMods)) {
+                if ($failedCount > $this->toleratedModFailures($wantedMods)) {
                     throw new UnsupportedModpackPackageException(
                         'Only '
                         . $downloadedMods
@@ -927,10 +936,11 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
 
                 @error_log(
                     'modpackinstaller manifest download failed for '
-                    . $failedMods
+                    . $failedCount
                     . ' of '
                     . $wantedMods
-                    . ' mod files; continuing with the rest.'
+                    . ' mod files; continuing with the rest. Failed: '
+                    . implode(', ', $failedMods)
                 );
             }
         } catch (\Throwable $exception) {
@@ -949,6 +959,8 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
      * files that arrived on disk.
      *
      * @param array<string, array{archiveEntry: string|null, downloadUrls: array<int, string>, priority: string, bytes: int, sha1: string}> $content
+     * @param array<int, string> $failedMods Output list of the relative paths
+     *   of manifest mods that could not be installed, for diagnostics.
      */
     private function fetchPackageMods(
         array $content,
@@ -956,6 +968,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
         int &$networkBytesDone,
         int $overridesWritten,
         int $archiveBytes,
+        array &$failedMods = [],
     ): int {
         $modTasks = [];
 
@@ -1011,6 +1024,8 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
                 if ($expectedSha1 !== '' && !$this->matchesSha1($destination, $expectedSha1)) {
                     @unlink($destination);
 
+                    $failedMods[] = (string) $id;
+
                     continue;
                 }
 
@@ -1023,6 +1038,11 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
         $downloadedMods = 0;
         $downloadedTemps = [];
 
+        // A dead mod's declared bytes must be deflated out of the window's
+        // total as well as skipped in the running count, or the bar can never
+        // reach its end and appears to stall just short of 100%.
+        $failedBytes = 0;
+
         try {
             foreach ($modTasks as $task) {
                 $downloadPath = $this->downloadBestUrl(
@@ -1033,13 +1053,16 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
                 );
 
                 if ($downloadPath === null) {
+                    $failedBytes += $task['bytes'];
+                    $failedMods[] = $task['id'];
+
                     // A dead mod must never freeze the progress store: keep
                     // pinging so the card stays alive through long stretches of
                     // failed downloads instead of the store expiring and the
                     // frontend dropping the install.
                     $this->downloader->reportProgress(
                         $networkBytesDone,
-                        $archiveBytes,
+                        max(1, $archiveBytes - $failedBytes),
                     );
 
                     continue;
@@ -1057,6 +1080,14 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
                 $downloadedTemps[] = $downloadPath;
                 $networkBytesDone += $task['bytes'];
             }
+
+            // Closing report: land the window on exactly 100% (unthrottled)
+            // so the frontend flips to the deploy phase instead of appearing
+            // to stall a few percent short.
+            $this->downloader->reportProgress(
+                max(1, $archiveBytes - $failedBytes),
+                max(1, $archiveBytes - $failedBytes),
+            );
 
             return $downloadedMods;
         } finally {
@@ -1268,7 +1299,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
                 'archiveEntry' => $name,
                 'downloadUrls' => [],
                 'priority' => 'overrides',
-                'bytes' => 0,
+                'bytes' => max(0, (int) ($entry['size'] ?? 0)),
             ];
         }
 
@@ -1476,12 +1507,14 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
 
     /**
      * Builds an ordered list of candidate download URLs for a manifest mod
-     * file. The metadata download URL is preferred, then the dedicated
-     * download-url endpoint is consulted for files that serve none, and the
-     * URL reconstructed from the CurseForge CDN layout
-     * (edge.forgecdn.net/files/{id/1000}/{id%1000}/{name}) is always kept as
-     * a last resort so files the API reports without a download URL can still
-     * be fetched.
+     * file. The metadata download URL (already obtained in bulk from the
+     * /mods/files endpoint) is preferred, the reconstructed CDN URL is the
+     * second candidate, and the per-file download-url endpoint plus the
+     * public website page follow as fallbacks. Deliberately NOT first: the
+     * per-file endpoint costs one HTTP round-trip per mod, and hammering it
+     * with hundreds of requests during a single install trips CurseForge's
+     * rate limiting (HTTP 403) — the bulk metadata already serves the same
+     * live URL for every file that has one.
      *
      * @param array<string, mixed>|null $file
      *
@@ -1495,14 +1528,6 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
     ): array {
         $candidates = [];
 
-        if ($projectId !== '') {
-            $resolvedUrl = $this->resolveDownloadUrl($projectId, (string) $fileId);
-
-            if ($resolvedUrl !== null) {
-                $candidates[] = $resolvedUrl;
-            }
-        }
-
         $downloadUrl = $this->nullableString($file['downloadUrl'] ?? null);
 
         if ($downloadUrl !== null) {
@@ -1511,7 +1536,15 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
 
         $candidates[] = $this->cdnDownloadUrl($fileId, $fileName);
 
+        $candidates[] = $this->mirrorDownloadUrl($fileId, $fileName);
+
         if ($projectId !== '') {
+            $resolvedUrl = $this->resolveDownloadUrl($projectId, (string) $fileId);
+
+            if ($resolvedUrl !== null) {
+                $candidates[] = $resolvedUrl;
+            }
+
             $candidates[] = $this->websiteDownloadUrl($projectId, $fileId);
         }
 
@@ -1569,6 +1602,26 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
     private function cdnDownloadUrl(int $fileId, string $fileName): string
     {
         return self::CDN_BASE
+            . '/'
+            . intdiv($fileId, 1000)
+            . '/'
+            . ($fileId % 1000)
+            . '/'
+            . rawurlencode($fileName);
+    }
+
+    /**
+     * Reconstructs the direct CurseForge media mirror URL for a file id and
+     * name. The edge host 302-redirects every request onto this host, and the
+     * media mirror is occasionally slow enough to trip the engine's dead
+     * transfer detection — with only the redirecting edge URL as a candidate
+     * a mod could exhaust every attempt against one congested mirror. Serving
+     * the same bytes from the mirror host directly gives the engine a real
+     * second mirror to fail over to without another redirect hop.
+     */
+    private function mirrorDownloadUrl(int $fileId, string $fileName): string
+    {
+        return self::MEDIA_MIRROR_BASE
             . '/'
             . intdiv($fileId, 1000)
             . '/'

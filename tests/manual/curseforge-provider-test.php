@@ -701,6 +701,8 @@ $downloader = new FakeDownloader(
     [
         'https://edge.forgecdn.net/files/2/3/dead-a.jar',
         'https://edge.forgecdn.net/files/2/4/dead-b.jar',
+        'https://mediafilez.forgecdn.net/files/2/3/dead-a.jar',
+        'https://mediafilez.forgecdn.net/files/2/4/dead-b.jar',
         'https://www.curseforge.com/minecraft/mc-mods/11/files/2003/download',
         'https://www.curseforge.com/minecraft/mc-mods/22/files/2004/download',
     ],
@@ -1002,6 +1004,13 @@ foreach ($massManifestFiles as $entry) {
     ];
 
     $massFailedUrls[] = 'https://edge.forgecdn.net/files/'
+        . intdiv($fileId, 1000)
+        . '/'
+        . ($fileId % 1000)
+        . '/'
+        . $fileName;
+
+    $massFailedUrls[] = 'https://mediafilez.forgecdn.net/files/'
         . intdiv($fileId, 1000)
         . '/'
         . ($fileId % 1000)

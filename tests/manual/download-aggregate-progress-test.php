@@ -1,10 +1,11 @@
 <?php
 
 /**
- * Verifies the cumulative progress accounting a Modrinth install relies on:
- * the modpack archive plus every index-file mod shares one running byte total
- * so the panel renders a single monotonic bar, and cancelling during the long
- * per-mod download/packaging phase aborts promptly.
+ * Verifies the two-phase progress accounting a Modrinth install relies on:
+ * the mrpack archive renders its own 0..100% window, then the index phase
+ * re-anchors to the index-only footprint (bar resets to 0 and fills again),
+ * and cancelling during the long per-mod download/packaging phase aborts
+ * promptly.
  */
 
 $projectRoot = dirname(__DIR__, 2);
@@ -309,8 +310,9 @@ if (!is_dir($package->archivePath)) {
     throw new RuntimeException('Provider did not produce a normalized directory.');
 }
 
-$indexTotal = 111 + 222;
-$expectedTotal = $mrpackBytes + $indexTotal;
+// Embedded fixture entry is the 4-byte header written into mods/embedded.jar.
+$embeddedBytes = 4;
+$indexTotal = $embeddedBytes + 111 + 222;
 
 $snapshots = $downloader->offsetSnapshots;
 
@@ -327,25 +329,35 @@ if (($snapshots[0]['total'] ?? null) !== $expectedInitialTotal) {
     );
 }
 
+// Phase 2 re-anchor: the index phase restarts the window at zero with the
+// index-only footprint (embedded entries plus external index mods).
+if (($snapshots[1]['bytes'] ?? null) !== 0
+    || ($snapshots[1]['total'] ?? null) !== $indexTotal
+) {
+    throw new RuntimeException(
+        'Index phase did not re-anchor to the index-only progress window.'
+    );
+}
+
 $lastBytes = -1;
 
-foreach ($snapshots as $snapshot) {
+foreach (array_slice($snapshots, 1) as $snapshot) {
     if ($snapshot['bytes'] < $lastBytes) {
-        throw new RuntimeException('Progress offset moved backwards.');
+        throw new RuntimeException('Progress offset moved backwards within the index phase.');
     }
 
     $lastBytes = $snapshot['bytes'];
 }
 
-if ($lastBytes !== $mrpackBytes + 111) {
+if ($lastBytes !== 111) {
     throw new RuntimeException(
-        'Final offset did not account for the embedded mrpack plus completed mods.'
+        'Final offset did not account for the completed index mods.'
     );
 }
 
 foreach (array_slice($snapshots, 1) as $snapshot) {
-    if ($snapshot['total'] !== $expectedTotal) {
-        throw new RuntimeException('Running total was not held constant across mods.');
+    if ($snapshot['total'] !== $indexTotal) {
+        throw new RuntimeException('Index-phase total was not held constant across mods.');
     }
 }
 
@@ -371,7 +383,7 @@ if (in_array('mods/gamma.jar', $entries, true)) {
     throw new RuntimeException('Server-unsupported mod leaked into the archive.');
 }
 
-echo 'PASS: cumulative byte totals stay monotonic across archive and mods' . "\n";
+echo 'PASS: two-phase progress windows anchor archive and index phases separately' . "\n";
 
 // The provider deletes the source mrpack after normalizing it, so the fixture
 // must be rebuilt before the next provider run.

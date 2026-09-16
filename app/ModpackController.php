@@ -257,6 +257,15 @@ final class ModpackController extends Controller
         $token = bin2hex(random_bytes(16));
         $progressToken = '';
 
+        // A modpack install is a many-minute operation (a 600MB+ mod phase,
+        // packaging and deployment), but PHP-FPM's default max_execution_time
+        // is 30 seconds. Without lifting it, the engine dies mid-transfer with
+        // a fatal "Maximum execution time exceeded" and the frontend is left
+        // polling a frozen progress snapshot forever. Unblock this request's
+        // timer; the install lock's own staleness timeout remains the safety
+        // net that reclaims an actually-abandoned install.
+        @set_time_limit(0);
+
         try {
             $lock = $this->installationLock()->acquire(
                 $this->lockKey($server),
@@ -287,8 +296,6 @@ final class ModpackController extends Controller
 
             $lastLockTouch = 0.0;
 
-            $lastPercent = 0.0;
-
             $downloader->setProgressCallback(
                 static function (
                     ?int $downloadedBytes,
@@ -298,7 +305,6 @@ final class ModpackController extends Controller
                     $progressToken,
                     $lock,
                     &$lastLockTouch,
-                    &$lastPercent,
                 ): void {
                     $now = microtime(true);
 
@@ -322,13 +328,11 @@ final class ModpackController extends Controller
                         );
                     }
 
-                    // Re-anchoring between acquisition phases (e.g. the
-                    // mrpack archive vs the parsed index footprint) can make
-                    // the raw fraction dip momentarily. Clamp to the highest
-                    // percent seen so far so the bar is strictly monotonic.
-                    $percent = (int) max($lastPercent, $percent);
-
-                    $lastPercent = $percent;
+                    // No monotonic clamp here on purpose: the CurseForge flow
+                    // reports two consecutive windows (the small client-pack
+                    // zip, then the much larger manifest-mods footprint). The
+                    // second window re-anchors to 0 so the bar visibly starts
+                    // filling again instead of freezing at the zip's 100%.
 
                     $progress->set($progressToken, [
                         'phase' => 'download',

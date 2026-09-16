@@ -44,6 +44,8 @@ export interface InstallProgressData {
     deployed_files?: number | null;
     total_files?: number | null;
     message?: string | null;
+    /** Server-side unix timestamp of the last progress write. */
+    updated_at?: number | null;
 }
 
 export interface InstallProgressResponse {

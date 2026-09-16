@@ -480,23 +480,23 @@ final class ModrinthProvider implements ModpackProvider
                 );
             }
 
-            // Re-anchor cumulative progress on the whole network footprint:
-            // the downloaded mrpack bytes plus every index-file mod still to
-            // fetch. Offsets only ever grow, so the bar moves forward without
-            // resetting between the hundreds of per-mod downloads.
-            $archiveBytes = max(0, (int) @filesize($archivePath));
+            // Phase 2 of the download display mirrors the CurseForge flow:
+            // the mrpack archive rendered its own 0..100% window, so the
+            // index phase re-anchors to the index-file footprint only
+            // (embedded entries streamed out of the archive plus every
+            // external mod still to fetch). The bar resets to 0 and fills
+            // again across this second, larger transfer.
+            $archiveBytes = 0;
 
             foreach ($content as $payload) {
-                if ($payload['archiveEntry'] === null) {
-                    $archiveBytes += max(0, (int) ($payload['bytes'] ?? 0));
-                }
+                $archiveBytes += max(0, (int) ($payload['bytes'] ?? 0));
             }
 
-            $networkBytesDone = max(0, (int) @filesize($archivePath));
+            $networkBytesDone = 0;
 
             $this->downloader->setProgressOffset(
-                $networkBytesDone,
-                max($networkBytesDone, $archiveBytes),
+                0,
+                $archiveBytes,
             );
 
             $outputPath = $this->createPackageDirectory();
@@ -837,7 +837,7 @@ final class ModrinthProvider implements ModpackProvider
                     'archiveEntry' => $name,
                     'downloadUrl' => null,
                     'priority' => $payload['priority'],
-                    'bytes' => 0,
+                    'bytes' => max(0, (int) ($entry['size'] ?? 0)),
                 ];
             }
         }

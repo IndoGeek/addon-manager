@@ -150,17 +150,22 @@ final class DownloadManager implements ConcurrentDownloader
             return;
         }
 
+        $safeTotal = $totalBytes !== null && $totalBytes > 0
+            ? $totalBytes
+            : $downloadedBytes;
+
+        $windowComplete = $safeTotal > 0 && $downloadedBytes >= $safeTotal;
+
+        // The throttle must never swallow the tick that closes a window: the
+        // final 100% is the signal the frontend needs to show the phase as
+        // finished before the next phase's label takes over.
         $now = microtime(true);
 
-        if (($now - $this->lastProgressReport) < 0.4) {
+        if (!$windowComplete && ($now - $this->lastProgressReport) < 0.4) {
             return;
         }
 
         $this->lastProgressReport = $now;
-
-        $safeTotal = $totalBytes !== null && $totalBytes > 0
-            ? $totalBytes
-            : $downloadedBytes;
 
         try {
             $callback(
@@ -353,6 +358,7 @@ final class DownloadManager implements ConcurrentDownloader
                 'done' => false,
                 'failed' => false,
                 'size' => 0,
+                'declaredSize' => max(0, (int) ($task['bytes'] ?? 0)),
                 'curl' => null,
             ];
 
@@ -434,6 +440,19 @@ final class DownloadManager implements ConcurrentDownloader
                     curl_multi_select($multi, 0.2);
                 }
             } while ($running > 0);
+
+            // NOTE: the store keeps receiving ticks from this callback only
+            // while bytes flow (transfers update state['active']); a batch
+            // where every task is stuck connecting produces no new values but
+            // the aggregate still fires — the frontend's stale watchdog keys
+            // on snapshot CONTENT, so consumers see an honest frozen value
+            // only when this engine genuinely cannot make progress.
+
+            // Closing report: the last throttled aggregate tick can sit a few
+            // percent short of the window's end, which the frontend renders as
+            // a stall just before the deploy phase takes over. Force one final
+            // unthrottled report so the download phase always lands on 100%.
+            $peak = $this->aggregateBatchProgress($pending, $peak, true);
 
             foreach ($pending as $id => $state) {
                 if ($state['done']) {
@@ -810,8 +829,11 @@ final class DownloadManager implements ConcurrentDownloader
      *
      * @param array<string, array<string, mixed>> $pending
      */
-    private function aggregateBatchProgress(array &$pending, int $peak): int
-    {
+    private function aggregateBatchProgress(
+        array &$pending,
+        int $peak,
+        bool $force = false,
+    ): int {
         $callback = $this->progressCallback;
 
         if ($callback === null) {
@@ -820,7 +842,7 @@ final class DownloadManager implements ConcurrentDownloader
 
         $now = microtime(true);
 
-        if (($now - $this->lastProgressReport) < 0.4) {
+        if (!$force && ($now - $this->lastProgressReport) < 0.4) {
             return $peak;
         }
 
@@ -842,12 +864,28 @@ final class DownloadManager implements ConcurrentDownloader
             $sum += $state['transferred'] + (int) floor($state['active']);
         }
 
+        // Tasks that failed every candidate drop out of the running sum above
+        // (their bytes never arrived). Deflate the denominator by their
+        // declared sizes too, so the bar still reaches 100% for the mods that
+        // DID arrive instead of stalling just short of the end.
+        $declaredFailedBytes = 0;
+
+        foreach ($pending as $state) {
+            if (!$state['failed']) {
+                continue;
+            }
+
+            $declaredFailedBytes += (int) ($state['declaredSize'] ?? 0);
+        }
+
         $done = max($peak, $this->progressOffsetBytes + $sum);
 
         $safeTotal = $this->progressOffsetTotal !== null
             && $this->progressOffsetTotal > 0
             ? $this->progressOffsetTotal
             : $done;
+
+        $safeTotal = max(1, $safeTotal - $declaredFailedBytes);
 
         try {
             $callback(min($done, $safeTotal), $safeTotal);

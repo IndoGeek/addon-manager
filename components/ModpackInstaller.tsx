@@ -82,12 +82,35 @@ const IDLE_GRACE_MS = 30000;
 // request and stops the card from spinning "Cancelling ..." indefinitely.
 const CANCEL_STUCK_TIMEOUT_MS = 90000;
 
+// How long the backend's progress snapshot may go without its CONTENT
+// changing before the poll loop declares the install dead (e.g. the PHP
+// request was killed by a timeout or a crash) and surfaces a failure instead
+// of freezing on the last snapshot forever. Generous by design: the backend
+// legitimately pauses while retrying slow transfers (up to several seconds
+// of backoff per attempt, multiple candidates per mod), so only a truly
+// frozen snapshot across this window counts as dead.
+const PROGRESS_STALE_TIMEOUT_MS = 90000;
+
+const snapshotKey = (state: InstallProgressData): string =>
+    [
+        state.phase,
+        state.percent,
+        state.downloaded_bytes ?? '',
+        state.total_bytes ?? '',
+        state.deployed_files ?? '',
+        state.total_files ?? '',
+    ].join('|');
+
 export default () => {
     const server = getServerIdentifier();
 
     const alive = useRef(true);
 
     const requestId = useRef(0);
+
+    const lastSnapshotKey = useRef<string | null>(null);
+
+    const lastSnapshotChangeAt = useRef<number | null>(null);
 
     const debounceTimer = useRef<number | null>(null);
 
@@ -1210,6 +1233,55 @@ export default () => {
             }
         } else {
             cancellingSince.current = null;
+        }
+
+        // Stale-snapshot watchdog: a running phase whose snapshot content has
+        // not changed for a long time means the install request died (killed
+        // by a PHP timeout, OOM, or a crash) — without this the card would
+        // sit on the last snapshot forever. Measured entirely with the LOCAL
+        // clock against the last time the snapshot CONTENT changed, so server
+        // vs browser clock skew can never trigger a false failure. A long
+        // window is required because the backend legitimately goes quiet
+        // while retrying slow transfers and connecting to mirrors.
+        const runningPhase
+            = state.phase === 'download'
+            || state.phase === 'deploy'
+            || state.phase === 'preparing';
+
+        if (runningPhase) {
+            const key = snapshotKey(state);
+
+            if (key !== lastSnapshotKey.current) {
+                lastSnapshotKey.current = key;
+                lastSnapshotChangeAt.current = Date.now();
+            } else if (
+                lastSnapshotChangeAt.current !== null
+                && Date.now() - lastSnapshotChangeAt.current
+                >= PROGRESS_STALE_TIMEOUT_MS
+            ) {
+                stopActivePolling();
+                clearActiveInstallStorage();
+                setActiveProgress({
+                    ...state,
+                    phase: 'failed',
+                    indeterminate: false,
+                    message:
+                        `${record.name} installation stopped responding.`,
+                });
+
+                setOutcomeBanner({
+                    kind: 'error',
+                    message:
+                        `${record.name} installation stopped responding. ` +
+                        'Please try again.',
+                });
+
+                scheduleOutcomeClear();
+                return;
+            }
+        } else {
+            lastSnapshotKey.current = null;
+            lastSnapshotChangeAt.current = null;
         }
 
         setActiveProgress(state);
