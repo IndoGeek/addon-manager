@@ -16,7 +16,7 @@ export const SORT_OPTIONS: Array<{ value: string; label: string }> = [
     { value: 'updated', label: 'Recently updated' },
 ];
 
-export const EXTENSION_VERSION = '1.0.0';
+export const EXTENSION_VERSION = '0.44.22';
 
 /** Page-size options for the catalog "Stack" dropdown. */
 export const STACK_OPTIONS: Array<{ value: string; label: string }> = [

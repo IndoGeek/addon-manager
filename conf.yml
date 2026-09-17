@@ -3,16 +3,16 @@ info:
   identifier: "modpackinstaller"
   description: "A simple modpack installer extension for Pterodactyl."
   flags: ""
-  version: "1.0.0"
+  version: "0.44.22"
   target: "beta-2026-08"
   author: "IndoGeek"
   icon: ""
-  website: ""
+  website: "https://github.com/IndoGeek/modpack-installer"
 
 admin:
   view: "view.blade.php"
-  controller: ""
-  css: ""
+  controller: "app/AdminController.php"
+  css: "admin.style.css"
   wrapper: ""
 
 dashboard:

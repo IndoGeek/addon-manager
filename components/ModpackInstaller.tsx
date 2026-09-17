@@ -9,6 +9,7 @@ import {
     DEFAULT_STACK,
     EXTENSION_VERSION,
     PAGE_LIMIT,
+    SORT_OPTIONS,
     STACK_OPTIONS,
     VIEW_STORAGE_KEY,
     activeInstallStorageKey,
@@ -147,6 +148,29 @@ export default () => {
         stack: DEFAULT_STACK,
         page: 1,
     });
+
+    // Backend-driven defaults (admin settings page): applied when the
+    // providers endpoint responds, before the first search runs.
+    const applyBackendDefaults = (
+        data: ProvidersResponse['data'],
+    ): { sort: string; stack: string } => {
+        const sort =
+            typeof data.default_sort === 'string' &&
+            SORT_OPTIONS.some((option) => option.value === data.default_sort)
+                ? data.default_sort
+                : 'relevance';
+
+        const limit = data.pagination?.default_limit;
+        const stack =
+            typeof limit === 'number' &&
+            STACK_OPTIONS.some(
+                (option) => option.value === String(limit),
+            )
+                ? String(limit)
+                : DEFAULT_STACK;
+
+        return { sort, stack };
+    };
 
     const filtersRef = useRef(filters);
 
@@ -455,9 +479,13 @@ export default () => {
                     chosenProvider = available[0].name;
                 }
 
+                const defaults = applyBackendDefaults(response.data.data);
+
                 setFilters((current) => ({
                     ...current,
                     provider: chosenProvider,
+                    sort: defaults.sort,
+                    stack: defaults.stack,
                 }));
             } catch {
                 if (cancelled || !alive.current) {

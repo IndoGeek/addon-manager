@@ -40,6 +40,7 @@ use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installa
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\InstallProgressStore;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Management\InstallRecord;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Management\InstallIntegrityVerifier;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Management\InstallHistoryStore;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Management\InstallRecordStore;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Management\OwnershipRemover;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\ModpackProviderRegistry;
@@ -144,13 +145,39 @@ final class ModpackController extends Controller
     {
         $service = $this->catalogService();
 
+        // Admins can hide CurseForge entirely from the extension settings
+        // page; the UI then only ever sees Modrinth.
+        $disableCurseforge = $this->setting('disable_curseforge') === '1';
+
+        $providers = array_values(array_filter(
+            $service->providers(),
+            static fn (array $provider): bool => !(
+                $disableCurseforge
+                && ($provider['name'] ?? null) === 'curseforge'
+            ),
+        ));
+
+        $defaultProvider = $this->setting('default_provider');
+
+        if (
+            $defaultProvider === null
+            || $defaultProvider === 'curseforge' && $disableCurseforge
+        ) {
+            $defaultProvider = $service->defaultProvider();
+        }
+
         return response()->json([
             'data' => [
-                'providers' => $service->providers(),
-                'default_provider' => $service->defaultProvider(),
+                'providers' => $providers,
+                'default_provider' => $defaultProvider,
+                'default_sort' => $this->setting('default_sort')
+                    ?? 'relevance',
                 'pagination' => [
                     'default_page' => CatalogSearchQuery::DEFAULT_PAGE,
-                    'default_limit' => CatalogSearchQuery::DEFAULT_LIMIT,
+                    'default_limit' => (int) (
+                        $this->setting('page_size')
+                        ?? CatalogSearchQuery::DEFAULT_LIMIT
+                    ),
                 ],
             ],
         ]);
@@ -339,6 +366,12 @@ final class ModpackController extends Controller
             $this->clearCancelFlag($this->lockKey($server));
 
             $source = $this->installationSource($request);
+
+            if ($this->curseForgeBlocked($source)) {
+                throw new InvalidArgumentException(
+                    'CurseForge has been disabled by the panel administrator.',
+                );
+            }
 
             $progressToken = $this->progressToken($request);
 
@@ -530,6 +563,14 @@ final class ModpackController extends Controller
 
                 throw $exception;
             }
+
+            $this->logHistory(
+                action: 'install',
+                server: $server,
+                modpack: $record->displayName,
+                version: $record->version,
+                detail: $result->totalFiles() . ' files deployed',
+            );
 
             return response()->json([
                 'data' => [
@@ -829,6 +870,14 @@ final class ModpackController extends Controller
 
             $this->store()->delete((string) $server->uuid, $id);
 
+            $this->logHistory(
+                action: 'uninstall',
+                server: $server,
+                modpack: $record->displayName,
+                version: $record->version,
+                detail: count($outcome['deleted']) . ' files removed',
+            );
+
             return response()->json([
                 'data' => [
                     'id' => $record->id,
@@ -942,6 +991,14 @@ final class ModpackController extends Controller
             );
 
             $this->store()->save($updated);
+
+            $this->logHistory(
+                action: 'update',
+                server: $server,
+                modpack: $updated->displayName,
+                version: $record->version . ' → ' . $updated->version,
+                detail: $result->totalFiles() . ' files deployed',
+            );
 
             return response()->json([
                 'data' => [
@@ -1102,6 +1159,15 @@ final class ModpackController extends Controller
             )->restore(
                 archivePath: $package->archivePath,
                 paths: $missing,
+            );
+
+            $this->logHistory(
+                action: 'restore',
+                server: $server,
+                modpack: $record->displayName,
+                version: $record->version,
+                detail: $result->createdCount() . ' of '
+                    . count($missing) . ' missing files restored',
             );
 
             return response()->json([
@@ -1504,10 +1570,30 @@ final class ModpackController extends Controller
         );
     }
 
-    // Short-lived Redis-backed cache for upstream catalog responses.
+    // Settings saved from the admin page live in the panel database and take
+    // precedence over the .env-backed config values. Empty stored values mean
+    // "use the environment".
+    private function setting(string $key): ?string
+    {
+        try {
+            $value = app(
+                \Pterodactyl\BlueprintFramework\Libraries\ExtensionLibrary\Admin\BlueprintAdminLibrary::class,
+            )->dbGet('modpackinstaller', 'setting_' . $key);
+        } catch (Throwable) {
+            return null;
+        }
+
+        if (!is_string($value) || trim($value) === '') {
+            return null;
+        }
+
+        return trim($value);
+    }
+
     private function catalogCache(): ?CatalogCache
     {
-        $ttl = config('modpackinstaller.catalog_cache_ttl');
+        $ttl = $this->setting('catalog_cache_ttl')
+            ?? config('modpackinstaller.catalog_cache_ttl');
 
         if (!is_numeric($ttl) || (int) $ttl <= 0) {
             return null;
@@ -1560,7 +1646,8 @@ final class ModpackController extends Controller
 
     private function downloader(): DownloadManager
     {
-        $maxMb = config('modpackinstaller.max_download_mb');
+        $maxMb = $this->setting('max_download_mb')
+            ?? config('modpackinstaller.max_download_mb');
 
         if (is_numeric($maxMb) && (int) $maxMb > 0) {
             return new DownloadManager(
@@ -1657,7 +1744,8 @@ final class ModpackController extends Controller
 
     private function curseForgeApiKey(): ?string
     {
-        $key = config('modpackinstaller.curseforge_api_key');
+        $key = $this->setting('curseforge_api_key')
+            ?? config('modpackinstaller.curseforge_api_key');
 
         if (!is_string($key) || $key === '') {
             return null;
@@ -1707,13 +1795,56 @@ final class ModpackController extends Controller
 
     private function targetMode(): string
     {
-        $mode = config('modpackinstaller.server_target', 'local');
+        $mode = $this->setting('server_target')
+            ?? config('modpackinstaller.server_target', 'local');
 
         if (!is_string($mode) || trim($mode) === '') {
             return 'local';
         }
 
         return trim($mode);
+    }
+
+    // Whether a source targets CurseForge while the admin has disabled the
+    // provider. Checked on install/update so hiding the provider is not just
+    // cosmetic.
+    private function curseForgeBlocked(string $source): bool
+    {
+        if ($this->setting('disable_curseforge') !== '1') {
+            return false;
+        }
+
+        return stripos($source, 'curseforge:') === 0;
+    }
+
+    // Append one entry to the admin-visible install history. Best-effort:
+    // a logging failure must never break the operation it records.
+    private function logHistory(
+        string $action,
+        Server $server,
+        string $modpack,
+        string $version = '',
+        string $detail = '',
+    ): void {
+        try {
+            $this->historyStore()->append([
+                'action' => $action,
+                'server_uuid' => (string) $server->uuid,
+                'server_name' => (string) ($server->name ?? ''),
+                'user' => optional($request = request())->user()?->email ?? '',
+                'modpack' => $modpack,
+                'version' => $version,
+                'detail' => $detail,
+                'time' => date('c'),
+            ]);
+        } catch (Throwable) {
+            // Intentionally ignored.
+        }
+    }
+
+    private function historyStore(): InstallHistoryStore
+    {
+        return new InstallHistoryStore($this->installDataDir());
     }
 
     private function localServerRoot(): string

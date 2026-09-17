@@ -1,0 +1,47 @@
+/* Modpack Installer — admin panel styles.
+   Loaded on every Blueprint admin page (Blueprint imports this file into
+   admin.extensions.css), which lets us also restyle our extension card on
+   the main extensions list. */
+
+/* ------------------------------------------------------------------ */
+/* Settings page                                                       */
+/* ------------------------------------------------------------------ */
+
+.mi-settings .mi-panel {
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+.mi-settings .mi-panel > .panel-heading {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 12px 16px;
+}
+
+.mi-settings .form-control {
+  border-radius: 6px;
+}
+
+.mi-settings .input-group-addon {
+  border-radius: 6px 0 0 6px;
+}
+
+.mi-settings code {
+  word-break: break-all;
+}
+
+/* ------------------------------------------------------------------ */
+/* Extensions list card                                                */
+/* ------------------------------------------------------------------ */
+
+/* Softer update badge on our card (Blueprint renders the green pill). */
+.extension-btn .extension-btn-update {
+  border-radius: 999px;
+}
+
+/* Keep the version row compact so long versions don't wrap the card. */
+.extension-btn .extension-btn-version {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

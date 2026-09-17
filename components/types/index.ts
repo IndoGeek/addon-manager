@@ -253,6 +253,7 @@ export interface ProvidersResponse {
     data: {
         providers: CatalogProviderOption[];
         default_provider: string;
+        default_sort?: string;
         pagination: {
             default_page: number;
             default_limit: number;
