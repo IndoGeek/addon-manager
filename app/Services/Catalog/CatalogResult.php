@@ -2,19 +2,10 @@
 
 namespace Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog;
 
-/**
- * Normalized catalog search response: the items plus pagination metadata, the
- * provider that served the request, the filters as applied, and the sort used.
- */
+// Normalized catalog search response: the items plus pagination metadata, the provider that served the request, the...
 final readonly class CatalogResult
 {
-    /**
-     * @param array<int, CatalogItem>          $items
-     * @param array<string>                    $appliedGameVersions
-     * @param array<string>                    $appliedLoaders
-     * @param array<string>                    $appliedCategories
-     * @param array<string>                    $appliedEnvironments
-     */
+    // @param array<int, CatalogItem> $items @param array<string> $appliedGameVersions @param array<string> $appliedLoaders...
     public function __construct(
         public array $items,
         public CatalogPagination $pagination,
@@ -31,9 +22,7 @@ final readonly class CatalogResult
     ) {
     }
 
-    /**
-     * @return array<string, mixed>
-     */
+    // @return array<string, mixed>
     public function toArray(): array
     {
         return [
@@ -57,11 +46,7 @@ final readonly class CatalogResult
         ];
     }
 
-    /**
-     * Rebuilds a result from toArray() output (cache hydration).
-     *
-     * @param array<string, mixed> $data
-     */
+    // Rebuilds a result from toArray() output (cache hydration).
     public static function fromArray(array $data): self
     {
         $filters = is_array($data['filters'] ?? null)

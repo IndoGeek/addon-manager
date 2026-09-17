@@ -1,9 +1,4 @@
-/*
- * animations.css — keyframes and reduced-motion handling.
- *
- * SOURCE file — root.css is generated from these files by
- * tools/build-css.mjs (run by build.sh). Do NOT edit root.css directly.
- */
+/* animations.css — keyframes and reduced-motion handling. */
 
 @keyframes modpackinstaller-fade-in {
   from {

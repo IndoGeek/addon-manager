@@ -4,11 +4,7 @@ namespace Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Ca
 
 use RuntimeException;
 
-/**
- * Raised when a catalog provider responds with data the provider cannot
- * validate (malformed payloads, rejected requests). The API maps this to a
- * 502 - the request itself is valid but the upstream response is unusable.
- */
+// Raised when a catalog provider responds with data the provider cannot validate (malformed payloads, rejected requests).
 final class CatalogProviderException extends RuntimeException
 {
 }

@@ -1,13 +1,6 @@
 <?php
 
-/**
- * Functional tests for installation progress reporting + raised caps:
- *   - InstallProgressStore round-trips state, expires stale files, and is
- *     robust to concurrent set/get traffic
- *   - DownloadManager's default download cap is 10 GiB
- *   - DeploymentExecutor's default per-file cap is 10 GiB and its progress
- *     callback reports (deployed, total) through to completion
- */
+// Functional tests for installation progress reporting + raised caps: - InstallProgressStore round-trips state, expires...
 
 require __DIR__ . '/../../app/Services/Download/Downloader.php';
 require __DIR__ . '/../../app/Services/Download/ConcurrentDownloader.php';

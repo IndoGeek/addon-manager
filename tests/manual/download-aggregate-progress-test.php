@@ -1,12 +1,6 @@
 <?php
 
-/**
- * Verifies the two-phase progress accounting a Modrinth install relies on:
- * the mrpack archive renders its own 0..100% window, then the index phase
- * re-anchors to the index-only footprint (bar resets to 0 and fills again),
- * and cancelling during the long per-mod download/packaging phase aborts
- * promptly.
- */
+// Verifies the two-phase progress accounting a Modrinth install relies on: the mrpack archive renders its own 0..100%...
 
 $projectRoot = dirname(__DIR__, 2);
 
@@ -86,14 +80,10 @@ final class FakeProviderHttpClient implements ProviderHttpClient
 
 final class RecordingDownloader implements Downloader
 {
-    /**
-     * @var array<int, array{bytes: int, total: int|null}>
-     */
+    // @var array<int, array{bytes: int, total: int|null}>
     public array $offsetSnapshots = [];
 
-    /**
-     * @var array<int, array{bytes: int, total: int|null}>
-     */
+    // @var array<int, array{bytes: int, total: int|null}>
     public array $progressSnapshots = [];
 
     public int $calls = 0;
@@ -223,9 +213,7 @@ function removeDirectoryTree(string $directory): void
     @rmdir($directory);
 }
 
-/**
- * @return list<string>
- */
+// @return list<string>
 function packageDirectoryFiles(string $directory): array
 {
     $files = [];

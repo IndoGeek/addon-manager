@@ -117,9 +117,7 @@ function pass(string $name): void
     echo "PASS: {$name}\n";
 }
 
-/**
- * @return list<string>
- */
+// @return list<string>
 function packageDirectoryFiles(string $directory): array
 {
     $files = [];

@@ -4,11 +4,7 @@ namespace Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Ca
 
 use InvalidArgumentException;
 
-/**
- * A validated, provider-agnostic request for the exact versions/releases of a
- * single catalog project. Mirrors the catalog search validation rules so the
- * API layer can build it from strict scalar parameters.
- */
+// A validated, provider-agnostic request for the exact versions/releases of a single catalog project.
 final readonly class CatalogVersionQuery
 {
     public const DEFAULT_PROVIDER = 'modrinth';
@@ -31,10 +27,7 @@ final readonly class CatalogVersionQuery
     /** @var array<string> */
     public array $loaders;
 
-    /**
-     * @param array|string|null $gameVersion Compatible with scalar callers.
-     * @param array|string|null $loader      Compatible with scalar callers.
-     */
+    // @param array|string|null $gameVersion Compatible with scalar callers.
     public function __construct(
         string $provider = self::DEFAULT_PROVIDER,
         ?string $project = null,
@@ -80,11 +73,7 @@ final readonly class CatalogVersionQuery
         );
     }
 
-    /**
-     * @param array|string|null $value
-     *
-     * @return array<string>
-     */
+    // @param array|string|null $value @return array<string>
     private function normalizeFilterValues(
         array|string|null $value,
         string $pattern,

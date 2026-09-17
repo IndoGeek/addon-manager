@@ -4,17 +4,7 @@ namespace Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Ca
 
 use InvalidArgumentException;
 
-/**
- * A validated, provider-agnostic catalog search request. Every field is
- * normalized and bounded here so providers never receive hostile input and
- * the API layer can build it from scalar request parameters safely.
- *
- * Filters are multi-value: each group is OR'ed internally and the groups are
- * AND'ed together, mirroring how the upstream providers express facets. A
- * provider that cannot express multiple values applies the first value to the
- * request and the remaining values as a provider-side filter (kept inside the
- * provider so the frontend never post-filters arbitrary rows).
- */
+// A validated, provider-agnostic catalog search request.
 final readonly class CatalogSearchQuery
 {
     public const DEFAULT_PROVIDER = 'modrinth';
@@ -37,13 +27,7 @@ final readonly class CatalogSearchQuery
 
     public const VERSION_PATTERN = '/^[0-9A-Za-z._-]{1,32}$/';
 
-    /**
-     * Supported environment values. Mirrors the tags the upstream providers
-     * accept (for example Modrinth's `client`, `server` and `client-and-server`
-     * categories) so the UI only ever offers real filters.
-     *
-     * @var array<string>
-     */
+    // Supported environment values.
     public const ENVIRONMENT_VALUES = [
         'client',
         'server',
@@ -72,12 +56,7 @@ final readonly class CatalogSearchQuery
 
     public int $limit;
 
-    /**
-     * @param array|string|null $gameVersion Compatible with scalar callers.
-     * @param array|string|null $loader      Compatible with scalar callers.
-     * @param array|string|null $category    Compatible with scalar callers.
-     * @param array|string|null $environments
-     */
+    // @param array|string|null $gameVersion Compatible with scalar callers.
     public function __construct(
         string $provider = self::DEFAULT_PROVIDER,
         ?string $query = null,
@@ -165,9 +144,7 @@ final readonly class CatalogSearchQuery
         return ($this->page - 1) * $this->limit;
     }
 
-    /**
-     * Whether any non-default filter besides the query text is active.
-     */
+    // Whether any non-default filter besides the query text is active.
     public function hasActiveFilters(): bool
     {
         return $this->gameVersions !== []
@@ -176,9 +153,7 @@ final readonly class CatalogSearchQuery
             || $this->environments !== [];
     }
 
-    /**
-     * @return array<string, array<int, string>>
-     */
+    // @return array<string, array<int, string>>
     public function appliedFilters(): array
     {
         return [
@@ -189,11 +164,7 @@ final readonly class CatalogSearchQuery
         ];
     }
 
-    /**
-     * @param array|string|null $value
-     *
-     * @return array<string>
-     */
+    // @param array|string|null $value @return array<string>
     private function normalizeFilterValues(
         array|string|null $value,
         string $pattern,

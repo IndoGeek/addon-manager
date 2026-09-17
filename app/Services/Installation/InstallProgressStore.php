@@ -4,14 +4,7 @@ namespace Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\In
 
 use RuntimeException;
 
-/**
- * File-backed store that surfaces installation progress across requests.
- *
- * The installing request streams progress into a per-token JSON file while the
- * panel frontend polls it through a read-only endpoint. Files are written
- * atomically so a reader can never observe a partial update, and stale files
- * expire by timestamp so abandoned tokens cannot accumulate.
- */
+// File-backed store that surfaces installation progress across requests.
 final class InstallProgressStore
 {
     public function __construct(
@@ -19,9 +12,7 @@ final class InstallProgressStore
     ) {
     }
 
-    /**
-     * @param array<string, mixed> $state
-     */
+    // @param array<string, mixed> $state
     public function set(
         string $token,
         array $state,
@@ -65,9 +56,7 @@ final class InstallProgressStore
         }
     }
 
-    /**
-     * @return array<string, mixed>|null
-     */
+    // @return array<string, mixed>|null
     public function get(string $token): ?array
     {
         $path = $this->path($token);

@@ -1,9 +1,4 @@
-/*
- * search.css — browser toolbar, search box, controls row, pagination.
- *
- * SOURCE file — root.css is generated from these files by
- * tools/build-css.mjs (run by build.sh). Do NOT edit root.css directly.
- */
+/* search.css — browser toolbar, search box, controls row, pagination. */
 
 .modpackinstaller-browser-toolbar {
   display: flex;

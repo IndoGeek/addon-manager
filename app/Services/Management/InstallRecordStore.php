@@ -6,15 +6,7 @@ use InvalidArgumentException;
 use RuntimeException;
 use Throwable;
 
-/**
- * Extension-owned JSON store of installed-modpack records.
- *
- * Records live in a directory owned by the extension (never a Pterodactyl core
- * table). Writes are guarded by an exclusive flock and persisted with an
- * atomic rename so concurrent mutating requests and crashed writers can never
- * corrupt the store: readers always see either the previous or the next valid
- * snapshot.
- */
+// Extension-owned JSON store of installed-modpack records.
 final class InstallRecordStore
 {
     private const FILE = 'installs.json';
@@ -26,9 +18,7 @@ final class InstallRecordStore
     ) {
     }
 
-    /**
-     * @return list<InstallRecord> newest first
-     */
+    // @return list<InstallRecord> newest first
     public function all(string $serverUuid): array
     {
         $serverUuid = $this->serverUuid($serverUuid);
@@ -146,9 +136,7 @@ final class InstallRecordStore
         });
     }
 
-    /**
-     * @return array<int, array<string, mixed>>
-     */
+    // @return array<int, array<string, mixed>>
     private function load(): array
     {
         $path = $this->path();
@@ -184,9 +172,7 @@ final class InstallRecordStore
         return $records;
     }
 
-    /**
-     * @param callable(array<int, array<string, mixed>>): array<int, array<string, mixed>> $mutator
-     */
+    // @param callable(array<int, array<string, mixed>>): array<int, array<string, mixed>> $mutator
     private function mutate(callable $mutator): void
     {
         $lockPath = $this->lockPath();
@@ -217,9 +203,7 @@ final class InstallRecordStore
         }
     }
 
-    /**
-     * @param array<int, array<string, mixed>> $records
-     */
+    // @param array<int, array<string, mixed>> $records
     private function persist(array $records): void
     {
         $payload = json_encode([

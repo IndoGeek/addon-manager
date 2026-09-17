@@ -4,12 +4,7 @@ namespace Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Ca
 
 use InvalidArgumentException;
 
-/**
- * A validated, provider-agnostic request for the normalized details of a
- * single catalog project. Used by the details UI when the browsing context is
- * not available (for example when opening a project straight from the
- * installed-modpacks manager).
- */
+// A validated, provider-agnostic request for the normalized details of a single catalog project.
 final readonly class CatalogProjectQuery
 {
     public const DEFAULT_PROVIDER = 'modrinth';

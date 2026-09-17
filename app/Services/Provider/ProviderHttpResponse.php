@@ -4,9 +4,7 @@ namespace Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Pr
 
 final readonly class ProviderHttpResponse
 {
-    /**
-     * @param array<mixed> $body Decoded JSON payload.
-     */
+    // @param array<mixed> $body Decoded JSON payload.
     public function __construct(
         public int $status,
         public array $body,

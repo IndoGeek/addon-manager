@@ -2,10 +2,7 @@
 
 namespace Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog;
 
-/**
- * Sorting options exposed by the catalog API. Values map 1:1 onto the
- * Modrinth search "index" values so no translation table is required.
- */
+// Sorting options exposed by the catalog API.
 enum CatalogSort: string
 {
     case RELEVANCE = 'relevance';

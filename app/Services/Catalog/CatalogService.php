@@ -2,17 +2,7 @@
 
 namespace Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog;
 
-/**
- * Application-level catalog facade used by the HTTP layer. It resolves the
- * requested provider, refuses unavailable providers, exposes the list of
- * providers (with their availability, capabilities and facet options) for the
- * UI, and resolves normalized project details for the details view.
- *
- * Search/version/project responses are cached for a short TTL (panel Redis
- * through the shared cache repository) keyed by the exact query, so repeat
- * views and provider switches render instantly instead of re-hitting the
- * upstream APIs on every open.
- */
+// Application-level catalog facade used by the HTTP layer.
 final class CatalogService
 {
     public function __construct(
@@ -21,10 +11,7 @@ final class CatalogService
     ) {
     }
 
-    /**
-     * The provider the UI should preselect: the first provider that is
-     * available and not development-only, or the plain first provider name.
-     */
+    // The provider the UI should preselect: the first provider that is available and not development-only, or the plain first...
     public function defaultProvider(): string
     {
         $first = null;
@@ -43,9 +30,7 @@ final class CatalogService
         return $first ?? CatalogSearchQuery::DEFAULT_PROVIDER;
     }
 
-    /**
-     * @return array<int, array<string, mixed>>
-     */
+    // @return array<int, array<string, mixed>>
     public function providers(): array
     {
         $providers = [];

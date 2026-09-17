@@ -1,23 +1,8 @@
-/*
- * GENERATED FILE — DO NOT EDIT.
- *
- * root.css is generated from the modular sources in components/styles/.
- * Edit those files, then regenerate with:  node tools/build-css.mjs
- * (build.sh runs this automatically before every deploy.)
- */
+/* GENERATED FILE — DO NOT EDIT. root.css is generated from the modular sources in components/styles/; edit those and regenerate with: node tools/build-css.mjs (build.sh runs this automatically before every deploy). */
 
 /* ==== ./base.css ==== */
 
-/*
- * base.css — root container, cards, layout chrome.
- *
- * This file is a SOURCE file. The deployed stylesheet (root.css) is
- * generated from all source files in this directory by:
- *
- *     node tools/build-css.mjs
- *
- * (run automatically by build.sh). Do NOT edit root.css directly.
- */
+/* base.css — root container, cards, layout chrome. */
 
 .modpackinstaller-root {
   max-width: 1100px;
@@ -90,12 +75,7 @@
 
 /* ==== ./search.css ==== */
 
-/*
- * search.css — browser toolbar, search box, controls row, pagination.
- *
- * SOURCE file — root.css is generated from these files by
- * tools/build-css.mjs (run by build.sh). Do NOT edit root.css directly.
- */
+/* search.css — browser toolbar, search box, controls row, pagination. */
 
 .modpackinstaller-browser-toolbar {
   display: flex;
@@ -286,12 +266,7 @@
 
 /* ==== ./buttons.css ==== */
 
-/*
- * buttons.css — standalone action buttons and icon buttons.
- *
- * SOURCE file — root.css is generated from these files by
- * tools/build-css.mjs (run by build.sh). Do NOT edit root.css directly.
- */
+/* buttons.css — standalone action buttons and icon buttons. */
 
 .modpackinstaller-install-toggle {
   flex: 0 0 auto;
@@ -459,13 +434,7 @@
 
 /* ==== ./toolbar.css ==== */
 
-/*
- * toolbar.css — provider/sort dropdowns, filters toggle, view toggle,
- * the toolbar row that holds them, and the active-filter chips.
- *
- * SOURCE file — root.css is generated from these files by
- * tools/build-css.mjs (run by build.sh). Do NOT edit root.css directly.
- */
+/* toolbar.css — provider/sort dropdowns, filters toggle, view toggle, the toolbar row that holds them, and the... */
 
 .modpackinstaller-toolbar-row {
   display: flex;
@@ -515,12 +484,7 @@
   background: #15803d;
 }
 
-/*
- * Compact dropdowns: square icon-only trigger sized like the view toggle.
- * The open menu must be free to grow wider than the trigger, otherwise
- * narrow options ("10 stack") wrap into a tall three-line column on
- * mobile — so the absolute min-width clamp is lifted for compact menus.
- */
+/* Compact dropdowns: square icon-only trigger sized like the view toggle. */
 .modpackinstaller-dropdown--compact .modpackinstaller-dropdown-trigger {
   min-width: 0;
   width: 104px;
@@ -608,10 +572,7 @@
   cursor: pointer;
 }
 
-/*
- * Options must never wrap mid-label: the menu sizes itself to the widest
- * option so every row stays on one line on phones and tablets.
- */
+/* Options must never wrap mid-label: the menu sizes itself to the widest option so every row stays on one line on phones... */
 .modpackinstaller-dropdown-option span {
   white-space: nowrap;
 }
@@ -781,12 +742,7 @@
 
 /* ==== ./filters.css ==== */
 
-/*
- * filters.css — the filter panel, filter groups/options/actions.
- *
- * SOURCE file — root.css is generated from these files by
- * tools/build-css.mjs (run by build.sh). Do NOT edit root.css directly.
- */
+/* filters.css — the filter panel, filter groups/options/actions. */
 
 .modpackinstaller-filter-panel {
   margin-top: 14px;
@@ -837,12 +793,7 @@
   gap: 8px;
 }
 
-/*
- * Options render as pill-shaped toggle buttons, not checkboxes: selected
- * options take the filter toggle's green, unselected ones sit just a step
- * lighter than the panel background so they read as buttons without
- * fighting it.
- */
+/* Options render as pill-shaped toggle buttons, not checkboxes: selected options take the filter toggle's green... */
 .modpackinstaller-filter-option {
   display: inline-flex;
   align-items: center;
@@ -922,12 +873,7 @@
 
 /* ==== ./cards.css ==== */
 
-/*
- * cards.css — catalog cards (grid + list), media, pills, stats, actions.
- *
- * SOURCE file — root.css is generated from these files by
- * tools/build-css.mjs (run by build.sh). Do NOT edit root.css directly.
- */
+/* cards.css — catalog cards (grid + list), media, pills, stats, actions. */
 
 .modpackinstaller-catalog-grid {
   display: grid;
@@ -997,8 +943,7 @@
   padding: 6px 8px;
 }
 
-/* Media keeps a fixed square shape; it no longer stretches to the card
- * height, which produced uneven leftover space under short images. */
+/* Media keeps a fixed square shape; it no longer stretches to the card height, which produced uneven leftover space under... */
 .modpackinstaller-catalog-card--list .modpackinstaller-card-media {
   flex: 0 0 72px;
   align-self: center;
@@ -1063,8 +1008,7 @@
   flex: 0 0 auto;
   font-weight: 400;
   opacity: 0.7;
-  /* Inline next to the title like Modrinth's "by <author>", not a
-   * right-floating column that strands empty space. */
+  /* Inline next to the title like Modrinth's "by <author>", not a right-floating column that strands empty space. */
   margin-left: 0;
   padding-left: 0;
   text-align: left;
@@ -1258,9 +1202,7 @@
   height: 10px;
 }
 
-/* List view meta row: pills + stats share ONE compact line below the
- * description, replacing the tall separate rows. Wraps instead of
- * disappearing when space runs out. */
+/* List view meta row: pills + stats share ONE compact line below the description, replacing the tall separate rows. */
 .modpackinstaller-catalog-card--list .modpackinstaller-catalog-card-meta {
   display: flex;
   flex-wrap: wrap;
@@ -1280,8 +1222,7 @@
   display: contents;
 }
 
-/* Smaller square icon buttons in list view keep the column height
- * below the content height so the card stays short. */
+/* Smaller square icon buttons in list view keep the column height below the content height so the card stays short. */
 .modpackinstaller-catalog-card--list .modpackinstaller-card-action-icon {
   width: 28px;
   height: 28px;
@@ -1348,9 +1289,7 @@
   cursor: wait;
 }
 
-/* Details/View: a step darker than the card surface with the same white
- * border as the view toggle, so it reads as a button without competing
- * with the green Open button. */
+/* Details/View: a step darker than the card surface with the same white border as the view toggle, so it reads as a... */
 .modpackinstaller-card-action-details {
   border: 1px solid rgba(255, 255, 255, 0.15);
   color: rgba(255, 255, 255, 0.9);
@@ -1585,12 +1524,7 @@
 
 /* ==== ./forms.css ==== */
 
-/*
- * forms.css — manual source form, statuses, metadata/result panels.
- *
- * SOURCE file — root.css is generated from these files by
- * tools/build-css.mjs (run by build.sh). Do NOT edit root.css directly.
- */
+/* forms.css — manual source form, statuses, metadata/result panels. */
 
 .modpackinstaller-manual-panel {
   margin-top: 16px;
@@ -1967,12 +1901,7 @@
 
 /* ==== ./modals.css ==== */
 
-/*
- * modals.css — modal overlay, modal chrome, details modal content.
- *
- * SOURCE file — root.css is generated from these files by
- * tools/build-css.mjs (run by build.sh). Do NOT edit root.css directly.
- */
+/* modals.css — modal overlay, modal chrome, details modal content. */
 
 .modpackinstaller-modal-overlay {
   position: fixed;
@@ -1991,12 +1920,7 @@
   animation: modpackinstaller-fade-out 0.2s ease-in forwards;
 }
 
-/*
- * Frosted window surface shared by modals, dropdown menus and the filter
- * panel: Pterodactyl's own slate background tone, translucent, with a
- * backdrop blur. Browsers without backdrop-filter fall back to a nearly
- * opaque fill so text stays readable.
- */
+/* Frosted window surface shared by modals, dropdown menus and the filter panel: Pterodactyl's own slate background tone... */
 .modpackinstaller-modal {
   width: 100%;
   max-width: 640px;
@@ -2023,11 +1947,7 @@
   animation: modpackinstaller-slide-down 0.2s ease-in forwards;
 }
 
-/*
- * Detail modal section cards: every logical group (header, version,
- * description, compatibility, author) sits in its own frosted card so the
- * modal reads like Modrinth's project page at every screen width.
- */
+/* Detail modal section cards: every logical group (header, version, description, compatibility, author) sits in its own... */
 .modpackinstaller-detail-card {
   padding: 14px;
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -2035,12 +1955,7 @@
   background: rgba(255, 255, 255, 0.03);
 }
 
-/*
- * The detail modal's section cards need real space between them so they
- * read as separate panels, not one jumbled block. The details modal body
- * renders the cards directly (no wrapper), so scope the rhythm to the
- * modal box itself.
- */
+/* The detail modal's section cards need real space between them so they read as separate panels, not one jumbled block. */
 .modpackinstaller-modal > .modpackinstaller-status + .modpackinstaller-detail-card,
 .modpackinstaller-detail-card + .modpackinstaller-detail-card,
 .modpackinstaller-detail-card + .modpackinstaller-modal-result {
@@ -2133,8 +2048,7 @@
   height: 11px;
 }
 
-/* Round action buttons on the header's right edge: grey View, green
- * Download — like Modrinth's heart/share circles. */
+/* Round action buttons on the header's right edge: grey View, green Download — like Modrinth's heart/share circles. */
 .modpackinstaller-detail-header-actions {
   flex: 0 0 auto;
   display: flex;
@@ -2215,8 +2129,7 @@
   color: #ffffff;
 }
 
-/* Version picker popup: the selected option reads green, and the install
- * button keeps its normal green here (the warning state below overrides). */
+/* Version picker popup: the selected option reads green, and the install button keeps its normal green here (the warning... */
 .modpackinstaller-version-picker .modpackinstaller-version-option--selected {
   border-color: #16a34a;
   background: #16a34a;
@@ -2336,9 +2249,7 @@
   opacity: 0.85;
 }
 
-/* Collapsible <details> disclosures render as sub-cards inside the
- * description: slightly darker surface, rounded, padded — matching how
- * Modrinth presents them. */
+/* Collapsible <details> disclosures render as sub-cards inside the description: slightly darker surface, rounded, padded... */
 .modpackinstaller-detail-description details {
   margin: 10px 0;
   padding: 10px 12px;
@@ -2430,8 +2341,7 @@
   height: 38px;
 }
 
-/* Version picker popup: opened by the header download button, layered
- * above the details modal with its own overlay. */
+/* Version picker popup: opened by the header download button, layered above the details modal with its own overlay. */
 .modpackinstaller-version-picker-overlay {
   position: fixed;
   inset: 0;
@@ -2861,12 +2771,7 @@
 
 /* ==== ./animations.css ==== */
 
-/*
- * animations.css — keyframes and reduced-motion handling.
- *
- * SOURCE file — root.css is generated from these files by
- * tools/build-css.mjs (run by build.sh). Do NOT edit root.css directly.
- */
+/* animations.css — keyframes and reduced-motion handling. */
 
 @keyframes modpackinstaller-fade-in {
   from {
@@ -2958,13 +2863,7 @@
 
 /* ==== ./responsive.css ==== */
 
-/*
- * responsive.css — mobile/tablet overrides. Kept last so later rules win
- * at equal specificity (see DEV.md 1.7 on media-query order).
- *
- * SOURCE file — root.css is generated from these files by
- * tools/build-css.mjs (run by build.sh). Do NOT edit root.css directly.
- */
+/* responsive.css — mobile/tablet overrides. */
 
 /* Tablet: keep the catalog grid at exactly 2 columns. */
 @media (max-width: 1024px) {

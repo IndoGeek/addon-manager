@@ -7,9 +7,7 @@ use Throwable;
 
 final class DeploymentException extends RuntimeException
 {
-    /**
-     * @param array<string> $deployed Paths deployed before the failure.
-     */
+    // @param array<string> $deployed Paths deployed before the failure.
     public function __construct(
         string $message,
         private readonly array $deployed,
@@ -18,9 +16,7 @@ final class DeploymentException extends RuntimeException
         parent::__construct($message, 0, $previous);
     }
 
-    /**
-     * @return array<string>
-     */
+    // @return array<string>
     public function deployed(): array
     {
         return $this->deployed;

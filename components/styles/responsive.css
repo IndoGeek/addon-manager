@@ -1,10 +1,4 @@
-/*
- * responsive.css — mobile/tablet overrides. Kept last so later rules win
- * at equal specificity (see DEV.md 1.7 on media-query order).
- *
- * SOURCE file — root.css is generated from these files by
- * tools/build-css.mjs (run by build.sh). Do NOT edit root.css directly.
- */
+/* responsive.css — mobile/tablet overrides. */
 
 /* Tablet: keep the catalog grid at exactly 2 columns. */
 @media (max-width: 1024px) {

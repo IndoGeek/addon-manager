@@ -4,42 +4,15 @@ namespace Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Do
 
 interface Downloader
 {
-    /**
-     * Downloads a remote archive into a secure temporary file.
-     *
-     * @throws \InvalidArgumentException When the URL is unsafe or invalid.
-     * @throws \RuntimeException          When the download fails.
-     */
+    // Downloads a remote archive into a secure temporary file.
     public function download(string $url): string;
 
-    /**
-     * Anchors progress reporting to a running total shared across several
-     * downloads. The completed count must keep rising across every download
-     * in the batch so callers observe a monotonic, cumulative progress bar.
-     *
-     * @param int      $completedBytes Bytes completed by *earlier* downloads.
-     * @param int|null $totalBytes     Grand total for the whole batch, or null
-     *                                 to fall back to per-download reporting.
-     */
+    // Anchors progress reporting to a running total shared across several downloads.
     public function setProgressOffset(int $completedBytes, ?int $totalBytes): void;
 
-    /**
-     * Returns whether the configured cancel predicate currently fires, so
-     * callers can abort long-running composition steps (packaging, scrubbing)
-     * even when no transfer is actively in flight.
-     */
+    // Returns whether the configured cancel predicate currently fires, so callers can abort long-running composition steps...
     public function isCancelled(): bool;
 
-    /**
-     * Reports an absolute, monotonic progress value for composition steps that
-     * do not stream a transfer themselves (reverse-proxying override files,
-     * building a normalized archive). Callers pass the cumulative bytes done
-     * and the operation total; throttling is handled by the implementation so
-     * hot loops can call this as often as they like.
-     *
-     * @param int      $downloadedBytes Cumulative bytes completed so far.
-     * @param int|null $totalBytes      Grand total for the step, or null to
-     *                                  report indeterminate progress.
-     */
+    // Reports an absolute, monotonic progress value for composition steps that do not stream a transfer themselves...
     public function reportProgress(int $downloadedBytes, ?int $totalBytes): void;
 }

@@ -1,10 +1,4 @@
-/*
- * toolbar.css — provider/sort dropdowns, filters toggle, view toggle,
- * the toolbar row that holds them, and the active-filter chips.
- *
- * SOURCE file — root.css is generated from these files by
- * tools/build-css.mjs (run by build.sh). Do NOT edit root.css directly.
- */
+/* toolbar.css — provider/sort dropdowns, filters toggle, view toggle, the toolbar row that holds them, and the... */
 
 .modpackinstaller-toolbar-row {
   display: flex;
@@ -54,12 +48,7 @@
   background: #15803d;
 }
 
-/*
- * Compact dropdowns: square icon-only trigger sized like the view toggle.
- * The open menu must be free to grow wider than the trigger, otherwise
- * narrow options ("10 stack") wrap into a tall three-line column on
- * mobile — so the absolute min-width clamp is lifted for compact menus.
- */
+/* Compact dropdowns: square icon-only trigger sized like the view toggle. */
 .modpackinstaller-dropdown--compact .modpackinstaller-dropdown-trigger {
   min-width: 0;
   width: 104px;
@@ -147,10 +136,7 @@
   cursor: pointer;
 }
 
-/*
- * Options must never wrap mid-label: the menu sizes itself to the widest
- * option so every row stays on one line on phones and tablets.
- */
+/* Options must never wrap mid-label: the menu sizes itself to the widest option so every row stays on one line on phones... */
 .modpackinstaller-dropdown-option span {
   white-space: nowrap;
 }

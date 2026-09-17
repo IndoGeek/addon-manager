@@ -1,9 +1,4 @@
-/*
- * buttons.css — standalone action buttons and icon buttons.
- *
- * SOURCE file — root.css is generated from these files by
- * tools/build-css.mjs (run by build.sh). Do NOT edit root.css directly.
- */
+/* buttons.css — standalone action buttons and icon buttons. */
 
 .modpackinstaller-install-toggle {
   flex: 0 0 auto;

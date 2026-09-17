@@ -9,9 +9,7 @@ use ZipArchive;
 
 final class ArchiveExtractor
 {
-    /**
-     * @var null|callable(): bool
-     */
+    // @var null|callable(): bool
     private $cancelChecker = null;
 
     public function __construct(
@@ -23,9 +21,7 @@ final class ArchiveExtractor
     ) {
     }
 
-    /**
-     * @param null|callable(): bool $checker
-     */
+    // @param null|callable(): bool $checker
     public function setCancelChecker(?callable $checker): void
     {
         $this->cancelChecker = $checker;

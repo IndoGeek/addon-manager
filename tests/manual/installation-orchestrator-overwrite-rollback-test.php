@@ -31,30 +31,16 @@ $temp = $root . '/temp';
 mkdir($server, 0750, true);
 mkdir($temp, 0750, true);
 
-/*
- * This file already exists and will be overwritten.
- */
+// This file already exists and will be overwritten.
 file_put_contents(
     $server . '/aaa-existing.txt',
     'ORIGINAL AAA',
 );
 
-/*
- * This directory will intentionally conflict with a file
- * in the archive.
- *
- * The planner sees it as a "create" target because it is
- * not a file. The executor will encounter it after the
- * successful overwrite of aaa-existing.txt and fail.
- */
+// This directory will intentionally conflict with a file in the archive.
 mkdir($server . '/blocked', 0750, true);
 
-/*
- * Build the test archive.
- *
- * aaa-existing.txt sorts before blocked, so the overwrite
- * happens first. blocked then causes deployment to fail.
- */
+// Build the test archive.
 $zip = new ZipArchive();
 
 if ($zip->open($archive, ZipArchive::CREATE) !== true) {
@@ -115,11 +101,7 @@ try {
         );
     }
 
-    /*
-     * The overwrite happened before the failure.
-     *
-     * Rollback must restore the original contents.
-     */
+    // The overwrite happened before the failure. Rollback must restore the original contents.
     if (
         file_get_contents(
             $server . '/aaa-existing.txt',
@@ -132,9 +114,7 @@ try {
 
     echo "PASS: overwritten file restored\n";
 
-    /*
-     * The conflicting directory must remain untouched.
-     */
+    // The conflicting directory must remain untouched.
     if (!is_dir($server . '/blocked')) {
         throw new RuntimeException(
             'Rollback damaged the pre-existing blocked directory.'

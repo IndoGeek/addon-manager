@@ -1,21 +1,4 @@
-/*
- * ModpackInstaller.tsx — page entry component.
- *
- * This file owns the page-level STATE and DATA FETCHING only. All
- * reusable UI lives in modules:
- *
- *   components/toolbar/*    toolbar, filter panel, active-filter chips
- *   components/cards/*      catalog cards, results, pagination, images
- *   components/modals/*     modal chrome + modal bodies
- *   components/common/*     shared widgets (Dropdown)
- *   components/icons/*      SVG icons
- *   components/types/*      API response/filter types
- *   components/utils/*      constants + formatting helpers
- *   components/styles/*     CSS sources (root.css is generated from these)
- *
- * The panel's route registration and conf.yml reference this exact
- * filename (ModpackInstaller), so it must stay at components/.
- */
+// ModpackInstaller.tsx — page entry component.
 
 import React, { useEffect, useRef, useState } from 'react';
 import axios from 'axios';

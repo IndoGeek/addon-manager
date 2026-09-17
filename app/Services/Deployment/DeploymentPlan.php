@@ -4,9 +4,7 @@ namespace Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\De
 
 final class DeploymentPlan
 {
-    /**
-     * @param DeploymentOperation[] $operations
-     */
+    // @param DeploymentOperation[] $operations
     public function __construct(
         public readonly array $operations,
     ) {

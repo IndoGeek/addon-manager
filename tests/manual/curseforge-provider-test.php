@@ -140,11 +140,7 @@ function pass(string $name): void
     echo "PASS: {$name}\n";
 }
 
-/**
- * Lists the relative paths inside a normalized package directory.
- *
- * @return list<string>
- */
+// Lists the relative paths inside a normalized package directory.
 function packageDirectoryFiles(string $directory): array
 {
     $files = [];

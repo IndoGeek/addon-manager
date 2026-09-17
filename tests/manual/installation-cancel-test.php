@@ -1,14 +1,6 @@
 <?php
 
-/**
- * Functional tests for the installation cancellation flow:
- *   - InstallationCancelledException is a distinct RuntimeException
- *   - DeploymentExecutor aborts mid-plan with the unwrapped cancellation
- *     exception and stops before writing further files
- *   - ArchiveExtractor aborts mid-archive and removes its partial output
- *   - DownloadManager's cancel checker does not disturb URL validation,
- *     and rejected downloads still leave nothing behind
- */
+// Functional tests for the installation cancellation flow: - InstallationCancelledException is a distinct...
 
 require __DIR__ . '/../../app/Services/Installation/InstallationCancelledException.php';
 require __DIR__ . '/../../app/Services/Server/ServerFileTarget.php';

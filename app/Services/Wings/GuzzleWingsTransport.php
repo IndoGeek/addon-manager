@@ -5,14 +5,7 @@ namespace Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Wi
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\TransferException;
 
-/**
- * Default Wings transport built on Guzzle (a Pterodactyl Panel dependency).
- *
- * Auth header construction and the node connection address are handled by
- * WingsFileClient/WingsServerFileTargetFactory; this transport only performs
- * the raw HTTP round trip. HTTP error statuses are returned to the caller for
- * mapping (http_errors disabled) so status handling lives in one place.
- */
+// Default Wings transport built on Guzzle (a Pterodactyl Panel dependency).
 final class GuzzleWingsTransport implements WingsTransport
 {
     public function __construct(

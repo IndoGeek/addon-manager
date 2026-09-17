@@ -13,17 +13,10 @@ use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogVersion;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogVersionQuery;
 
-/**
- * Deterministic in-memory catalog used for development and the manual test
- * suite. Results are synthetic and clearly labeled; the production UI never
- * presents them as live upstream data (this provider is flagged development
- * only and filtered out of the provider selector).
- */
+// Deterministic in-memory catalog used for development and the manual test suite.
 final class MockCatalogProvider implements CatalogProvider
 {
-    /**
-     * @var array<int, array<string, mixed>>
-     */
+    // @var array<int, array<string, mixed>>
     private const MODPACKS = [
         [
             'provider_project_id' => 'example-pack',
@@ -68,12 +61,7 @@ final class MockCatalogProvider implements CatalogProvider
         ],
     ];
 
-    /**
-     * Mock versions keyed by project slug. version_id equals version_number so
-     * the pinned source format (mock://slug@versionId) resolves deterministically.
-     *
-     * @var array<string, array<int, array<string, mixed>>>
-     */
+    // Mock versions keyed by project slug.
     private const MODPACK_VERSIONS = [
         'example-pack' => [
 [
@@ -179,9 +167,7 @@ final class MockCatalogProvider implements CatalogProvider
         return null;
     }
 
-    /**
-     * @return array{query: bool, game_versions: bool, loaders: bool, categories: bool, environment: bool, sort: bool}
-     */
+    // @return array{query: bool, game_versions: bool, loaders: bool, categories: bool, environment: bool, sort: bool}
     public function capabilities(): array
     {
         return [
@@ -194,9 +180,7 @@ final class MockCatalogProvider implements CatalogProvider
         ];
     }
 
-    /**
-     * @return array{game_versions: array<int, string>, loaders: array<int, string>, categories: array<int, string>, environments: array<int, string>}
-     */
+    // @return array{game_versions: array<int, string>, loaders: array<int, string>, categories: array<int, string>...
     public function facets(): array
     {
         return [
@@ -244,9 +228,7 @@ final class MockCatalogProvider implements CatalogProvider
         );
     }
 
-    /**
-     * @return array<int, array<string, mixed>>
-     */
+    // @return array<int, array<string, mixed>>
     public function versions(CatalogVersionQuery $query): array
     {
         $modpack = $this->findModpack($query->project);
@@ -319,9 +301,7 @@ final class MockCatalogProvider implements CatalogProvider
         );
     }
 
-    /**
-     * @param array<string, mixed> $modpack
-     */
+    // @param array<string, mixed> $modpack
     private function buildItem(array $modpack): CatalogItem
     {
         return new CatalogItem(
@@ -348,9 +328,7 @@ final class MockCatalogProvider implements CatalogProvider
         );
     }
 
-    /**
-     * @param array<string> $tags
-     */
+    // @param array<string> $tags
     private static function environmentFromTags(array $tags): ?string
     {
         $hasClient = in_array('client', $tags, true);
@@ -371,11 +349,7 @@ final class MockCatalogProvider implements CatalogProvider
         return null;
     }
 
-    /**
-     * @param array<string, array<int, string>> $keys
-     *
-     * @return array<int, string>
-     */
+    // @param array<string, array<int, string>> $keys @return array<int, string>
     private static function collectValues(array $keys): array
     {
         $values = [];
@@ -391,9 +365,7 @@ final class MockCatalogProvider implements CatalogProvider
         return array_keys($values);
     }
 
-    /**
-     * @return array<string, mixed>|null
-     */
+    // @return array<string, mixed>|null
     private function findModpack(string $project): ?array
     {
         foreach (self::MODPACKS as $modpack) {
@@ -408,9 +380,7 @@ final class MockCatalogProvider implements CatalogProvider
         return null;
     }
 
-    /**
-     * @param array<string, mixed> $version
-     */
+    // @param array<string, mixed> $version
     private static function matchesVersion(
         array $version,
         CatalogVersionQuery $query,
@@ -432,9 +402,7 @@ final class MockCatalogProvider implements CatalogProvider
         return true;
     }
 
-    /**
-     * @param array<string, mixed> $modpack
-     */
+    // @param array<string, mixed> $modpack
     private static function matches(
         array $modpack,
         CatalogSearchQuery $query,
@@ -485,10 +453,7 @@ final class MockCatalogProvider implements CatalogProvider
         return true;
     }
 
-    /**
-     * @param array<string> $filterValues
-     * @param array<string> $candidateValues
-     */
+    // @param array<string> $filterValues @param array<string> $candidateValues
     private static function anyIntersect(
         array $filterValues,
         array $candidateValues,
@@ -500,14 +465,7 @@ final class MockCatalogProvider implements CatalogProvider
         return array_intersect($filterValues, $candidateValues) !== [];
     }
 
-    /**
-     * A pack matches an environment selection when any of the selected
-     * environments is satisfied by its own tags. The combined tag is treated
-     * as both sides present (mirroring the upstream providers).
-     *
-     * @param array<string> $packEnvironments
-     * @param array<string> $selected
-     */
+    // A pack matches an environment selection when any of the selected environments is satisfied by its own tags.
     private static function matchesEnvironment(
         array $packEnvironments,
         array $selected,
@@ -534,9 +492,7 @@ final class MockCatalogProvider implements CatalogProvider
         return false;
     }
 
-    /**
-     * @return array<string>
-     */
+    // @return array<string>
     private static function stringList(mixed $value): array
     {
         if (!is_array($value)) {

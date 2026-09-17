@@ -12,69 +12,32 @@ final class DownloadManager implements ConcurrentDownloader
 
     private const MAX_REDIRECTS = 5;
 
-    /**
-     * How many independent transfers downloadBatch() keeps in flight at once.
-     * The ethics of higher numbers trade memory/descriptors for wall-clock
-     * speed; eight is a safe balance for hundreds of mod files.
-     */
+    // How many independent transfers downloadBatch() keeps in flight at once.
     private const BATCH_CONCURRENCY = 8;
 
-    /**
-     * Total transfer attempts per hop, including the first. A mirror or
-     * transport glitch can kill a large download mid-body, so a bounded
-     * retry is worth more than surface diagnostic-only errors.
-     */
+    // Total transfer attempts per hop, including the first.
     private const MAX_ATTEMPTS = 3;
 
-    /**
-     * A transfer that cannot push even one byte for this many seconds is
-     * treated as dead. libcurl only invokes the transfer/cancel callback while
-     * bytes are moving, so a server that accepts the connection but then stalls
-     * leaves curl blocked in a read and the cancel checker is never reached.
-     * This bounded stall detection turns such a hang into a normal transfer
-     * error, after which the retry loop consults the cancel checker and aborts
-     * promptly when a cancellation has been requested.
-     */
+    // A transfer that cannot push even one byte for this many seconds is treated as dead.
     private const LOW_SPEED_LIMIT_BYTES = 1;
 
     private const LOW_SPEED_TIME_SECONDS = 8;
 
-    /**
-     * @var null|callable(int|null $downloadedBytes, int|null $totalBytes): void
-     */
+    // @var null|callable(int|null $downloadedBytes, int|null $totalBytes): void
     private $progressCallback = null;
 
-    /**
-     * @var null|callable(): bool
-     */
+    // @var null|callable(): bool
     private $cancelChecker = null;
 
-    /**
-     * Bytes already accounted for by earlier downloads in the same logical
-     * operation, plus the operation-wide total when one has been anchored with
-     * setProgressOffset(). While set, progress callbacks receive cumulative
-     * values so a multi-part download (modpack archive plus its mod files)
-     * renders as one smooth, monotonic progress bar instead of resetting.
-     */
+    // Bytes already accounted for by earlier downloads in the same logical operation, plus the operation-wide total when one...
     private int $progressOffsetBytes = 0;
 
     private ?int $progressOffsetTotal = null;
 
-    /**
-     * Timestamp of the last progress write so manual reportProgress() calls
-     * share the same 0.4s throttle as the transfer callback, keeping hot
-     * packaging loops from flooding the progress store.
-     */
+    // Timestamp of the last progress write so manual reportProgress() calls share the same 0.4s throttle as the transfer...
     private float $lastProgressReport = 0.0;
 
-    /**
-     * Additional reserved/private networks that PHP's filter_var IP flags do
-     * not classify as non-public. They must never be reachable from the
-     * downloader (metadata services, multicast, NAT gateways, benchmarks and
-     * documentation ranges).
-     *
-     * @var array<int, non-empty-string>
-     */
+    // Additional reserved/private networks that PHP's filter_var IP flags do not classify as non-public.
     private const BLOCKED_CIDRS = [
         '100.64.0.0/10',
         '192.0.0.0/24',
@@ -96,32 +59,19 @@ final class DownloadManager implements ConcurrentDownloader
     ) {
     }
 
-    /**
-     * Registers a callback invoked while the payload body is being streamed
-     * to disk so callers can surface download progress.
-     *
-     * @param null|callable(int|null $downloadedBytes, int|null $totalBytes): void $callback
-     */
+    // Registers a callback invoked while the payload body is being streamed to disk so callers can surface download progress.
     public function setProgressCallback(?callable $callback): void
     {
         $this->progressCallback = $callback;
     }
 
-    /**
-     * Registers a predicate consulted mid-transfer. When it returns true the
-     * in-flight request aborts and the download is treated as cancelled.
-     *
-     * @param null|callable(): bool $checker
-     */
+    // Registers a predicate consulted mid-transfer.
     public function setCancelChecker(?callable $checker): void
     {
         $this->cancelChecker = $checker;
     }
 
-    /**
-     * Anchors progress reporting to a running total shared across several
-     * downloads. See the Downloader interface for semantics.
-     */
+    // Anchors progress reporting to a running total shared across several downloads.
     public function setProgressOffset(int $completedBytes, ?int $totalBytes): void
     {
         $this->progressOffsetBytes = max(0, $completedBytes);
@@ -487,15 +437,7 @@ final class DownloadManager implements ConcurrentDownloader
         }
     }
 
-    /**
-     * Opens a curl handle for a task's current URL, or advances the task
-     * through its remaining candidates when the current one cannot be used.
-     * A task with no usable candidate is marked failed.
-     *
-     * @param array<string, mixed>       $state
-     * @param array<string, true>        $active
-     * @param \CurlMultiHandle           $multi
-     */
+    // Opens a curl handle for a task's current URL, or advances the task through its remaining candidates when the current...
     private function batchReopen(
         array &$state,
         array &$active,
@@ -547,14 +489,7 @@ final class DownloadManager implements ConcurrentDownloader
         }
     }
 
-    /**
-     * Configures a ready-to-run curl handle for the given task, mirroring the
-     * single-download option set (public-address pinning, manual redirects,
-     * bounded low-speed and reference-counted size/cancel checks).
-     *
-     * @param array<string, mixed> $state
-     * @param list<string>         $resolveEntries
-     */
+    // Configures a ready-to-run curl handle for the given task, mirroring the single-download option set (public-address...
     private function batchConfigureHandle(array &$state, array $resolveEntries): \CurlHandle
     {
         $curl = curl_init();
@@ -619,17 +554,7 @@ final class DownloadManager implements ConcurrentDownloader
         return $curl;
     }
 
-    /**
-     * Drains every completed handle from the multi engine, applying the same
-     * hop/retry/candidate state machine as download(): 2xx settles the task,
-     * 3xx is redirected manually (re-validated and re-pinned per hop), hard
-     * transfer errors retry up to MAX_ATTEMPTS per candidate, and any other
-     * terminal state moves the task to its next candidate.
-     *
-     * @param \CurlMultiHandle    $multi
-     * @param array<string, array<string, mixed>> $pending
-     * @param array<string, true> $active
-     */
+    // Drains every completed handle from the multi engine, applying the same hop/retry/candidate state machine as download():...
     private function processBatchMessages(
         $multi,
         array &$pending,
@@ -769,12 +694,7 @@ final class DownloadManager implements ConcurrentDownloader
         }
     }
 
-    /**
-     * Handles a failed transfer attempt: retries the same URL when attempts
-     * remain, otherwise falls through to the next candidate.
-     *
-     * @param array<string, mixed> $state
-     */
+    // Handles a failed transfer attempt: retries the same URL when attempts remain, otherwise falls through to the next...
     private function batchFailAttempt(array &$state): void
     {
         if ($state['attempts'] > 1) {
@@ -786,12 +706,7 @@ final class DownloadManager implements ConcurrentDownloader
         $this->batchToNextCandidate($state);
     }
 
-    /**
-     * Moves a task to its next candidate (resetting hop/attempt state) or
-     * marks it failed once every candidate has been tried.
-     *
-     * @param array<string, mixed> $state
-     */
+    // Moves a task to its next candidate (resetting hop/attempt state) or marks it failed once every candidate has been tried.
     private function batchToNextCandidate(array &$state): void
     {
         $state['index']++;
@@ -808,12 +723,7 @@ final class DownloadManager implements ConcurrentDownloader
         $this->batchResetFile($state);
     }
 
-    /**
-     * Truncates a task's destination slot for the next hop or attempt so the
-     * file only ever holds the winning body.
-     *
-     * @param array<string, mixed> $state
-     */
+    // Truncates a task's destination slot for the next hop or attempt so the file only ever holds the winning body.
     private function batchResetFile(array &$state): void
     {
         rewind($state['handle']);
@@ -821,14 +731,7 @@ final class DownloadManager implements ConcurrentDownloader
         $state['headers'] = '';
     }
 
-    /**
-     * Reports an aggregated, monotonic progress value across every active and
-     * settled task, anchored on the previously configured offset. Failed tasks
-     * drop out of the running sum, so the reported value is clamped to the
-     * highest value seen to keep the bar moving strictly forward.
-     *
-     * @param array<string, array<string, mixed>> $pending
-     */
+    // Reports an aggregated, monotonic progress value across every active and settled task, anchored on the previously...
     private function aggregateBatchProgress(
         array &$pending,
         int $peak,
@@ -896,12 +799,7 @@ final class DownloadManager implements ConcurrentDownloader
         return max($peak, $done);
     }
 
-    /**
-     * Performs a single HTTP request, streaming any body into the provided
-     * handle, and returns [status code, raw response headers].
-     *
-     * @return array{0: int, 1: string}
-     */
+    // Performs a single HTTP request, streaming any body into the provided handle, and returns [status code, raw response...
     private function performRequest(
         string $url,
         $handle,
@@ -1075,21 +973,13 @@ final class DownloadManager implements ConcurrentDownloader
         );
     }
 
-    /**
-     * @param array{scheme: string, host: string, port?: int} $parts
-     */
+    // @param array{scheme: string, host: string, port?: int} $parts
     private static function portFor(array $parts): int
     {
         return $parts['port'] ?? ($parts['scheme'] === 'https' ? 443 : 80);
     }
 
-    /**
-     * @return array{
-     *     scheme: string,
-     *     host: string,
-     *     port?: int
-     * }
-     */
+    // scheme: string, host: string, port?: int }
     private function validateUrl(string $url): array
     {
         if ($url === '') {
@@ -1160,21 +1050,7 @@ final class DownloadManager implements ConcurrentDownloader
         ];
     }
 
-    /**
-     * Builds CURLOPT_RESOLVE entries for every verified public IPv4 address of
-     * the download host. Pinning several addresses (instead of a single
-     * resolved IP) lets libcurl fail over between CDN edges, which prevents a
-     * single throttled or flaky edge from aborting a large transfer.
-     *
-     * IPv6 (AAAA) addresses are deliberately not pinned. When libcurl is given
-     * a bond for an address family the host cannot route, it aborts the whole
-     * connect instead of falling back to the pinned IPv4 address, so dual
-     * stack hosts are pinned by their IPv4 addresses only.
-     *
-     * @param array{scheme: string, host: string, port?: int} $parts
-     *
-     * @return list<string>
-     */
+    // Builds CURLOPT_RESOLVE entries for every verified public IPv4 address of the download host.
     private function resolveEntries(array $parts): array
     {
         $entries = [];
@@ -1188,11 +1064,7 @@ final class DownloadManager implements ConcurrentDownloader
         return $entries;
     }
 
-    /**
-     * Resolves a host to its verified public addresses, preferring IPv4.
-     *
-     * @return list<string>
-     */
+    // Resolves a host to its verified public addresses, preferring IPv4.
     private function resolvePublicAddresses(string $host): array
     {
         if (filter_var($host, FILTER_VALIDATE_IP)) {
@@ -1248,11 +1120,7 @@ final class DownloadManager implements ConcurrentDownloader
         );
     }
 
-    /**
-     * Writes a structured diagnostic line before a transfer failure is
-     * rethrown so production panels can see exactly which curl error killed
-     * the download instead of only a generic "Unable to install the modpack".
-     */
+    // Writes a structured diagnostic line before a transfer failure is rethrown so production panels can see exactly which...
     private function recordTransferFailure(
         $curl,
         string $host,

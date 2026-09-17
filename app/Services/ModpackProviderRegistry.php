@@ -7,9 +7,7 @@ use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Providers\Modpack
 
 final class ModpackProviderRegistry
 {
-    /**
-     * @param ModpackProvider[] $providers
-     */
+    // @param ModpackProvider[] $providers
     public function __construct(
         private array $providers,
     ) {}

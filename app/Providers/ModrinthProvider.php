@@ -19,19 +19,10 @@ final class ModrinthProvider implements ModpackProvider, PartialPackageProvider
 
     private const INDEX_FILE = 'modrinth.index.json';
 
-    /**
-     * Share of the download progress band reserved for the mrpack archive
-     * itself. The archive is anchored to a virtual total (archive size
-     * divided by this slice) so that its phase fills 0..~(slice*85)% instead
-     * of spiking toward 85% and dropping when buildServerArchive re-anchors
-     * on the real network footprint (mrpack bytes plus every index mod).
-     */
+    // Share of the download progress band reserved for the mrpack archive itself.
     private const PROGRESS_ARCHIVE_SLICE = 0.12;
 
-    /**
-     * Winning source for a given relative server path: later entries override
-     * earlier ones (e.g. server-overrides/config.toml beats overrides/...).
-     */
+    // Winning source for a given relative server path: later entries override earlier ones (e.g.
     private const ENTRY_PRIORITIES = [
         'index' => 0,
         'mods' => 1,
@@ -39,9 +30,7 @@ final class ModrinthProvider implements ModpackProvider, PartialPackageProvider
         'server-overrides' => 3,
     ];
 
-    /**
-     * @var array<string, true> Paths of temporary archives awaiting cleanup.
-     */
+    // @var array<string, true> Paths of temporary archives awaiting cleanup.
     private array $temporaryPackages = [];
 
     public function __construct(
@@ -206,15 +195,7 @@ final class ModrinthProvider implements ModpackProvider, PartialPackageProvider
         $this->removeTracked($package->archivePath);
     }
 
-    /**
-     * Builds a package holding only the requested server-relative paths.
-     * Used by restore: the mrpack archive is still downloaded (the index
-     * lives inside it and identifies every file), but only the wanted
-     * embedded entries stream out and only the wanted index files are
-     * fetched from the network.
-     *
-     * @param list<string> $paths normalized server-relative paths
-     */
+    // Builds a package holding only the requested server-relative paths.
     public function getPackageForPaths(
         string $source,
         array $paths,
@@ -351,9 +332,7 @@ final class ModrinthProvider implements ModpackProvider, PartialPackageProvider
         unset($this->temporaryPackages[$path]);
     }
 
-    /**
-     * @return array<string, mixed>
-     */
+    // @return array<string, mixed>
     private function fetchProject(string $identifier): array
     {
         try {
@@ -391,9 +370,7 @@ final class ModrinthProvider implements ModpackProvider, PartialPackageProvider
         }
     }
 
-    /**
-     * @return array<int, array<string, mixed>>
-     */
+    // @return array<int, array<string, mixed>>
     private function fetchVersions(string $identifier): array
     {
         try {
@@ -439,11 +416,7 @@ final class ModrinthProvider implements ModpackProvider, PartialPackageProvider
         }
     }
 
-    /**
-     * @param array<string, mixed> $project
-     *
-     * @return array<string, mixed>
-     */
+    // @param array<string, mixed> $project @return array<string, mixed>
     private function selectedVersion(
         ?string $versionId,
         array $project,
@@ -462,11 +435,7 @@ final class ModrinthProvider implements ModpackProvider, PartialPackageProvider
         );
     }
 
-    /**
-     * Fetches a single Modrinth version by its exact id.
-     *
-     * @return array<string, mixed>
-     */
+    // Fetches a single Modrinth version by its exact id.
     private function fetchVersionById(string $versionId): array
     {
         try {
@@ -504,15 +473,7 @@ final class ModrinthProvider implements ModpackProvider, PartialPackageProvider
         }
     }
 
-    /**
-     * Prevents a client-supplied version id from referencing a version that
-     * belongs to a different project. A version payload without a project id
-     * is tolerated so providers without the field keep working, but any id
-     * that is present must match the resolved project.
-     *
-     * @param array<string, mixed> $version
-     * @param array<string, mixed> $project
-     */
+    // Prevents a client-supplied version id from referencing a version that belongs to a different project.
     private function assertVersionBelongsToProject(
         array $version,
         array $project,
@@ -530,9 +491,7 @@ final class ModrinthProvider implements ModpackProvider, PartialPackageProvider
         }
     }
 
-    /**
-     * @param array<string, mixed> $project
-     */
+    // @param array<string, mixed> $project
     private function assertModpackProject(array $project): void
     {
         if (($project['project_type'] ?? '') !== 'modpack') {
@@ -542,11 +501,7 @@ final class ModrinthProvider implements ModpackProvider, PartialPackageProvider
         }
     }
 
-    /**
-     * @param array<int, array<string, mixed>> $versions
-     *
-     * @return array<string, mixed>
-     */
+    // @param array<int, array<string, mixed>> $versions @return array<string, mixed>
     private function selectVersion(array $versions): array
     {
         if ($versions === []) {
@@ -573,11 +528,7 @@ final class ModrinthProvider implements ModpackProvider, PartialPackageProvider
         return $sorted[0];
     }
 
-    /**
-     * @param array<int, array<string, mixed>> $files
-     *
-     * @return array<string, mixed>|null
-     */
+    // @param array<int, array<string, mixed>> $files @return array<string, mixed>|null
     private function selectPrimaryFile(array $files): ?array
     {
         foreach ($files as $file) {
@@ -589,11 +540,7 @@ final class ModrinthProvider implements ModpackProvider, PartialPackageProvider
         return $files[0] ?? null;
     }
 
-    /**
-     * When $wantedPaths is non-null the build is restricted to those
-     * server-relative paths (restore flow): embedded entries stream only
-     * their files and the index phase fetches only wanted downloads.
-     */
+    // When $wantedPaths is non-null the build is restricted to those server-relative paths (restore flow): embedded entries...
     private function buildServerArchive(
         string $archivePath,
         ?array $wantedPaths = null,
@@ -689,15 +636,7 @@ final class ModrinthProvider implements ModpackProvider, PartialPackageProvider
         }
     }
 
-    /**
-     * Downloads every index-file member into the package directory, resolving
-     * them either through the parallel batch engine when the transport
-     * supports it or serially. Index mods carry exactly one download source,
-     * so a file that cannot be fetched fails loudly — an mrpack without its
-     * mods would otherwise install a mod-less server.
-     *
-     * @param array<string, array{archiveEntry: string|null, downloadUrl: string|null, priority: string, bytes: int}> $content
-     */
+    // Downloads every index-file member into the package directory, resolving them either through the parallel batch engine...
     private function fetchIndexFilesFromNetwork(
         array $content,
         string $outputPath,
@@ -785,10 +724,7 @@ final class ModrinthProvider implements ModpackProvider, PartialPackageProvider
         }
     }
 
-    /**
-     * Streams a single mrpack entry into the package directory, reporting
-     * cumulative progress and honouring cancellation per chunk.
-     */
+    // Streams a single mrpack entry into the package directory, reporting cumulative progress and honouring cancellation per...
     private function writePackageEntry(
         ZipArchive $source,
         string $entry,
@@ -859,10 +795,7 @@ final class ModrinthProvider implements ModpackProvider, PartialPackageProvider
         }
     }
 
-    /**
-     * Resolves a safe relative path inside the package directory, creating any
-     * leading directories as needed.
-     */
+    // Resolves a safe relative path inside the package directory, creating any leading directories as needed.
     private function packageOutputPath(string $outputPath, string $relative): string
     {
         $path = $outputPath . '/' . $relative;
@@ -936,13 +869,7 @@ final class ModrinthProvider implements ModpackProvider, PartialPackageProvider
         }
     }
 
-    /**
-     * Collects server-deployable entries embedded in the archive payload
-     * itself (overrides, server-overrides and top-level mods), keeping the
-     * highest-precedence source for every relative path.
-     *
-     * @return array<string, array{archiveEntry: string, downloadUrl: null, priority: string, bytes: int}>
-     */
+    // Collects server-deployable entries embedded in the archive payload itself (overrides, server-overrides and top-level...
     private function collectArchiveContent(
         ZipArchive $source,
         ?array $wanted = null,
@@ -995,21 +922,7 @@ final class ModrinthProvider implements ModpackProvider, PartialPackageProvider
         return $content;
     }
 
-    /**
-     * Resolves server-required files referenced by modrinth.index.json. The
-     * mrpack format keeps mods outside the archive and lists each of them as
-     * an external download, so installing a Modrinth pack without resolving
-     * these would deploy a mod-less server. Files whose environment explicitly
-     * excludes the server are skipped.
-     *
-     * Malformed or unresolvable manifests fail loudly (never silently skip)
-     * so a partial install is never reported as complete.
-     *
-     * When $wanted is non-null (restore flow) index files outside the wanted
-     * set are skipped without being queued for download.
-     *
-     * @param array<string, array{archiveEntry: string|null, downloadUrl: string|null, priority: string, bytes: int}> $content
-     */
+    // Resolves server-required files referenced by modrinth.index.json.
     private function mergeIndexFiles(
         ZipArchive $source,
         array &$content,
@@ -1086,9 +999,7 @@ final class ModrinthProvider implements ModpackProvider, PartialPackageProvider
         }
     }
 
-    /**
-     * @param array{priority: string}|null $existing
-     */
+    // @param array{priority: string}|null $existing
     private function shouldReplace(?array $existing, string $priority): bool
     {
         if ($existing === null) {
@@ -1122,11 +1033,7 @@ final class ModrinthProvider implements ModpackProvider, PartialPackageProvider
         return null;
     }
 
-    /**
-     * Resolves an mrpack entry to a server-deployable relative path.
-     *
-     * @return array{relative: string, priority: string}|null
-     */
+    // Resolves an mrpack entry to a server-deployable relative path.
     private function serverEntryName(string $name): ?array
     {
         $priority = null;
@@ -1194,13 +1101,7 @@ final class ModrinthProvider implements ModpackProvider, PartialPackageProvider
         return $base;
     }
 
-    /**
-     * Resolves a source string to a Modrinth project id/slug and an optional
-     * exact-version pin (modrinth://slug@versionId). Returns null when the
-     * syntax is unsupported.
-     *
-     * @return array{project: string, versionId: string|null}|null
-     */
+    // Resolves a source string to a Modrinth project id/slug and an optional exact-version pin (modrinth://slug@versionId).
     private function parseSource(string $source): ?array
     {
         $trimmed = trim($source);
@@ -1269,9 +1170,7 @@ final class ModrinthProvider implements ModpackProvider, PartialPackageProvider
         ];
     }
 
-    /**
-     * @param array<mixed> $values
-     */
+    // @param array<mixed> $values
     private function firstNonEmpty(array $values): ?string
     {
         foreach ($values as $value) {

@@ -1,19 +1,5 @@
 #!/usr/bin/env node
-/*
- * build-css.mjs — generate root.css from the modular source files in
- * components/styles/.
- *
- * The panel build (and conf.yml's dashboard.css entry) consumes a single
- * root.css file, so this script concatenates the source files listed in
- * components/styles/index.css — in import order — into root.css at the
- * repo root.
- *
- * Source files are the ONLY thing you edit. root.css is regenerated:
- *   - automatically by build.sh before every deploy,
- *   - manually any time via:  node tools/build-css.mjs
- *
- * A guard comment at the top of root.css warns against hand edits.
- */
+// build-css.mjs — generate root.css from the modular source files in components/styles/.
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -24,13 +10,7 @@ const stylesDir = join(repoRoot, 'components', 'styles');
 const indexCss = join(stylesDir, 'index.css');
 const outFile = join(repoRoot, 'root.css');
 
-const GUARD = `/*
- * GENERATED FILE — DO NOT EDIT.
- *
- * root.css is generated from the modular sources in components/styles/.
- * Edit those files, then regenerate with:  node tools/build-css.mjs
- * (build.sh runs this automatically before every deploy.)
- */
+const GUARD = `/* GENERATED FILE — DO NOT EDIT. root.css is generated from the modular sources in components/styles/; edit those and regenerate with: node tools/build-css.mjs (build.sh runs this automatically before every deploy). */
 `;
 
 // Parse @import './x.css' lines out of index.css, preserving order.

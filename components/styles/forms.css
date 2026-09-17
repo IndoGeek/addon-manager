@@ -1,9 +1,4 @@
-/*
- * forms.css — manual source form, statuses, metadata/result panels.
- *
- * SOURCE file — root.css is generated from these files by
- * tools/build-css.mjs (run by build.sh). Do NOT edit root.css directly.
- */
+/* forms.css — manual source form, statuses, metadata/result panels. */
 
 .modpackinstaller-manual-panel {
   margin-top: 16px;

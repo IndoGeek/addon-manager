@@ -1,9 +1,4 @@
-/*
- * cards.css — catalog cards (grid + list), media, pills, stats, actions.
- *
- * SOURCE file — root.css is generated from these files by
- * tools/build-css.mjs (run by build.sh). Do NOT edit root.css directly.
- */
+/* cards.css — catalog cards (grid + list), media, pills, stats, actions. */
 
 .modpackinstaller-catalog-grid {
   display: grid;
@@ -73,8 +68,7 @@
   padding: 6px 8px;
 }
 
-/* Media keeps a fixed square shape; it no longer stretches to the card
- * height, which produced uneven leftover space under short images. */
+/* Media keeps a fixed square shape; it no longer stretches to the card height, which produced uneven leftover space under... */
 .modpackinstaller-catalog-card--list .modpackinstaller-card-media {
   flex: 0 0 72px;
   align-self: center;
@@ -139,8 +133,7 @@
   flex: 0 0 auto;
   font-weight: 400;
   opacity: 0.7;
-  /* Inline next to the title like Modrinth's "by <author>", not a
-   * right-floating column that strands empty space. */
+  /* Inline next to the title like Modrinth's "by <author>", not a right-floating column that strands empty space. */
   margin-left: 0;
   padding-left: 0;
   text-align: left;
@@ -334,9 +327,7 @@
   height: 10px;
 }
 
-/* List view meta row: pills + stats share ONE compact line below the
- * description, replacing the tall separate rows. Wraps instead of
- * disappearing when space runs out. */
+/* List view meta row: pills + stats share ONE compact line below the description, replacing the tall separate rows. */
 .modpackinstaller-catalog-card--list .modpackinstaller-catalog-card-meta {
   display: flex;
   flex-wrap: wrap;
@@ -356,8 +347,7 @@
   display: contents;
 }
 
-/* Smaller square icon buttons in list view keep the column height
- * below the content height so the card stays short. */
+/* Smaller square icon buttons in list view keep the column height below the content height so the card stays short. */
 .modpackinstaller-catalog-card--list .modpackinstaller-card-action-icon {
   width: 28px;
   height: 28px;
@@ -424,9 +414,7 @@
   cursor: wait;
 }
 
-/* Details/View: a step darker than the card surface with the same white
- * border as the view toggle, so it reads as a button without competing
- * with the green Open button. */
+/* Details/View: a step darker than the card surface with the same white border as the view toggle, so it reads as a... */
 .modpackinstaller-card-action-details {
   border: 1px solid rgba(255, 255, 255, 0.15);
   color: rgba(255, 255, 255, 0.9);

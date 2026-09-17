@@ -9,12 +9,7 @@ use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Wings\Wi
 use Pterodactyl\Models\Node;
 use Pterodactyl\Models\Server;
 
-/**
- * Builds a Wings-backed target from the authenticated Pterodactyl Server
- * model. The node connection address and daemon key come exclusively from the
- * Panel's Node model (same scheme the Panel itself uses); no URL, node ID,
- * port or token is ever accepted from a client request.
- */
+// Builds a Wings-backed target from the authenticated Pterodactyl Server model.
 final class WingsServerFileTargetFactory
 {
     public function __construct(

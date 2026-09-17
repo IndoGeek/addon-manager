@@ -4,18 +4,7 @@ namespace Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Ca
 
 use Throwable;
 
-/**
- * Short-lived cache for upstream catalog responses, backed by the panel's
- * Laravel cache repository (Redis on every stock Pterodactyl install).
- *
- * Catalog payloads are small JSON trees and only safe to hold for minutes:
- * new modpack versions are published continuously, so the TTL stays short
- * and every entry carries the exact query in its key. Every operation fails
- * soft — a cache outage must degrade catalog latency, never break it.
- *
- * The cache store is injected lazily: production resolves the Laravel
- * facade on first use, tests can supply an in-memory store.
- */
+// Short-lived cache for upstream catalog responses, backed by the panel's Laravel cache repository (Redis on every stock...
 final class CatalogCache
 {
     /** Prefix shared with build.sh's flush step — do not rename casually. */
@@ -30,11 +19,7 @@ final class CatalogCache
     ) {
     }
 
-    /**
-     * Builds a deterministic cache key from the request coordinates.
-     *
-     * @param array<int|string, mixed> $parts
-     */
+    // Builds a deterministic cache key from the request coordinates.
     public static function key(string $scope, array $parts): string
     {
         $normalized = [];
@@ -55,11 +40,7 @@ final class CatalogCache
             . hash('sha256', $encoded === false ? '' : $encoded);
     }
 
-    /**
-     * Returns the cached payload for the key, or null on miss/unavailability.
-     *
-     * @return mixed
-     */
+    // Returns the cached payload for the key, or null on miss/unavailability.
     public function get(string $key)
     {
         $store = $this->usableStore();
@@ -77,12 +58,7 @@ final class CatalogCache
         }
     }
 
-    /**
-     * Stores the payload under the key. Failures are swallowed: a broken
-     * cache store must never fail a request that already has fresh data.
-     *
-     * @param mixed $value
-     */
+    // Stores the payload under the key.
     public function put(string $key, $value): void
     {
         $store = $this->usableStore();
@@ -98,10 +74,7 @@ final class CatalogCache
         }
     }
 
-    /**
-     * Removes every entry this extension owns (the well-known scope keys).
-     * Never touches the panel's own cache entries.
-     */
+    // Removes every entry this extension owns (the well-known scope keys). Never touches the panel's own cache entries.
     public function flush(): void
     {
         $store = $this->usableStore();
@@ -119,21 +92,14 @@ final class CatalogCache
         }
     }
 
-    /**
-     * Injects a custom cache store (used by tests). Must expose
-     * get(string): mixed, put(string, mixed, int): void, forget(string): void.
-     */
+    // Injects a custom cache store (used by tests).
     public function useStore(object $store): void
     {
         $this->store = $store;
         $this->available = null;
     }
 
-    /**
-     * Resolves the cache store lazily: first use probes the Laravel cache
-     * facade and remembers the verdict, so a panel with broken Redis never
-     * retries on every request. Returns null when unavailable.
-     */
+    // Resolves the cache store lazily: first use probes the Laravel cache facade and remembers the verdict, so a panel with...
     private function usableStore(): ?object
     {
         if ($this->available !== null) {

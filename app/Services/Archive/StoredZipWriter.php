@@ -5,29 +5,13 @@ namespace Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Ar
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\InstallationCancelledException;
 use RuntimeException;
 
-/**
- * Produces a normalized STORED (uncompressed) zip archive by streaming every
- * entry directly into the destination file. Original ZipArchive builds had to
- * defer the payload write until close() so libzip could deflate each entry,
- * which made a multi-hundred-MB archive rewrite a single non-cancellable,
- * CPU-bound step with no progress reporting. This writer streams each entry
- * chunk-by-chunk instead, consulting the cancellation predicate and reporting
- * progress on every chunk. Because entries are stored uncompressed there is
- * no deferred deflate work left for close(): finish() merely appends the
- * central directory and the end-of-central-directory record.
- */
+// Produces a normalized STORED (uncompressed) zip archive by streaming every entry directly into the destination file.
 final class StoredZipWriter
 {
-    /**
-     * @var array<int, array{name: string, crc: int, size: int, offset: int, dosTime: int}>
-     */
+    // @var array<int, array{name: string, crc: int, size: int, offset: int, dosTime: int}>
     private array $centralDirectory = [];
 
-    /**
-     * @param resource                  $output            Seekable destination handle ('wb+').
-     * @param null|callable():bool      $cancelChecker     Consulted per chunk; when true the build aborts.
-     * @param null|callable(int $done, int|null $total): void $progressCallback Invoked per chunk.
-     */
+    // @param resource $output Seekable destination handle ('wb+').
     public function __construct(
         private $output,
         private readonly ?\Closure $cancelChecker = null,
@@ -35,14 +19,7 @@ final class StoredZipWriter
     ) {
     }
 
-    /**
-     * Streams the given entry into the archive as one STORED member. The final
-     * CRC and sizes are unknown until the stream has been consumed, so a
-     * placeholder local header is written first and patched afterwards (the
-     * output handle is seekable).
-     *
-     * @param resource $stream
-     */
+    // Streams the given entry into the archive as one STORED member.
     public function addFileFromStream(
         $stream,
         string $relative,
@@ -122,11 +99,7 @@ final class StoredZipWriter
         ];
     }
 
-    /**
-     * Appends the central directory and the end-of-central-directory record.
-     * All payload bytes were already streamed by addFileFromStream(), so this
-     * step is bounded and fast.
-     */
+    // Appends the central directory and the end-of-central-directory record.
     public function finish(): void
     {
         if (count($this->centralDirectory) > 0xFFFF) {

@@ -1,17 +1,6 @@
 <?php
 
-/**
- * Functional tests for partial package builds (getPackageForPaths), used by
- * the restore flow:
- *   - only the requested overrides entries stream out of the client pack
- *   - only the requested manifest mods are resolved and downloaded
- *   - the whole-manifest tolerance checks still guard a full build
- *   - a requested path that cannot be sourced fails loudly
- *   - invalid/empty wanted paths are rejected
- *
- * These tests mirror curseforge-provider-test.php's fakes but assert the
- * partial (restore) code paths specifically.
- */
+// Functional tests for partial package builds (getPackageForPaths), used by the restore flow: - only the requested...
 
 $projectRoot = dirname(__DIR__, 2);
 
@@ -140,11 +129,7 @@ function pass(string $name): void
     echo "PASS: {$name}\n";
 }
 
-/**
- * Lists the relative paths inside a normalized package directory.
- *
- * @return list<string>
- */
+// Lists the relative paths inside a normalized package directory.
 function packageDirectoryFiles(string $directory): array
 {
     $files = [];

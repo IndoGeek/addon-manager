@@ -5,16 +5,7 @@ namespace Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Se
 use InvalidArgumentException;
 use Pterodactyl\Models\Server;
 
-/**
- * Selects the server file target based on the configured deployment mode.
- *
- *   local  -> LocalFilesystemServerFileTarget (development/tests)
- *   wings  -> WingsServerFileTarget (production Panel -> Wings)
- *
- * An invalid or unsupported mode is a hard configuration error. The Wings
- * path never falls back to the local filesystem: if the node is unreachable
- * or unauthenticated an exception is raised instead.
- */
+// Selects the server file target based on the configured deployment mode.
 final class ServerTargetSelector
 {
     public const MODE_LOCAL = 'local';

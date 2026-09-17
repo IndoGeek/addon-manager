@@ -5,10 +5,7 @@ namespace Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Pr
 use RuntimeException;
 use Throwable;
 
-/**
- * Represents a provider API request failure. Messages are deliberately
- * generic and never include credentials, request headers, or response bodies.
- */
+// Represents a provider API request failure.
 final class ProviderHttpException extends RuntimeException
 {
     public function __construct(

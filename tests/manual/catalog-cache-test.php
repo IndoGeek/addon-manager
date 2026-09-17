@@ -1,14 +1,6 @@
 <?php
 
-/**
- * Functional tests for the catalog cache:
- *   - second identical search call is served from the cache (no additional
- *     provider requests)
- *   - different queries produce their own cache entries
- *   - a disabled cache behaves like an uncached service
- *   - fromArray hydration round-trips the payload faithfully
- *   - cache keys are scoped and query-sensitive
- */
+// Functional tests for the catalog cache: - second identical search call is served from the cache (no additional provider...
 
 $projectRoot = dirname(__DIR__, 2);
 
@@ -74,10 +66,7 @@ final class CacheFakeProviderHttpClient implements ProviderHttpClient
     }
 }
 
-/**
- * In-memory cache store standing in for the panel's Redis: same operations
- * the CatalogCache contract relies on, no Redis dependency in tests.
- */
+// In-memory cache store standing in for the panel's Redis: same operations the CatalogCache contract relies on, no Redis...
 final class ArrayCacheStore
 {
     /** @var array<string, mixed> */

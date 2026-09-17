@@ -4,23 +4,16 @@ namespace Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Ca
 
 use InvalidArgumentException;
 
-/**
- * Resolves catalog providers by name so the API layer never depends on a
- * concrete provider class.
- */
+// Resolves catalog providers by name so the API layer never depends on a concrete provider class.
 final class CatalogProviderRegistry
 {
-    /**
-     * @param array<int, CatalogProvider> $providers
-     */
+    // @param array<int, CatalogProvider> $providers
     public function __construct(
         private readonly array $providers,
     ) {
     }
 
-    /**
-     * @return array<int, CatalogProvider>
-     */
+    // @return array<int, CatalogProvider>
     public function all(): array
     {
         return $this->providers;

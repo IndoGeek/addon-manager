@@ -10,9 +10,7 @@ final class MockModpackProvider implements ModpackProvider
 {
     private const SOURCE = 'mock://example-pack';
 
-    /**
-     * @var array<string, true>
-     */
+    // @var array<string, true>
     private const VERSIONS = [
         '1.0.0' => true,
         '1.1.0' => true,
@@ -23,9 +21,7 @@ final class MockModpackProvider implements ModpackProvider
         return $this->parse($source) !== null;
     }
 
-    /**
-     * @return array{version: string|null}|null
-     */
+    // @return array{version: string|null}|null
     private function parse(string $source): ?array
     {
         $trimmed = trim($source);

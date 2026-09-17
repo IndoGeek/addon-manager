@@ -108,8 +108,7 @@ export const DetailsModalBody = ({
                 </div>
             )}
 
-            {/* ── Header card: logo, name, author, summary, tags,
-                View + Download actions ── */}
+            {/* ── Header card: logo, name, author, summary, tags, View + Download actions ── */}
             <section className="modpackinstaller-detail-card modpackinstaller-detail-header">
                 <div className="modpackinstaller-detail-header-logo">
                     <ModpackIcon

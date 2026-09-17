@@ -36,9 +36,7 @@ final class FakeWingsTransport implements WingsTransport
 
     private int $index = 0;
 
-    /**
-     * @param array<int, WingsTransportResponse> $responses
-     */
+    // @param array<int, WingsTransportResponse> $responses
     public function __construct(
         private array $responses = [],
     ) {

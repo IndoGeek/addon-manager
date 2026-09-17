@@ -2,12 +2,7 @@
 
 namespace Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Wings;
 
-/**
- * Raised when Wings returns a non-success HTTP status code.
- *
- * The message is always a static, generic string and never includes the
- * request URL, the daemon key, or any server identifier.
- */
+// Raised when Wings returns a non-success HTTP status code.
 class WingsHttpException extends WingsException
 {
     public function __construct(

@@ -18,17 +18,7 @@ use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Provider\ProviderHttpClient;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Provider\ProviderHttpException;
 
-/**
- * Real Modrinth catalog search. Only https://api.modrinth.com/v2 is used; all
- * client-supplied values are pre-validated slugs/versions embedded in query
- * facets, never in the request path, and every payload is type-checked before
- * it leaves this provider.
- *
- * Facet groups map 1:1 onto Modrinth semantics: every filter group becomes one
- * facet group (OR within a group, AND across groups). Multiple game versions,
- * loaders, categories and environments are therefore all genuine upstream
- * filters.
- */
+// Real Modrinth catalog search.
 final class ModrinthCatalogProvider implements CatalogProvider
 {
     private const API_BASE = 'https://api.modrinth.com/v2';
@@ -39,13 +29,7 @@ final class ModrinthCatalogProvider implements CatalogProvider
 
     private const URL_SLUG_PATTERN = '/^[A-Za-z0-9_-]{1,64}$/';
 
-    /**
-     * Curated common game versions offered as facet options. Modrinth accepts
-     * any release version in its "versions" facet; this list is static
-     * capability metadata, never a search result.
-     *
-     * @var array<string>
-     */
+    // Curated common game versions offered as facet options.
     private const COMMON_GAME_VERSIONS = [
         '1.21.9',
         '1.21.8',
@@ -69,13 +53,7 @@ final class ModrinthCatalogProvider implements CatalogProvider
         '1.16.5',
     ];
 
-    /**
-     * Modrinth categories that apply to modpacks. Loader and environment tags
-     * are handled by their own facet groups, so categories are the content
-     * tags only.
-     *
-     * @var array<string>
-     */
+    // Modrinth categories that apply to modpacks.
     private const MODPACK_CATEGORIES = [
         'adventure',
         'combat',
@@ -91,9 +69,7 @@ final class ModrinthCatalogProvider implements CatalogProvider
         'misc',
     ];
 
-    /**
-     * @var array<string, true>
-     */
+    // @var array<string, true>
     private const KNOWN_LOADERS = [
         'fabric' => true,
         'forge' => true,
@@ -139,9 +115,7 @@ final class ModrinthCatalogProvider implements CatalogProvider
         return null;
     }
 
-    /**
-     * @return array{query: bool, game_versions: bool, loaders: bool, categories: bool, environment: bool, sort: bool}
-     */
+    // @return array{query: bool, game_versions: bool, loaders: bool, categories: bool, environment: bool, sort: bool}
     public function capabilities(): array
     {
         return [
@@ -154,9 +128,7 @@ final class ModrinthCatalogProvider implements CatalogProvider
         ];
     }
 
-    /**
-     * @return array{game_versions: array<int, string>, loaders: array<int, string>, categories: array<int, string>, environments: array<int, string>}
-     */
+    // @return array{game_versions: array<int, string>, loaders: array<int, string>, categories: array<int, string>...
     public function facets(): array
     {
         return [
@@ -174,9 +146,7 @@ final class ModrinthCatalogProvider implements CatalogProvider
         return $this->mapPayload($query, $payload);
     }
 
-    /**
-     * @return array<int, CatalogVersion>
-     */
+    // @return array<int, CatalogVersion>
     public function versions(CatalogVersionQuery $query): array
     {
         $payload = $this->fetchVersions($query);
@@ -269,13 +239,7 @@ final class ModrinthCatalogProvider implements CatalogProvider
         }
     }
 
-    /**
-     * Minimal, escape-first Markdown-to-HTML conversion covering the constructs
-     * Modrinth project bodies actually use: headings, bold/italic, inline and
-     * fenced code, links, images, lists, blockquotes and paragraphs. Every text
-     * fragment is htmlspecialchars-escaped BEFORE any tag is produced, so the
-     * sanitizer downstream never sees injected markup from the source text.
-     */
+    // Minimal, escape-first Markdown-to-HTML conversion covering the constructs Modrinth project bodies actually use:...
     private function markdownToHtml(string $markdown): string
     {
         $escape = static fn (string $text): string =>
@@ -442,9 +406,7 @@ final class ModrinthCatalogProvider implements CatalogProvider
         return implode("\n", $html);
     }
 
-    /**
-     * @return array<int, array<string, mixed>>
-     */
+    // @return array<int, array<string, mixed>>
     private function fetchVersions(CatalogVersionQuery $query): array
     {
         $parameters = [];
@@ -482,12 +444,7 @@ final class ModrinthCatalogProvider implements CatalogProvider
         }
     }
 
-    /**
-     * A version is public unless the upstream explicitly marks it as a
-     * non-public status (drafts, scheduled, or unlisted releases).
-     *
-     * @param array<string, mixed> $version
-     */
+    // A version is public unless the upstream explicitly marks it as a non-public status (drafts, scheduled, or unlisted...
     private function isPublicVersion(array $version): bool
     {
         $status = $this->stringOrNull($version['status'] ?? null);
@@ -503,33 +460,21 @@ final class ModrinthCatalogProvider implements CatalogProvider
         );
     }
 
-    /**
-     * Whether a search hit can only run on the client. The server_side flag
-     * is 'unsupported' exactly for client-only packs; required/optional are
-     * both server installable.
-     *
-     * @param array<string, mixed> $hit
-     */
+    // Whether a search hit can only run on the client.
     private function hitIsClientOnly(array $hit): bool
     {
         return $this->stringOrNull($hit['server_side'] ?? null)
             === 'unsupported';
     }
 
-    /**
-     * Whether a version only runs on the client.
-     *
-     * @param array<string, mixed> $version
-     */
+    // Whether a version only runs on the client.
     private function versionIsClientOnly(array $version): bool
     {
         return $this->stringOrNull($version['environment'] ?? null)
             === 'client_only';
     }
 
-    /**
-     * @param array<string, mixed> $version
-     */
+    // @param array<string, mixed> $version
     private function mapVersion(
         CatalogVersionQuery $query,
         array $version,
@@ -557,13 +502,7 @@ final class ModrinthCatalogProvider implements CatalogProvider
         );
     }
 
-    /**
-     * Modrinth may advertise several files per version; the primary one is
-     * what the installer downloads. Prefer it, then fall back to the first
-     * file that actually reports a size.
-     *
-     * @param array<string, mixed> $version
-     */
+    // Modrinth may advertise several files per version; the primary one is what the installer downloads.
     private function primaryFileSize(array $version): ?int
     {
         $files = $version['files'] ?? null;
@@ -591,9 +530,7 @@ final class ModrinthCatalogProvider implements CatalogProvider
         return null;
     }
 
-    /**
-     * @return array<string, mixed>
-     */
+    // @return array<string, mixed>
     private function fetch(CatalogSearchQuery $query): array
     {
         $limit = min(
@@ -634,16 +571,7 @@ final class ModrinthCatalogProvider implements CatalogProvider
         }
     }
 
-    /**
-     * Serializes the validated filters into Modrinth facet groups. Every filter
-     * group becomes a facet group, plus an unconditional server_side rule so
-     * the catalogue only carries packs that can run on a server. The OR group
-     * is not perfectly reliable (a few client-only packs still leak), so hits
-     * are additionally guarded client-side in mapPayload().
-     *
-     * Values within a group are OR'ed by Modrinth, groups are AND'ed together.
-     * Empty groups are omitted.
-     */
+    // Serializes the validated filters into Modrinth facet groups.
     private function buildFacets(CatalogSearchQuery $query): string
     {
         $facets = [
@@ -689,9 +617,7 @@ final class ModrinthCatalogProvider implements CatalogProvider
         return json_encode($facets);
     }
 
-    /**
-     * @param array<string, mixed> $payload
-     */
+    // @param array<string, mixed> $payload
     private function mapPayload(
         CatalogSearchQuery $query,
         array $payload,
@@ -743,9 +669,7 @@ final class ModrinthCatalogProvider implements CatalogProvider
         );
     }
 
-    /**
-     * @param array<string, mixed> $hit
-     */
+    // @param array<string, mixed> $hit
     private function mapHit(array $hit): CatalogItem
     {
         $projectId = $this->stringOrNull($hit['project_id'] ?? null)
@@ -799,9 +723,7 @@ final class ModrinthCatalogProvider implements CatalogProvider
         );
     }
 
-    /**
-     * @param array<string, mixed> $project
-     */
+    // @param array<string, mixed> $project
     private function mapProject(array $project): CatalogItem
     {
         $projectId = $this->stringOrNull($project['id'] ?? null) ?? '';
@@ -853,13 +775,7 @@ final class ModrinthCatalogProvider implements CatalogProvider
         );
     }
 
-    /**
-     * Best "banner" image available for a project: the featured gallery item
-     * when present, otherwise the first gallery entry (Modrinth has no
-     * dedicated banner image for modpacks).
-     *
-     * @param array<string, mixed> $data
-     */
+    // Best "banner" image available for a project: the featured gallery item when present, otherwise the first gallery entry...
     private function galleryImage(array $data): ?string
     {
         foreach (['featured_gallery', 'gallery'] as $key) {
@@ -888,10 +804,7 @@ final class ModrinthCatalogProvider implements CatalogProvider
         return null;
     }
 
-    /**
-     * Derive a client/server environment label from the Modrinth side flags,
-     * falling back to "client-and-server" when the flags are absent.
-     */
+    // Derive a client/server environment label from the Modrinth side flags, falling back to "client-and-server" when the...
     private function environmentFlags(?string $clientSide, ?string $serverSide): ?string
     {
         if ($clientSide === 'unsupported' && $serverSide === 'unsupported') {
@@ -1014,9 +927,7 @@ final class ModrinthCatalogProvider implements CatalogProvider
         return $value;
     }
 
-    /**
-     * @return array<string>
-     */
+    // @return array<string>
     private function stringList(mixed $value): array
     {
         if (!is_array($value)) {

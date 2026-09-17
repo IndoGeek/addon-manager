@@ -1430,14 +1430,7 @@ final class ModpackController extends Controller
         return 'Invalid ' . $this->parameterLabel($key) . ' parameter.';
     }
 
-    /**
-     * Parses a comma-separated multi-value query parameter. Repeats the
-     * CatalogSearchQuery/Controller validation rules per entry: each value is
-     * trimmed, lowercased for slug groups, pattern-validated, bounded, and
-     * deduplicated.
-     *
-     * @return array<string>
-     */
+    // Parses a comma-separated multi-value query parameter.
     private function paramList(
         Request $request,
         string $key,
@@ -1511,11 +1504,7 @@ final class ModpackController extends Controller
         );
     }
 
-    /**
-     * Short-lived Redis-backed cache for upstream catalog responses. Null
-     * when caching is disabled via config; every cache failure degrades
-     * gracefully to direct upstream fetches.
-     */
+    // Short-lived Redis-backed cache for upstream catalog responses.
     private function catalogCache(): ?CatalogCache
     {
         $ttl = config('modpackinstaller.catalog_cache_ttl');
@@ -1691,11 +1680,7 @@ final class ModpackController extends Controller
         return $selector->forServer($server);
     }
 
-    /**
-     * Removes the files a just-completed deployment created when the install
-     * could not be recorded. Mirrors the orchestrator rollback for the new-file
-     * case; previously existing files are left untouched.
-     */
+    // Removes the files a just-completed deployment created when the install could not be recorded.
     private function rollbackDeployedFiles(
         Server $server,
         InstallationResult $result,
@@ -1851,19 +1836,13 @@ final class ModpackController extends Controller
         }
     }
 
-    /**
-     * Returns the unpinned base of an installed source so that an update can
-     * resolve the latest available version: the scheme and project id remain,
-     * any pinned version is dropped.
-     */
+    // Returns the unpinned base of an installed source so that an update can resolve the latest available version: the scheme...
     private function latestBaseSource(string $source): string
     {
         return explode('@', $source, 2)[0];
     }
 
-    /**
-     * @return array{0: string, 1: string, 2: string|null}
-     */
+    // @return array{0: string, 1: string, 2: string|null}
     private function sourceParts(string $source): array
     {
         $rest = preg_replace('/^([a-z0-9-]+):\/\//', '', $source)

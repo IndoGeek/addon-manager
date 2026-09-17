@@ -32,19 +32,7 @@ $temp = $root . '/temp';
 mkdir($server, 0750, true);
 mkdir($temp, 0750, true);
 
-/*
- * The server already contains a directory named "blocked".
- *
- * The archive contains a file named "blocked".
- *
- * The planner will classify "blocked" as a new file because
- * is_file(server/blocked) is false.
- *
- * The executor will then fail because "blocked" is a directory.
- *
- * "aaa-created.txt" sorts before "blocked", so it gets deployed
- * first and gives us something concrete to verify was rolled back.
- */
+// The server already contains a directory named "blocked".
 
 mkdir($server . '/blocked', 0750, true);
 

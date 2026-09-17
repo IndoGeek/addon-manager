@@ -5,14 +5,7 @@ namespace Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Ma
 use InvalidArgumentException;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Server\ServerRelativePath;
 
-/**
- * Immutable record of one successfully installed modpack for one server.
- *
- * The record is owned by the extension (stored outside any Pterodactyl core
- * table) and carries everything needed to later update or uninstall the pack
- * without trusting the client: the normalized source, the resolved version,
- * and the ownership manifest of relative paths deployed by the engine.
- */
+// Immutable record of one successfully installed modpack for one server.
 final class InstallRecord
 {
     public const STATUS_INSTALLED = 'installed';
@@ -62,12 +55,7 @@ final class InstallRecord
         }
     }
 
-    /**
-     * The unique set of relative paths this install owns, in the order they
-     * should be removed (created first, then overwritten).
-     *
-     * @return list<string>
-     */
+    // The unique set of relative paths this install owns, in the order they should be removed (created first, then...
     public function ownedFiles(): array
     {
         return array_values(
@@ -77,9 +65,7 @@ final class InstallRecord
         );
     }
 
-    /**
-     * @return array<string, mixed>
-     */
+    // @return array<string, mixed>
     public function toArray(): array
     {
         return [
@@ -104,9 +90,7 @@ final class InstallRecord
         ];
     }
 
-    /**
-     * @param array<string, mixed> $data
-     */
+    // @param array<string, mixed> $data
     public static function fromArray(array $data): self
     {
         $ownership = is_array($data['ownership'] ?? null)
@@ -136,14 +120,7 @@ final class InstallRecord
         );
     }
 
-    /**
-     * Validates and normalizes a stored ownership list so that a corrupted or
-     * tampered store can never reintroduce unsafe paths into the engine.
-     *
-     * @param mixed $value
-     *
-     * @return list<string>
-     */
+    // Validates and normalizes a stored ownership list so that a corrupted or tampered store can never reintroduce unsafe...
     private static function ownedFileList(mixed $value): array
     {
         if (!is_array($value)) {

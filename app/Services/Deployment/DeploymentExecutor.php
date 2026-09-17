@@ -9,14 +9,10 @@ use Throwable;
 
 final class DeploymentExecutor
 {
-    /**
-     * @var null|callable(int $deployedFiles, int $totalFiles): void
-     */
+    // @var null|callable(int $deployedFiles, int $totalFiles): void
     private $progressCallback = null;
 
-    /**
-     * @var null|callable(): bool
-     */
+    // @var null|callable(): bool
     private $cancelChecker = null;
 
     public function __construct(
@@ -25,23 +21,13 @@ final class DeploymentExecutor
     ) {
     }
 
-    /**
-     * Registers a callback invoked after each deployed file reports its
-     * running count against the plan's total.
-     *
-     * @param null|callable(int $deployedFiles, int $totalFiles): void $callback
-     */
+    // Registers a callback invoked after each deployed file reports its running count against the plan's total.
     public function setProgressCallback(?callable $callback): void
     {
         $this->progressCallback = $callback;
     }
 
-    /**
-     * Registers a predicate consulted between deployed files. When it returns
-     * true deployment aborts with an InstallationCancelledException.
-     *
-     * @param null|callable(): bool $checker
-     */
+    // Registers a predicate consulted between deployed files.
     public function setCancelChecker(?callable $checker): void
     {
         $this->cancelChecker = $checker;

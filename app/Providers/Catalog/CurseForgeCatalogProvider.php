@@ -19,26 +19,7 @@ use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Provider\ProviderHttpClient;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Provider\ProviderHttpException;
 
-/**
- * Real CurseForge catalog search against the official api.curseforge.com API.
- * Only the constant API base plus validated, scalar query facets are used;
- * the API key travels exclusively in the X-Api-Key header and every payload is
- * type-checked before it leaves this provider.
- *
- * The CurseForge search API accepts a single value per filter group. When the
- * user selects multiple values, the first value is applied upstream and the
- * remaining values are applied as a provider-side filter on the fetched page
- * (never on the frontend).
- *
- * Pagination is page-fill based: upstream search pages are scanned from index
- * 0 in fixed-size blocks, projects are classified and accepted/rejected, and
- * the accepted stream is then sliced to the requested page plus offset. This
- * keeps every result page full (no collapsed totals from locally filtering a
- * single upstream page) and makes projects on later upstream pages reachable.
- * The reported total is the exact accepted count when the scan exhausts the
- * upstream corpus, otherwise the original CurseForge totalCount is preserved
- * as the defensible bound; both are surfaced separately in the result.
- */
+// Real CurseForge catalog search against the official api.curseforge.com API.
 final class CurseForgeCatalogProvider implements CatalogProvider
 {
     private const API_BASE = 'https://api.curseforge.com/v1';
@@ -53,30 +34,13 @@ final class CurseForgeCatalogProvider implements CatalogProvider
 
     private const MAX_SEARCH_INDEX = 10_000;
 
-    /**
-     * Upstream search blocks are always requested at this page size and then
-     * sliced locally, so a single request fills a full result page while
-     * projects further down the sorted upstream corpus stay reachable.
-     */
+    // Upstream search blocks are always requested at this page size and then sliced locally, so a single request fills a full...
     private const SCAN_PAGE_SIZE = 50;
 
-    /**
-     * Upper bound on the number of upstream search blocks scanned to satisfy a
-     * single request. Prevents a pathological acceptance rate or a very deep
-     * page from ballooning the request count; the scan simply stops early.
-     */
+    // Upper bound on the number of upstream search blocks scanned to satisfy a single request.
     private const MAX_SCAN_BLOCKS = 40;
 
-    /**
-     * Project classification buckets exposed through diagnostics.
-     *
-     * (a) a dedicated server pack is referenced; (b) no server pack is
-     * referenced but a publicly downloadable main archive exists and may be
-     * usable for a server install; (c) compatibility is unknown because no
-     * definitive file data could be resolved; (d) the project is client-only,
-     * identified by having files but not a single server-pack or publically
-     * downloadable main archive.
-     */
+    // Project classification buckets exposed through diagnostics.
     private const CLASS_SERVER_PACK = 'server_pack';
 
     private const CLASS_MAIN_ARCHIVE = 'main_archive';
@@ -95,14 +59,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
 
     private const VERSION_PATTERN = '/^\d+\.\d+(\.\d+)*$/';
 
-    /**
-     * Curated common game versions offered as facet options. CurseForge only
-     * accepts versions that exist on its own version list, which is why this
-     * list is intentionally conservative; it is capability metadata, not a
-     * search result.
-     *
-     * @var array<string>
-     */
+    // Curated common game versions offered as facet options.
     private const COMMON_GAME_VERSIONS = [
         '1.21.1',
         '1.21',
@@ -118,12 +75,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
         '1.16.5',
     ];
 
-    /**
-     * CurseForge modpack categories (default sub-categories under the
-     * Modpacks class). These are the real category slugs accepted upstream.
-     *
-     * @var array<string>
-     */
+    // CurseForge modpack categories (default sub-categories under the Modpacks class).
     private const MODPACK_CATEGORIES = [
         'adventure-and-rpg',
         'boss',
@@ -144,21 +96,13 @@ final class CurseForgeCatalogProvider implements CatalogProvider
         'world-gen',
     ];
 
-    /**
-     * File statuses that are visible to the public.
-     *
-     * @var array<int, true>
-     */
+    // File statuses that are visible to the public.
     private const PUBLIC_FILE_STATUSES = [
         4 => true, // Approved
         10 => true, // Released
     ];
 
-    /**
-     * Catalog loader slugs -> CurseForge ModLoaderType values.
-     *
-     * @var array<string, int>
-     */
+    // Catalog loader slugs -> CurseForge ModLoaderType values.
     private const LOADER_TO_MOD_LOADER = [
         'fabric' => 4,
         'forge' => 1,
@@ -168,11 +112,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
         'cauldron' => 2,
     ];
 
-    /**
-     * CurseForge ModLoaderType values -> catalog loader slugs.
-     *
-     * @var array<int, string>
-     */
+    // CurseForge ModLoaderType values -> catalog loader slugs.
     private const MOD_LOADER_TO_SLUG = [
         1 => 'forge',
         2 => 'cauldron',
@@ -182,11 +122,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
         6 => 'neoforge',
     ];
 
-    /**
-     * Loader display names that can appear inside a file's gameVersions array.
-     *
-     * @var array<string, string>
-     */
+    // Loader display names that can appear inside a file's gameVersions array.
     private const LOADER_DISPLAY_NAMES = [
         'Forge' => 'forge',
         'Fabric' => 'fabric',
@@ -197,11 +133,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
         'Cauldron' => 'cauldron',
     ];
 
-    /**
-     * Catalog sort values -> CurseForge ModSearchSortField values.
-     *
-     * @var array<string, int>
-     */
+    // Catalog sort values -> CurseForge ModSearchSortField values.
     private const SORT_FIELDS = [
         CatalogSort::RELEVANCE->value => 1, // Featured
         CatalogSort::DOWNLOADS->value => 6, // TotalDownloads
@@ -250,9 +182,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
         return 'CurseForge is not available. Please add your API key to the .env file.';
     }
 
-    /**
-     * @return array{query: bool, game_versions: bool, loaders: bool, categories: bool, environment: bool, sort: bool}
-     */
+    // @return array{query: bool, game_versions: bool, loaders: bool, categories: bool, environment: bool, sort: bool}
     public function capabilities(): array
     {
         return [
@@ -265,9 +195,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
         ];
     }
 
-    /**
-     * @return array{game_versions: array<int, string>, loaders: array<int, string>, categories: array<int, string>, environments: array<int, string>}
-     */
+    // @return array{game_versions: array<int, string>, loaders: array<int, string>, categories: array<int, string>...
     public function facets(): array
     {
         return [
@@ -460,9 +388,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
         );
     }
 
-    /**
-     * @return array<int, CatalogVersion>
-     */
+    // @return array<int, CatalogVersion>
     public function versions(CatalogVersionQuery $query): array
     {
         $this->assertConfigured();
@@ -636,11 +562,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
         }
     }
 
-    /**
-     * @param array<mixed> $entries
-     *
-     * @return array<int, CatalogItem>
-     */
+    // @param array<mixed> $entries @return array<int, CatalogItem>
     private function mapSearchItems(array $entries): array
     {
         $items = [];
@@ -662,16 +584,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
         return $items;
     }
 
-    /**
-     * Keeps only the items that satisfy every multi-value group that could not
-     * be expressed upstream (any match within a group counts). A group with a
-     * single value was already applied to the upstream request, so it is
-     * excluded here.
-     *
-     * @param array<int, CatalogItem> $items
-     *
-     * @return array<int, CatalogItem>
-     */
+    // Keeps only the items that satisfy every multi-value group that could not be expressed upstream (any match within a...
     private function postFilterItems(
         CatalogSearchQuery $query,
         array $items,
@@ -684,18 +597,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
             ),
         ));
     }
-/**
-     * Classifies a set of mapped items against their resolved file data.
-     * Projects whose bulk /mods resolution is missing are treated as
-     * compatibility-unknown and kept; only projects definitively classified as
-     * client-only are excluded. The distribution across the four compatibility
-     * buckets and the exclusion reasons are returned so the caller can surface
-     * them in diagnostics.
-     *
-     * @param array<int, CatalogItem> $items
-     *
-     * @return array{0: array<int, CatalogItem>, 1: int, 2: array<string, int>, 3: array<string, int>}
-     */
+// Classifies a set of mapped items against their resolved file data.
     private function classifyItems(array $items): array
     {
         if ($items === []) {
@@ -748,16 +650,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
         return [$accepted, $excluded, $reasons, $classCounts];
     }
 
-    /**
-     * Fetches the given projects through the bulk /mods endpoint, keyed by
-     * numeric string id. Projects missing from the response are kept as
-     * compatibility-unknown (they are excluded by classifyProject, not
-     * silently dropped by the HTTP layer).
-     *
-     * @param array<int, int> $ids
-     *
-     * @return array<string, array<string, mixed>>
-     */
+    // Fetches the given projects through the bulk /mods endpoint, keyed by numeric string id.
     private function fetchProjects(array $ids): array
     {
         try {
@@ -800,21 +693,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
         }
     }
 
-    /**
-     * Resolves a project's server installability by inspecting its public
-     * metadata and the latest file list returned by the bulk /mods endpoint.
-     *
-     *  - server_pack: a dedicated server pack is referenced by a file
-     *    (isServerPack or serverPackFileId).
-     *  - main_archive: no server pack reference, but a publicly downloadable
-     *    main release archive exists and may be usable for a server install.
-     *  - unknown: no file data was resolvable (missing bulk detail or an empty
-     *    file list). Kept, since compatibility cannot be judged either way.
-     *  - client_only: files exist but none references a server pack and none
-     *    is a publicly downloadable main archive.
-     *
-     * @param array<string, mixed>|null $project
-     */
+    // Resolves a project's server installability by inspecting its public metadata and the latest file list returned by the...
     private function classifyProject(?array $project): string
     {
         if ($project === null) {
@@ -853,12 +732,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
             : self::CLASS_CLIENT_ONLY;
     }
 
-    /**
-     * Whether the given file references a dedicated server pack that must be
-     * installed alongside it.
-     *
-     * @param array<string, mixed> $file
-     */
+    // Whether the given file references a dedicated server pack that must be installed alongside it.
     private function fileReferencesServerPack(array $file): bool
     {
         $serverPackFileId = $this->intOrNull(
@@ -868,22 +742,13 @@ final class CurseForgeCatalogProvider implements CatalogProvider
         return $serverPackFileId !== null && $serverPackFileId > 0;
     }
 
-    /**
-     * Whether the given file is itself a server pack.
-     *
-     * @param array<string, mixed> $file
-     */
+    // Whether the given file is itself a server pack.
     private function isServerPack(array $file): bool
     {
         return ($file['isServerPack'] ?? false) === true;
     }
 
-    /**
-     * Whether the file is a primary (non-alternate) archive rather than an
-     * alternate payload such as a source or server-dedicated download.
-     *
-     * @param array<string, mixed> $file
-     */
+    // Whether the file is a primary (non-alternate) archive rather than an alternate payload such as a source or...
     private function isMainArchive(array $file): bool
     {
         $isAlternate = $this->intOrNull($file['isAlternate'] ?? null);
@@ -891,35 +756,14 @@ final class CurseForgeCatalogProvider implements CatalogProvider
         return !($isAlternate === 1 || ($file['isAlternate'] ?? false) === true);
     }
 
-    /**
-     * A file is server installable when it explicitly points at a CurseForge
-     * server pack (serverPackFileId) or is itself marked as a server pack.
-     * Client packs have neither and only install on the client.
-     *
-     * @param array<string, mixed> $file
-     */
+    // A file is server installable when it explicitly points at a CurseForge server pack (serverPackFileId) or is itself...
     private function isServerInstallableFile(array $file): bool
     {
         return $this->fileReferencesServerPack($file)
             || $this->isServerPack($file);
     }
 
-    /**
-     * Resolves a file into the archive a server installation should deploy.
-     *
-     *  - A file that is itself a dedicated server pack is used directly.
-     *  - A main file that references a dedicated server pack is resolved to
-     *    that server pack; the client zip is never presented as the
-     *    installable version when a dedicated server pack exists.
-     *  - A publicly downloadable main archive with no dedicated server pack is
-     *    kept as a client pack, which the installation service resolves
-     *    through the CurseForge modpack manifest (mod files, overrides).
-     *
-     * @param array<string, mixed> $file
-     * @param array<string, array<string, mixed>> $serverPackCache
-     *
-     * @return array<string, mixed>|null
-     */
+    // Resolves a file into the archive a server installation should deploy.
     private function resolveInstallableFile(
         array $file,
         string $project,
@@ -947,16 +791,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
         return $file;
     }
 
-    /**
-     * Resolves every distinct referenced server pack id across the file list
-     * through the bulk /mods/files endpoint (one call per 50 ids instead of
-     * one per file). Files the bulk call cannot serve fall back to the
-     * per-file lookup inside resolveInstallableFile().
-     *
-     * @param array<int, array<string, mixed>> $files
-     *
-     * @return array<int, array<string, mixed>> server pack id => file payload
-     */
+    // Resolves every distinct referenced server pack id across the file list through the bulk /mods/files endpoint (one call...
     private function bulkResolveServerPacks(
         array $files,
         string $project,
@@ -1029,20 +864,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
         return $resolved;
     }
 
-    /**
-     * CurseForge server-pack files frequently ship with an empty
-     * gameVersions array even though the client pack that references them
-     * declares its own. The versions menu would then show those entries
-     * without a Minecraft version and installing them would fail metadata
-     * resolution. Since the server pack belongs to the same project and
-     * version as the referencing file, the referencing file's versions are
-     * inherited for any field the server pack omits.
-     *
-     * @param array<string, mixed> $serverPack
-     * @param array<string, mixed> $referencingFile
-     *
-     * @return array<string, mixed>
-     */
+    // CurseForge server-pack files frequently ship with an empty gameVersions array even though the client pack that...
     private function inheritMissingGameVersions(
         array $serverPack,
         array $referencingFile,
@@ -1064,15 +886,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
         return $serverPack;
     }
 
-    /**
-     * Fetches the dedicated server pack referenced by a main file. Returns
-     * null when the reference is absent, no longer exists, or is no longer
-     * publicly downloadable so callers can fall back to the main archive.
-     *
-     * @param array<string, mixed> $file
-     *
-     * @return array<string, mixed>|null
-     */
+    // Fetches the dedicated server pack referenced by a main file.
     private function fetchServerPackFile(
         string $project,
         array $file,
@@ -1123,12 +937,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
         return $serverPack;
     }
 
-    /**
-     * Emits a structured diagnostics line for the given search so filtering
-     * decisions are auditable in the panel's error log.
-     *
-     * @param array<string, mixed> $diagnostics
-     */
+    // Emits a structured diagnostics line for the given search so filtering decisions are auditable in the panel's error log.
     private function logDiagnostics(
         CatalogSearchQuery $query,
         array $diagnostics,
@@ -1170,9 +979,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
         @error_log($line);
     }
 
-    /**
-     * @param array<int, CatalogItem> $items
-     */
+    // @param array<int, CatalogItem> $items
     private static function matchesMultiFilters(
         CatalogSearchQuery $query,
         CatalogItem $item,
@@ -1210,9 +1017,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
         return true;
     }
 
-    /**
-     * @return array<int, array<string, mixed>>
-     */
+    // @return array<int, array<string, mixed>>
     private function requestSearch(array $parameters): array
     {
         try {
@@ -1242,9 +1047,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
         }
     }
 
-    /**
-     * @return array<int, array<string, mixed>>
-     */
+    // @return array<int, array<string, mixed>>
     private function requestAllFiles(
         string $project,
         array $parameters,
@@ -1271,9 +1074,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
         return $collected;
     }
 
-    /**
-     * @return array<string, mixed>
-     */
+    // @return array<string, mixed>
     private function requestFilesPage(
         string $project,
         array $parameters,
@@ -1304,10 +1105,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
         }
     }
 
-    /**
-     * Resolves a catalog category slug to a CurseForge category id for the
-     * modpacks class, or null when no category matches.
-     */
+    // Resolves a catalog category slug to a CurseForge category id for the modpacks class, or null when no category matches.
     private function resolveCategoryId(string $slug): ?int
     {
         try {
@@ -1375,9 +1173,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
         );
     }
 
-    /**
-     * @param array<string, mixed> $mod
-     */
+    // @param array<string, mixed> $mod
     private function mapItem(array $mod): CatalogItem
     {
         $id = (string) ($mod['id'] ?? '');
@@ -1514,9 +1310,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
         );
     }
 
-    /**
-     * @param array<string, mixed> $file
-     */
+    // @param array<string, mixed> $file
     private function mapVersion(
         CatalogVersionQuery $query,
         array $file,
@@ -1553,12 +1347,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
         );
     }
 
-    /**
-     * A file is installable when its status is public (or unspecified), it is
-     * marked available, and it has a public download URL.
-     *
-     * @param array<string, mixed> $file
-     */
+    // A file is installable when its status is public (or unspecified), it is marked available, and it has a public download...
     private function isPubliclyDownloadable(array $file): bool
     {
         $status = $this->intOrNull($file['fileStatus'] ?? null);
@@ -1574,13 +1363,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
         return $this->stringOrNull($file['downloadUrl'] ?? null) !== null;
     }
 
-    /**
-     * Whether a mod belongs to the Modpacks class. A mod without a class id is
-     * tolerated (the search already filters by classId upstream), but any id
-     * that is present must be the modpacks class.
-     *
-     * @param array<string, mixed> $mod
-     */
+    // Whether a mod belongs to the Modpacks class.
     private function isModpackClass(array $mod): bool
     {
         $classId = $this->intOrNull($mod['classId'] ?? null);
@@ -1610,11 +1393,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
         return $value;
     }
 
-    /**
-     * @param array<mixed> $gameVersions
-     *
-     * @return array{0: array<string>, 1: array<string>} [minecraft versions, loader slugs]
-     */
+    // @param array<mixed> $gameVersions @return array{0: array<string>, 1: array<string>} [minecraft versions, loader slugs]
     private function parseGameVersions(array $gameVersions): array
     {
         $versions = [];
@@ -1639,9 +1418,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
         return [array_keys($versions), array_keys($loaders)];
     }
 
-    /**
-     * @return array<string>
-     */
+    // @return array<string>
     private function headers(): array
     {
         return [
@@ -1748,9 +1525,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
         return $value;
     }
 
-    /**
-     * @return array<int, mixed>
-     */
+    // @return array<int, mixed>
     private function arrayOf(mixed $value): array
     {
         return is_array($value) ? $value : [];

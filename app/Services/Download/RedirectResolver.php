@@ -4,15 +4,7 @@ namespace Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Do
 
 use InvalidArgumentException;
 
-/**
- * Resolves an HTTP redirect Location header against the request URL using
- * RFC 3986 reference resolution.
- *
- * The result is a plain absolute URL with no fragment. The caller is
- * responsible for re-validating the resolved location against the same
- * security rules as the original URL (scheme, host, credentials, SSRF)
- * before any connection is made.
- */
+// Resolves an HTTP redirect Location header against the request URL using RFC 3986 reference resolution.
 final class RedirectResolver
 {
     private function __construct()
@@ -62,9 +54,7 @@ final class RedirectResolver
         return $url;
     }
 
-    /**
-     * @return array{scheme: string, authority: string, path: string, query: ?string}
-     */
+    // @return array{scheme: string, authority: string, path: string, query: ?string}
     private static function parseAbsoluteUrl(string $url): array
     {
         $parts = parse_url($url);
@@ -92,9 +82,7 @@ final class RedirectResolver
         ];
     }
 
-    /**
-     * @return array{scheme: ?string, authority: ?string, path: ?string, query: ?string}
-     */
+    // @return array{scheme: ?string, authority: ?string, path: ?string, query: ?string}
     private static function parseReference(string $location): array
     {
         if (str_starts_with($location, '//')) {
@@ -135,11 +123,7 @@ final class RedirectResolver
         ];
     }
 
-    /**
-     * Network-path references inherit the scheme of the base URL.
-     *
-     * @return array{scheme: null, authority: string, path: ?string, query: ?string}
-     */
+    // Network-path references inherit the scheme of the base URL.
     private static function parseProtocolRelativeReference(
         string $location,
     ): array {
@@ -184,9 +168,7 @@ final class RedirectResolver
         ];
     }
 
-    /**
-     * @param array<string, mixed> $parts parse_url() result.
-     */
+    // @param array<string, mixed> $parts parse_url() result.
     private static function authorityFromParts(array $parts): string
     {
         $host = $parts['host'];
@@ -225,10 +207,7 @@ final class RedirectResolver
         return self::normalizePath($baseDirectory . $referencePath);
     }
 
-    /**
-     * Removes "." and resolves ".." segments, ensuring the normalized path
-     * stays rooted at "/".
-     */
+    // Removes "." and resolves ".." segments, ensuring the normalized path stays rooted at "/".
     private static function normalizePath(string $path): string
     {
         $path = str_replace('\\', '/', $path);

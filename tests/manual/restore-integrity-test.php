@@ -1,12 +1,6 @@
 <?php
 
-/**
- * Functional tests for the restore + integrity feature:
- *   - install -> out-of-band file deletion -> verifier flags missing files
- *   - restore redeploys ONLY the missing files, leaving intact ones untouched
- *   - records with every owned file gone are reported as completely gone
- *   - restoring paths absent from the archive / empty lists are no-ops
- */
+// Functional tests for the restore + integrity feature: - install -> out-of-band file deletion -> verifier flags missing...
 
 require __DIR__ . '/../../app/Services/Archive/ArchiveValidator.php';
 require __DIR__ . '/../../app/Services/Archive/ArchiveExtractor.php';

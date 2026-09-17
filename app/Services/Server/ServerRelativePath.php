@@ -4,14 +4,7 @@ namespace Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Se
 
 use InvalidArgumentException;
 
-/**
- * Validates and normalizes server-relative file paths before they are sent
- * to any target (local filesystem or Wings).
- *
- * Paths are restricted to relative, normalized form: no absolute paths, no
- * Windows drive paths, no NUL bytes, and no parent traversal. This prevents
- * a client-provided relative path from ever escaping the target server root.
- */
+// Validates and normalizes server-relative file paths before they are sent to any target (local filesystem or Wings).
 final class ServerRelativePath
 {
     private function __construct()

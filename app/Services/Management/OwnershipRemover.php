@@ -7,18 +7,7 @@ use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Server\S
 use InvalidArgumentException;
 use Throwable;
 
-/**
- * Removes exactly the files an install record owns, and nothing else.
- *
- * Each candidate path is re-validated as a server-relative path immediately
- * before deletion (defense in depth against a corrupted or tampered store).
- * Paths that are missing are tolerated deterministically.
- *
- * After each file is removed, its parent directories are pruned upward: a
- * directory is removed only when it is empty at that moment, so unrelated
- * files and directories created by the user (worlds, logs, config) are never
- * touched. Pruning stops at the first non-empty directory.
- */
+// Removes exactly the files an install record owns, and nothing else.
 final class OwnershipRemover
 {
     public function __construct(
@@ -26,11 +15,7 @@ final class OwnershipRemover
     ) {
     }
 
-    /**
-     * @param list<string> $relativePaths
-     *
-     * @return array{deleted: list<string>, missing: list<string>, errors: list<string>}
-     */
+    // @param list<string> $relativePaths @return array{deleted: list<string>, missing: list<string>, errors: list<string>}
     public function remove(array $relativePaths): array
     {
         $deleted = [];
@@ -80,11 +65,7 @@ final class OwnershipRemover
         ];
     }
 
-    /**
-     * Removes the parent chain of a deleted file while every directory stays
-     * empty. Best-effort: a directory that cannot be removed, or that still
-     * holds user content, simply halts the walk upward.
-     */
+    // Removes the parent chain of a deleted file while every directory stays empty.
     private function pruneEmptyParents(string $relativePath): void
     {
         $parent = $this->normalizedParent($relativePath);

@@ -4,10 +4,7 @@ namespace Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Ca
 
 use RuntimeException;
 
-/**
- * Raised when a catalog provider is not configured, unreachable, timing out,
- * or rate limited. The API maps this to a 503 so clients can retry later.
- */
+// Raised when a catalog provider is not configured, unreachable, timing out, or rate limited.
 final class CatalogUnavailableException extends RuntimeException
 {
 }

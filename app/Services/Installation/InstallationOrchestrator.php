@@ -14,9 +14,7 @@ use Throwable;
 
 final class InstallationOrchestrator
 {
-    /**
-     * @var null|callable(): bool
-     */
+    // @var null|callable(): bool
     private $cancelChecker = null;
 
     public function __construct(
@@ -29,13 +27,7 @@ final class InstallationOrchestrator
     ) {
     }
 
-    /**
-     * Registers a predicate consulted at checkpoints through the
-     * installation flow. When it returns true the operation aborts
-     * with an InstallationCancelledException.
-     *
-     * @param null|callable(): bool $checker
-     */
+    // Registers a predicate consulted at checkpoints through the installation flow.
     public function setCancelChecker(?callable $checker): void
     {
         $this->cancelChecker = $checker;
@@ -133,13 +125,7 @@ final class InstallationOrchestrator
         }
     }
 
-    /**
-     * Re-deploys only the given relative paths from an archive. Used to fill
-     * in files that were deleted out-of-band without touching the files that
-     * are still intact.
-     *
-     * @param list<string> $paths relative paths to restore
-     */
+    // Re-deploys only the given relative paths from an archive.
     public function restore(
         string $archivePath,
         array $paths,

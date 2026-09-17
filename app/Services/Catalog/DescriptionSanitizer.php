@@ -8,25 +8,7 @@ use DOMElement;
 use DOMNode;
 use DOMProcessingInstruction;
 
-/**
- * Reduces an upstream project description (Modrinth HTML body or CurseForge
- * HTML) to a small, safe presentational fragment.
- *
- * The output is rendered with React's dangerouslySetInnerHTML in the panel
- * dashboard, so this sanitizer is the only line of defense and is written
- * defensively:
- *
- *  - an explicit tag allowlist (headings, paragraphs, lists, emphasis,
- *    tables, images, links, code) — everything else is unwrapped, not dropped,
- *    so text content survives;
- *  - every attribute is dropped except a checked subset (href, src, alt,
- *    title, colspan/rowspan) after validation;
- *  - href/src may only be http(s) or protocol-relative URLs; javascript:,
- *    data:, vbscript: and unknown schemes are removed;
- *  - script/style/iframe/object/embed/input/button/textarea/meta/link and
- *    HTML comments are removed entirely with their contents where relevant;
- *  - all on* event handler attributes are dropped by construction.
- */
+// Reduces an upstream project description (Modrinth HTML body or CurseForge HTML) to a small, safe presentational...
 final class DescriptionSanitizer
 {
     private const ALLOWED_TAGS = [
@@ -233,12 +215,7 @@ final class DescriptionSanitizer
         }
     }
 
-    /**
-     * Keeps only harmless layout declarations from an inline style: colors,
-     * text alignment, sizing, spacing. Values are validated to exclude any
-     * construct that could execute or reference external resources
-     * (url(), expression(), @import, behavior, binding).
-     */
+    // Keeps only harmless layout declarations from an inline style: colors, text alignment, sizing, spacing.
     private function cleanStyle(string $style): string
     {
         $allowed = [

@@ -124,13 +124,7 @@ function sampleMod(int $id, string $slug, string $loaderValue): array
     ];
 }
 
-/**
- * A mod as returned by the bulk /mods endpoint (includes latestFiles).
- *
- * @param array<int, array<string, mixed>> $latestFiles
- *
- * @return array<string, mixed>
- */
+// A mod as returned by the bulk /mods endpoint (includes latestFiles).
 function sampleModDetails(int $id, array $latestFiles): array
 {
     return [
@@ -141,11 +135,7 @@ function sampleModDetails(int $id, array $latestFiles): array
     ];
 }
 
-/**
- * @param array<string, mixed> $extra
- *
- * @return array<string, mixed>
- */
+// @param array<string, mixed> $extra @return array<string, mixed>
 function sampleFile(int $id, string $name, array $extra = []): array
 {
     return array_merge([
@@ -218,11 +208,7 @@ if (($headers['sort'] ?? false) !== true || ($headers['loaders'] ?? false) !== t
 
 pass('configured credentials report available state');
 
-/**
- * A block of server-capable search hits numbered consecutively from $from.
- *
- * @return array<int, array<string, mixed>>
- */
+// A block of server-capable search hits numbered consecutively from $from.
 function searchBlock(int $from, int $count): array
 {
     $mods = [];
@@ -235,13 +221,7 @@ function searchBlock(int $from, int $count): array
     return $mods;
 }
 
-/**
- * A bulk /mods payload of server-capable details for the given ids.
- *
- * @param array<int, int> $ids
- *
- * @return array<int, array<string, mixed>>
- */
+// A bulk /mods payload of server-capable details for the given ids.
 function capableBulk(array $ids): array
 {
     $details = [];

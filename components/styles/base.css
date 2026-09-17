@@ -1,13 +1,4 @@
-/*
- * base.css — root container, cards, layout chrome.
- *
- * This file is a SOURCE file. The deployed stylesheet (root.css) is
- * generated from all source files in this directory by:
- *
- *     node tools/build-css.mjs
- *
- * (run automatically by build.sh). Do NOT edit root.css directly.
- */
+/* base.css — root container, cards, layout chrome. */
 
 .modpackinstaller-root {
   max-width: 1100px;

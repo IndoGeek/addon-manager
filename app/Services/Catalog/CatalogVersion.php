@@ -2,18 +2,10 @@
 
 namespace Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog;
 
-/**
- * A normalized catalog version/release. Fields are nullable where a provider
- * has no equivalent. The "source" field is the canonical installable source
- * for this exact version (for example modrinth://slug@versionId), which the
- * installation providers resolve directly.
- */
+// A normalized catalog version/release.
 final readonly class CatalogVersion
 {
-    /**
-     * @param array<string> $gameVersions
-     * @param array<string> $loaders
-     */
+    // @param array<string> $gameVersions @param array<string> $loaders
     public function __construct(
         public string $provider,
         public string $projectId,
@@ -32,9 +24,7 @@ final readonly class CatalogVersion
     ) {
     }
 
-    /**
-     * @return array<string, mixed>
-     */
+    // @return array<string, mixed>
     public function toArray(): array
     {
         return [
@@ -55,11 +45,7 @@ final readonly class CatalogVersion
         ];
     }
 
-    /**
-     * Rebuilds a version from toArray() output (cache hydration).
-     *
-     * @param array<string, mixed> $data
-     */
+    // Rebuilds a version from toArray() output (cache hydration).
     public static function fromArray(array $data): self
     {
         return new self(

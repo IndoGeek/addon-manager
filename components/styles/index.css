@@ -1,13 +1,4 @@
-/*
- * index.css — import order for the generated stylesheet.
- *
- * SOURCE file. tools/build-css.mjs concatenates the files listed here,
- * in this order, into root.css (which is what conf.yml points at and
- * what build.sh copies into the panel).
- *
- * Order matters: responsive.css must stay last so its media-query
- * overrides win at equal specificity (see DEV.md 1.7).
- */
+/* index.css — import order for the generated stylesheet. */
 
 @import './base.css';
 @import './search.css';

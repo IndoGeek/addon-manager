@@ -19,11 +19,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
 
     private const CDN_BASE = 'https://edge.forgecdn.net/files';
 
-    /**
-     * The host the edge CDN 302-redirects file downloads onto. Same file
-     * layout, same bytes, one less redirect hop and an independent mirror to
-     * fail over to when the edge host throttles.
-     */
+    // The host the edge CDN 302-redirects file downloads onto.
     private const MEDIA_MIRROR_BASE = 'https://mediafilez.forgecdn.net/files';
 
     private const API_KEY_HEADER = 'X-Api-Key';
@@ -32,26 +28,16 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
 
     private const MANIFEST_FILE = 'manifest.json';
 
-    /**
-     * Share of the download progress band reserved for the modpack archive
-     * itself. Client packs are re-anchored on the full network footprint once
-     * the manifest is parsed, so the archive phase should only ever occupy a
-     * fraction of the bar instead of spiking and dropping on that re-anchor.
-     */
+    // Share of the download progress band reserved for the modpack archive itself.
     private const PROGRESS_ARCHIVE_SLICE = 0.12;
 
-    /**
-     * Winning source for a given relative server path: overrides win over
-     * manifest mod files.
-     */
+    // Winning source for a given relative server path: overrides win over manifest mod files.
     private const ENTRY_PRIORITIES = [
         'mods' => 0,
         'overrides' => 1,
     ];
 
-    /**
-     * @var array<string, true> Paths of temporary archives awaiting cleanup.
-     */
+    // @var array<string, true> Paths of temporary archives awaiting cleanup.
     private array $temporaryPackages = [];
 
     private readonly string $temporaryRoot;
@@ -197,15 +183,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
         }
     }
 
-    /**
-     * Returns normalized manual-download info when a CurseForge file cannot be
-     * downloaded automatically. The caller (frontend or controller) should
-     * display this as a "manual download required" state rather than a generic
-     * installation failure.
-     *
-     * @return array{provider: string, project_name: string, project_url: string,
-     *   file_name: string, version: string, download_url: string|null, reason: string}
-     */
+    // Returns normalized manual-download info when a CurseForge file cannot be downloaded automatically.
     public function manualDownloadInfo(array $file, array $project): array
     {
         $logo = is_array($project['logo'] ?? null)
@@ -257,15 +235,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
         $this->removeTracked($package->archivePath);
     }
 
-    /**
-     * Builds a package holding only the requested server-relative paths.
-     * Used by restore: the client-pack archive is still downloaded (the
-     * manifest lives inside it and identifies every file), but the mods
-     * phase resolves and fetches only the wanted files instead of the
-     * whole manifest, and overrides stream only their entries.
-     *
-     * @param list<string> $paths normalized server-relative paths
-     */
+    // Builds a package holding only the requested server-relative paths.
     public function getPackageForPaths(
         string $source,
         array $paths,
@@ -363,21 +333,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
         }
     }
 
-    /**
-     * Resolves the file a source would install and, when that file cannot be
-     * downloaded automatically, returns normalized manual-download guidance.
-     * Returns null when the file can be installed automatically.
-     *
-     * @return array{
-     *   provider: string,
-     *   project_name: string,
-     *   project_url: string|null,
-     *   file_name: string,
-     *   version: string,
-     *   download_url: string|null,
-     *   reason: string,
-     * }|null
-     */
+    // Resolves the file a source would install and, when that file cannot be downloaded automatically, returns normalized...
     public function manualDownloadInfoFor(string $source): ?array
     {
         $parsed = $this->parseSource($source);
@@ -426,13 +382,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
         unset($this->temporaryPackages[$path]);
     }
 
-    /**
-     * Resolves a source string to a CurseForge project id and an optional
-     * exact-file pin (curseforge://projectId@fileId). Returns null when the
-     * syntax is unsupported.
-     *
-     * @return array{projectId: string, fileId: string|null}|null
-     */
+    // Resolves a source string to a CurseForge project id and an optional exact-file pin (curseforge://projectId@fileId).
     private function parseSource(string $source): ?array
     {
         $source = trim($source);
@@ -478,13 +428,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
         return $source;
     }
 
-    /**
-     * Selects a file for the project: the exact pinned file when a pin is
-     * present, otherwise the newest Release file (falling back to the newest
-     * file).
-     *
-     * @return array<string, mixed>
-     */
+    // Selects a file for the project: the exact pinned file when a pin is present, otherwise the newest Release file (falling...
     private function resolveFile(string $projectId, ?string $fileId): array
     {
         if ($fileId !== null) {
@@ -508,15 +452,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
         return $file;
     }
 
-    /**
-     * Prefers a dedicated server pack when the selected file references one,
-     * falling back to the selected file when the server pack cannot be
-     * resolved to a public download.
-     *
-     * @param array<string, mixed> $file
-     *
-     * @return array<string, mixed>
-     */
+    // Prefers a dedicated server pack when the selected file references one, falling back to the selected file when the...
     private function resolvePackageFile(array $file, string $projectId): array
     {
         $serverPackFileId = $this->intOrNull(
@@ -539,19 +475,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
         return $this->inheritMissingGameVersions($serverPack, $file);
     }
 
-    /**
-     * CurseForge server-pack files frequently ship with an empty
-     * gameVersions array even though the client pack that references them
-     * declares its own (e.g. Tensura Neo Otherworld). Since the server pack
-     * belongs to the same project and version as the referencing file, the
-     * referencing file's versions are inherited for any field the server
-     * pack omits, so metadata resolution keeps working.
-     *
-     * @param array<string, mixed> $serverPack
-     * @param array<string, mixed> $referencingFile
-     *
-     * @return array<string, mixed>
-     */
+    // CurseForge server-pack files frequently ship with an empty gameVersions array even though the client pack that...
     private function inheritMissingGameVersions(
         array $serverPack,
         array $referencingFile,
@@ -573,12 +497,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
         return $serverPack;
     }
 
-    /**
-     * Whether a file is installable: public status (or unspecified), marked
-     * available (or unspecified), with a public download URL.
-     *
-     * @param array<string, mixed> $file
-     */
+    // Whether a file is installable: public status (or unspecified), marked available (or unspecified), with a public...
     private function isPubliclyDownloadable(array $file): bool
     {
         $status = $this->intOrNull($file['fileStatus'] ?? null);
@@ -594,14 +513,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
         return $this->nullableString($file['downloadUrl'] ?? null) !== null;
     }
 
-    /**
-     * Extracts the SHA-1 (algorithm 1) digest CurseForge reports for a file,
-     * which the pack references download verification against. Returns the
-     * empty string when the metadata omits it so verification is skipped
-     * rather than failing the candidate.
-     *
-     * @param array<string, mixed> $hashes
-     */
+    // Extracts the SHA-1 (algorithm 1) digest CurseForge reports for a file, which the pack references download verification...
     private function sha1FromHashes(array $hashes): string
     {
         foreach ($hashes as $hash) {
@@ -617,12 +529,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
         return '';
     }
 
-    /**
-     * Whether a downloaded file's SHA-1 digest matches the expected digest
-     * reported by the provider metadata. Verification is skipped (returns
-     * true) for an empty expectation so files without a published hash keep
-     * installing.
-     */
+    // Whether a downloaded file's SHA-1 digest matches the expected digest reported by the provider metadata.
     private function matchesSha1(string $path, string $expectedSha1): bool
     {
         if ($expectedSha1 === '') {
@@ -638,13 +545,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
         return hash_equals(strtolower($expectedSha1), strtolower($actual));
     }
 
-    /**
-     * Fetches the dedicated server pack file referenced by a file. Returns
-     * null when it no longer exists (404) or has no public download URL so the
-     * caller can fall back to the selected file.
-     *
-     * @return array<string, mixed>|null
-     */
+    // Fetches the dedicated server pack file referenced by a file.
     private function fetchServerPackFile(
         string $projectId,
         string $fileId,
@@ -682,14 +583,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
         return $file;
     }
 
-    /**
-     * Prevents a client-supplied file id from referencing a file that belongs
-     * to a different project. A file payload without a mod id is tolerated so
-     * providers without the field keep working, but any id that is present
-     * must match the requested project.
-     *
-     * @param array<string, mixed> $file
-     */
+    // Prevents a client-supplied file id from referencing a file that belongs to a different project.
     private function assertFileBelongsToProject(
         array $file,
         string $projectId,
@@ -716,13 +610,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
         }
     }
 
-    /**
-     * CurseForge does not mark modpacks with a project type; the Modpacks
-     * class (classId 4471) is the equivalent. A mod without a class id is
-     * tolerated, but any class id that is present must be the modpacks class.
-     *
-     * @param array<string, mixed> $project
-     */
+    // CurseForge does not mark modpacks with a project type; the Modpacks class (classId 4471) is the equivalent.
     private function assertModpackProject(array $project): void
     {
         $classId = $this->intOrNull($project['classId'] ?? null);
@@ -738,9 +626,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
         }
     }
 
-    /**
-     * @return array<string, mixed>
-     */
+    // @return array<string, mixed>
     private function fetchProject(string $projectId): array
     {
         try {
@@ -761,9 +647,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
         }
     }
 
-    /**
-     * @return array<int, array<string, mixed>>
-     */
+    // @return array<int, array<string, mixed>>
     private function fetchFiles(string $projectId): array
     {
         try {
@@ -798,9 +682,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
         }
     }
 
-    /**
-     * @return array<string, mixed>
-     */
+    // @return array<string, mixed>
     private function fetchFileById(string $projectId, string $fileId): array
     {
         try {
@@ -830,9 +712,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
         }
     }
 
-    /**
-     * @return array<string>
-     */
+    // @return array<string>
     private function headers(): array
     {
         return [
@@ -840,11 +720,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
         ];
     }
 
-    /**
-     * @param array<int, array<string, mixed>> $files
-     *
-     * @return array<string, mixed>|null
-     */
+    // @param array<int, array<string, mixed>> $files @return array<string, mixed>|null
     private function selectFile(array $files): ?array
     {
         if ($files === []) {
@@ -869,11 +745,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
         return $sorted[0];
     }
 
-    /**
-     * @param array<mixed> $gameVersions
-     *
-     * @return array{0: string|null, 1: string|null} [minecraft, loader]
-     */
+    // @param array<mixed> $gameVersions @return array{0: string|null, 1: string|null} [minecraft, loader]
     private function parseGameVersions(array $gameVersions): array
     {
         $loaderNames = [
@@ -912,19 +784,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
         return [$minecraftVersion, $loader];
     }
 
-    /**
-     * Returns a normalized server archive for the downloaded CurseForge file.
-     * Dedicated server packs do not carry manifest.json: they are passed
-     * through untouched unless every entry lives inside a single wrapper
-     * folder (e.g. SERVER_1.21/...), in which case a package directory is
-     * materialized with the wrapper stripped so content lands at the server
-     * root. Client packs are rebuilt from their manifest: every required,
-     * server-compatible mod file is downloaded into mods/ and the overrides
-     * directory is applied at the archive root.
-     *
-     * Malformed or unresolvable manifests fail loudly (never silently skip) so
-     * a partial install is never reported as complete.
-     */
+    // Returns a normalized server archive for the downloaded CurseForge file.
     private function manifestResolvedArchive(
         string $archivePath,
         ?array $wantedPaths = null,
@@ -993,12 +853,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
         }
     }
 
-    /**
-     * Detects whether every entry in the archive lives inside one shared
-     * top-level folder. Returns that folder's name with a trailing slash
-     * (e.g. "SERVER_1.21/"), or an empty string when entries live at the
-     * archive root or across several top-level folders.
-     */
+    // Detects whether every entry in the archive lives inside one shared top-level folder.
     private function singleRootPrefix(ZipArchive $source): string
     {
         $root = null;
@@ -1039,14 +894,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
         return $root;
     }
 
-    /**
-     * Materializes a dedicated server pack into a package directory, stripping
-     * the given wrapper prefix from every entry so the content deploys at the
-     * server root. When $wantedPaths is non-null (restore flow) only those
-     * entries are streamed and every wanted path must be satisfied.
-     *
-     * @param list<string>|null $wantedPaths
-     */
+    // Materializes a dedicated server pack into a package directory, stripping the given wrapper prefix from every entry so...
     private function materializeStrippedArchive(
         ZipArchive $source,
         string $prefix,
@@ -1152,10 +1000,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
         return $outputPath;
     }
 
-    /**
-     * Streams one zip entry to an absolute destination path. Returns the
-     * number of bytes written.
-     */
+    // Streams one zip entry to an absolute destination path. Returns the number of bytes written.
     private function streamZipEntry(
         ZipArchive $source,
         string $entry,
@@ -1219,22 +1064,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
         return $written;
     }
 
-    /**
-     * Rebuilds a CurseForge client pack into a normalized server package.
-     *
-     * Instead of synthesizing a new archive, the normalized package is a
-     * ready-to-deploy directory: the overrides payload is streamed straight
-     * out of the downloaded client pack and every required mod file lands
-     * directly in mods/. The installer consumes this directory as its
-     * workspace without any re-compression or re-extraction.
-     *
-     * When $wantedPaths is non-null the build is restricted to those
-     * server-relative paths (restore flow): overrides only stream their
-     * entries and the manifest phase resolves/fetches only mods under the
-     * wanted set.
-     *
-     * @param array<string, array{archiveEntry: string|null, downloadUrls: array<int, string>, priority: string, bytes: int, sha1: string}> $content
-     */
+    // Rebuilds a CurseForge client pack into a normalized server package.
     private function buildServerArchive(
         ZipArchive $source,
         string $archivePath,
@@ -1415,18 +1245,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
         return $outputPath;
     }
 
-    /**
-     * Downloads every manifest mod file into the package's mods/ directory,
-     * either through the parallel batch engine when the transport supports it
-     * or with the per-candidate serial fallback. Returns the number of mod
-     * files that arrived on disk.
-     *
-     * @param array<string, array{archiveEntry: string|null, downloadUrls: array<int, string>, priority: string, bytes: int, sha1: string}> $content
-     * @param array<int, string> $failedMods Output list of the relative paths
-     *   of manifest mods that could not be installed, for diagnostics.
-     * @param array<int, string> $succeededMods Output list of the relative
-     *   paths of manifest mods that were downloaded and verified.
-     */
+    // Downloads every manifest mod file into the package's mods/ directory, either through the parallel batch engine when the...
     private function fetchPackageMods(
         array $content,
         string $outputPath,
@@ -1565,10 +1384,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
         }
     }
 
-    /**
-     * Streams a single client-pack entry into the package directory, reporting
-     * cumulative progress and honouring cancellation per chunk.
-     */
+    // Streams a single client-pack entry into the package directory, reporting cumulative progress and honouring cancellation...
     private function writePackageEntry(
         ZipArchive $source,
         string $entry,
@@ -1639,10 +1455,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
         }
     }
 
-    /**
-     * Resolves a safe relative path inside the package directory, creating any
-     * leading directories as needed.
-     */
+    // Resolves a safe relative path inside the package directory, creating any leading directories as needed.
     private function packageOutputPath(string $outputPath, string $relative): string
     {
         $path = $outputPath . '/' . $relative;
@@ -1716,13 +1529,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
         }
     }
 
-    /**
-     * Collects the overrides payload embedded in the client-pack archive
-     * itself, dropping the configured overrides directory prefix so it lands
-     * at the server root.
-     *
-     * @return array<string, array{archiveEntry: string, downloadUrls: array<int, string>, priority: string, bytes: int}>
-     */
+    // Collects the overrides payload embedded in the client-pack archive itself, dropping the configured overrides directory...
     private function collectArchiveContent(
         ZipArchive $source,
         string $overridesPath,
@@ -1780,23 +1587,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
         return $content;
     }
 
-    /**
-     * Resolves manifest mod files through the CurseForge API and merges the
-     * resolvable ones into the normalized archive under mods/. Each mod file
-     * is attached to an ordered list of candidate download URLs so a file the
-     * bulk API reports without a download URL can still be pulled from the
-     * CurseForge CDN layout. Files that individually fail every candidate at
-     * download time are skipped with a diagnostic (never silently): the
-     * official CurseForge flow keeps installing the rest of a pack when a few
-     * mod files have died upstream. Only when no manifest mod file can be
-     * installed does the caller abort.
-     *
-     * When $wantedPaths is non-null (restore flow) only manifest mods whose
-     * relative mods/ path is in the wanted set are resolved and added; every
-     * other mod is skipped without touching the network.
-     *
-     * @return array{0: int, 1: int} [installed count, wanted count]
-     */
+    // Resolves manifest mod files through the CurseForge API and merges the resolvable ones into the normalized archive under...
     private function mergeManifestFiles(
         array $manifest,
         array &$content,
@@ -1937,14 +1728,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
         );
     }
 
-    /**
-     * Resolves a list of CurseForge file ids through the bulk files endpoint
-     * (chunked to the API's 50-per-request cap).
-     *
-     * @param array<int> $fileIds
-     *
-     * @return array<int, array<string, mixed>>
-     */
+    // Resolves a list of CurseForge file ids through the bulk files endpoint (chunked to the API's 50-per-request cap).
     private function fetchModFiles(array $fileIds): array
     {
         $resolved = [];
@@ -1995,12 +1779,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
         return $resolved;
     }
 
-    /**
-     * Derives the mods/ file name for a manifest file, falling back to the
-     * file id when the API reports no usable file name.
-     *
-     * @param array<string, mixed>|null $file
-     */
+    // Derives the mods/ file name for a manifest file, falling back to the file id when the API reports no usable file name.
     private function manifestFileName(?array $file, int $fileId): string
     {
         $name = str_replace('\\', '/', (string) ($file['fileName'] ?? ''));
@@ -2014,21 +1793,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
         return $name;
     }
 
-    /**
-     * Builds an ordered list of candidate download URLs for a manifest mod
-     * file. The metadata download URL (already obtained in bulk from the
-     * /mods/files endpoint) is preferred, the reconstructed CDN URL is the
-     * second candidate, and the per-file download-url endpoint plus the
-     * public website page follow as fallbacks. Deliberately NOT first: the
-     * per-file endpoint costs one HTTP round-trip per mod, and hammering it
-     * with hundreds of requests during a single install trips CurseForge's
-     * rate limiting (HTTP 403) — the bulk metadata already serves the same
-     * live URL for every file that has one.
-     *
-     * @param array<string, mixed>|null $file
-     *
-     * @return list<string>
-     */
+    // Builds an ordered list of candidate download URLs for a manifest mod file.
     private function candidateDownloadUrls(
         string $projectId,
         int $fileId,
@@ -2060,13 +1825,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
         return array_values(array_unique($candidates));
     }
 
-    /**
-     * CurseForge's public website download page. Browsers (and any client that
-     * follows redirects) hit this page and are 302-redirected to the live CDN
-     * URL for the file. It stays the final fallback because it keeps
-     * resolving downloads for files whose metadata omits downloadUrl and whose
-     * reconstructed CDN path is stale, and it needs no API key of its own.
-     */
+    // CurseForge's public website download page.
     private function websiteDownloadUrl(string $projectId, int $fileId): string
     {
         return 'https://www.curseforge.com/minecraft/mc-mods/'
@@ -2076,11 +1835,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
             . '/download';
     }
 
-    /**
-     * Asks the CurseForge download-url endpoint for a live download URL for a
-     * specific file. Returns null when the API rejects the request or serves
-     * no URL so the caller can fall back to the reconstructed CDN URL.
-     */
+    // Asks the CurseForge download-url endpoint for a live download URL for a specific file.
     private function resolveDownloadUrl(string $projectId, string $fileId): ?string
     {
         try {
@@ -2104,10 +1859,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
         return $this->nullableString($response->body['data'] ?? null);
     }
 
-    /**
-     * Reconstructs the direct CurseForge CDN URL for a file id and name. The
-     * CDN can serve files even when the API metadata omits its download URL.
-     */
+    // Reconstructs the direct CurseForge CDN URL for a file id and name.
     private function cdnDownloadUrl(int $fileId, string $fileName): string
     {
         return self::CDN_BASE
@@ -2119,15 +1871,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
             . rawurlencode($fileName);
     }
 
-    /**
-     * Reconstructs the direct CurseForge media mirror URL for a file id and
-     * name. The edge host 302-redirects every request onto this host, and the
-     * media mirror is occasionally slow enough to trip the engine's dead
-     * transfer detection — with only the redirecting edge URL as a candidate
-     * a mod could exhaust every attempt against one congested mirror. Serving
-     * the same bytes from the mirror host directly gives the engine a real
-     * second mirror to fail over to without another redirect hop.
-     */
+    // Reconstructs the direct CurseForge media mirror URL for a file id and name.
     private function mirrorDownloadUrl(int $fileId, string $fileName): string
     {
         return self::MEDIA_MIRROR_BASE
@@ -2139,12 +1883,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
             . rawurlencode($fileName);
     }
 
-    /**
-     * Attempts each candidate download URL in order until one succeeds and
-     * returns its destination path, or null when every candidate fails.
-     *
-     * @param non-empty-list<string> $candidates
-     */
+    // Attempts each candidate download URL in order until one succeeds and returns its destination path, or null when every...
     private function downloadBestUrl(
         array $candidates,
         int &$networkBytesDone,
@@ -2201,9 +1940,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
         return $overrides;
     }
 
-    /**
-     * @param array{priority: string}|null $existing
-     */
+    // @param array{priority: string}|null $existing
     private function shouldReplace(?array $existing, string $priority): bool
     {
         if ($existing === null) {
@@ -2233,12 +1970,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
         return true;
     }
 
-    /**
-     * Number of required mod files that may fail to download before an
-     * otherwise installable pack is rejected. A few mods dying upstream should
-     * not sink a whole pack, but losing a material fraction always leaves the
-     * server broken and must fail loudly instead of deploying a partial pack.
-     */
+    // Number of required mod files that may fail to download before an otherwise installable pack is rejected.
     private function toleratedModFailures(int $wantedMods): int
     {
         return max(5, (int) floor($wantedMods * 0.05));

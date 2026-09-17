@@ -5,17 +5,7 @@ namespace Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\In
 use InvalidArgumentException;
 use RuntimeException;
 
-/**
- * Serializes ModpackInstaller runs for a single server using an atomic
- * filesystem lock directory.
- *
- * A lock is a directory created with mkdir()[0] under the configured
- * temporary root. Only one process can create it, so contending installations
- * for the same server fail fast. Stale locks are reclaimed after
- * $staleTimeoutSeconds based on their last-modified time.
- *
- * [0]: https://www.php.net/mkdir
- */
+// Serializes ModpackInstaller runs for a single server using an atomic filesystem lock directory.
 final class InstallationLock
 {
     public function __construct(
@@ -88,11 +78,7 @@ final class InstallationLock
         return $lockPath;
     }
 
-    /**
-     * Refreshes the lock's modification time so a long-running install is
-     * never mistaken for a stale (crashed) one. Callers invoke this at a
-     * throttled cadence while work is in progress.
-     */
+    // Refreshes the lock's modification time so a long-running install is never mistaken for a stale (crashed) one.
     public function renew(string $lockPath): void
     {
         @touch($lockPath);

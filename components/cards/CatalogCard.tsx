@@ -143,8 +143,7 @@ export const CatalogCard = ({
                             </div>
                         )}
 
-                        {/* The two actions share the stats row, filling the
-                         * free space after the last stat — no empty band. */}
+                        {/* The two actions share the stats row, filling the free space after the last stat — no empty band. */}
                         <ListCardActions
                             item={item}
                             onOpen={onOpen}

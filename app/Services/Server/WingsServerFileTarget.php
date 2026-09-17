@@ -7,15 +7,7 @@ use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Wings\Wi
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Wings\WingsHttpException;
 use RuntimeException;
 
-/**
- * ServerFileTarget backed by the authenticated Pterodactyl->Wings file API.
- *
- * All operations are performed on the Wings node that owns the server and
- * never touch the Panel's local filesystem. Per-directory listings are cached
- * for the lifetime of one request (one target instance) so that planning does
- * not perform one HTTP round trip per file; caches are invalidated on every
- * mutation.
- */
+// ServerFileTarget backed by the authenticated Pterodactyl->Wings file API.
 final class WingsServerFileTarget implements ServerFileTarget
 {
     private const ROOT = '/';
@@ -310,9 +302,7 @@ final class WingsServerFileTarget implements ServerFileTarget
         return $entries[$basename] ?? null;
     }
 
-    /**
-     * @return array<string, string> name => ('dir'|'file')
-     */
+    // @return array<string, string> name => ('dir'|'file')
     private function listing(string $directory): array
     {
         if (array_key_exists($directory, $this->listings)) {

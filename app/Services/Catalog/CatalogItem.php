@@ -2,17 +2,10 @@
 
 namespace Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog;
 
-/**
- * A single normalized catalog entry. Fields are nullable where a provider
- * has no equivalent, so every provider can populate the same contract.
- */
+// A single normalized catalog entry.
 final readonly class CatalogItem
 {
-    /**
-     * @param array<string> $categories
-     * @param array<string> $gameVersions
-     * @param array<string> $loaders
-     */
+    // @param array<string> $categories @param array<string> $gameVersions @param array<string> $loaders
     public function __construct(
         public string $provider,
         public string $providerProjectId,
@@ -35,9 +28,7 @@ final readonly class CatalogItem
     ) {
     }
 
-    /**
-     * @return array<string, mixed>
-     */
+    // @return array<string, mixed>
     public function toArray(): array
     {
         return [
@@ -62,11 +53,7 @@ final readonly class CatalogItem
         ];
     }
 
-    /**
-     * Rebuilds an item from toArray() output (cache hydration).
-     *
-     * @param array<string, mixed> $data
-     */
+    // Rebuilds an item from toArray() output (cache hydration).
     public static function fromArray(array $data): self
     {
         $stringOrNull = static function ($value): ?string {

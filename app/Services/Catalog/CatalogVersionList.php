@@ -2,18 +2,10 @@
 
 namespace Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog;
 
-/**
- * Normalized catalog version response: the exact versions/releases of a
- * project plus the filters as applied and the active provider. Each entry
- * carries its own installable source (exact-version pin).
- */
+// Normalized catalog version response: the exact versions/releases of a project plus the filters as applied and the...
 final readonly class CatalogVersionList
 {
-    /**
-     * @param array<int, CatalogVersion> $versions
-     * @param array<string>              $appliedGameVersions
-     * @param array<string>              $appliedLoaders
-     */
+    // @param array<int, CatalogVersion> $versions @param array<string> $appliedGameVersions @param array<string>...
     public function __construct(
         public string $provider,
         public array $appliedGameVersions = [],
@@ -22,9 +14,7 @@ final readonly class CatalogVersionList
     ) {
     }
 
-    /**
-     * @return array<string, mixed>
-     */
+    // @return array<string, mixed>
     public function toArray(): array
     {
         return [
@@ -40,11 +30,7 @@ final readonly class CatalogVersionList
         ];
     }
 
-    /**
-     * Rebuilds a version list from toArray() output (cache hydration).
-     *
-     * @param array<string, mixed> $data
-     */
+    // Rebuilds a version list from toArray() output (cache hydration).
     public static function fromArray(array $data): self
     {
         $filters = is_array($data['filters'] ?? null)

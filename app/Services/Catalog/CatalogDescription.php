@@ -4,21 +4,10 @@ namespace Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Ca
 
 use InvalidArgumentException;
 
-/**
- * A provider-rendered long description for a catalog project, already
- * converted to a sanitized HTML fragment safe for client rendering.
- *
- * Security contract: `html` must never contain raw third-party markup as-is.
- * Markdown sources are escaped before formatting; HTML sources are reduced to
- * an allowlist with event handlers and scripting URLs stripped.
- */
+// A provider-rendered long description for a catalog project, already converted to a sanitized HTML fragment safe for...
 final readonly class CatalogDescription
 {
-    /**
-     * @param array<int, string> $imageUrls URLs of images referenced by the
-     *                                     description, so the client can
-     *                                     lazy-load them.
-     */
+    // description, so the client can lazy-load them.
     public function __construct(
         public string $provider,
         public string $project,
@@ -37,9 +26,7 @@ final readonly class CatalogDescription
         }
     }
 
-    /**
-     * @return array{provider: string, project: string, html: string}
-     */
+    // @return array{provider: string, project: string, html: string}
     public function toArray(): array
     {
         return [
@@ -49,9 +36,7 @@ final readonly class CatalogDescription
         ];
     }
 
-    /**
-     * @param array<string, mixed> $payload
-     */
+    // @param array<string, mixed> $payload
     public static function fromArray(array $payload): self
     {
         return new self(

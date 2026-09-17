@@ -1,7 +1,4 @@
-/*
- * Barrel for the modular components. ModpackInstaller.tsx imports the
- * modules directly; this file exists for external re-use and discovery.
- */
+// Barrel for the modular components.
 
 export { Dropdown } from './common/Dropdown';
 export { Modal } from './modals/Modal';

@@ -1,9 +1,4 @@
-/*
- * modals.css — modal overlay, modal chrome, details modal content.
- *
- * SOURCE file — root.css is generated from these files by
- * tools/build-css.mjs (run by build.sh). Do NOT edit root.css directly.
- */
+/* modals.css — modal overlay, modal chrome, details modal content. */
 
 .modpackinstaller-modal-overlay {
   position: fixed;
@@ -22,12 +17,7 @@
   animation: modpackinstaller-fade-out 0.2s ease-in forwards;
 }
 
-/*
- * Frosted window surface shared by modals, dropdown menus and the filter
- * panel: Pterodactyl's own slate background tone, translucent, with a
- * backdrop blur. Browsers without backdrop-filter fall back to a nearly
- * opaque fill so text stays readable.
- */
+/* Frosted window surface shared by modals, dropdown menus and the filter panel: Pterodactyl's own slate background tone... */
 .modpackinstaller-modal {
   width: 100%;
   max-width: 640px;
@@ -54,11 +44,7 @@
   animation: modpackinstaller-slide-down 0.2s ease-in forwards;
 }
 
-/*
- * Detail modal section cards: every logical group (header, version,
- * description, compatibility, author) sits in its own frosted card so the
- * modal reads like Modrinth's project page at every screen width.
- */
+/* Detail modal section cards: every logical group (header, version, description, compatibility, author) sits in its own... */
 .modpackinstaller-detail-card {
   padding: 14px;
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -66,12 +52,7 @@
   background: rgba(255, 255, 255, 0.03);
 }
 
-/*
- * The detail modal's section cards need real space between them so they
- * read as separate panels, not one jumbled block. The details modal body
- * renders the cards directly (no wrapper), so scope the rhythm to the
- * modal box itself.
- */
+/* The detail modal's section cards need real space between them so they read as separate panels, not one jumbled block. */
 .modpackinstaller-modal > .modpackinstaller-status + .modpackinstaller-detail-card,
 .modpackinstaller-detail-card + .modpackinstaller-detail-card,
 .modpackinstaller-detail-card + .modpackinstaller-modal-result {
@@ -164,8 +145,7 @@
   height: 11px;
 }
 
-/* Round action buttons on the header's right edge: grey View, green
- * Download — like Modrinth's heart/share circles. */
+/* Round action buttons on the header's right edge: grey View, green Download — like Modrinth's heart/share circles. */
 .modpackinstaller-detail-header-actions {
   flex: 0 0 auto;
   display: flex;
@@ -246,8 +226,7 @@
   color: #ffffff;
 }
 
-/* Version picker popup: the selected option reads green, and the install
- * button keeps its normal green here (the warning state below overrides). */
+/* Version picker popup: the selected option reads green, and the install button keeps its normal green here (the warning... */
 .modpackinstaller-version-picker .modpackinstaller-version-option--selected {
   border-color: #16a34a;
   background: #16a34a;
@@ -367,9 +346,7 @@
   opacity: 0.85;
 }
 
-/* Collapsible <details> disclosures render as sub-cards inside the
- * description: slightly darker surface, rounded, padded — matching how
- * Modrinth presents them. */
+/* Collapsible <details> disclosures render as sub-cards inside the description: slightly darker surface, rounded, padded... */
 .modpackinstaller-detail-description details {
   margin: 10px 0;
   padding: 10px 12px;
@@ -461,8 +438,7 @@
   height: 38px;
 }
 
-/* Version picker popup: opened by the header download button, layered
- * above the details modal with its own overlay. */
+/* Version picker popup: opened by the header download button, layered above the details modal with its own overlay. */
 .modpackinstaller-version-picker-overlay {
   position: fixed;
   inset: 0;

@@ -5,15 +5,7 @@ namespace Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Wi
 use InvalidArgumentException;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Server\ServerRelativePath;
 
-/**
- * Thin, authenticated client for the Wings server file API.
- *
- * The connection address and daemon key are resolved by the backend from the
- * authenticated Pterodactyl Server/Node models and cannot be supplied by a
- * client request. URLs are constructed only from that resolved connection
- * address plus this server's UUID, so a caller can never redirect requests
- * to an arbitrary host.
- */
+// Thin, authenticated client for the Wings server file API.
 final class WingsFileClient
 {
     private const SUCCESS = [200, 204];
@@ -74,10 +66,7 @@ final class WingsFileClient
         $this->throwFor($response->status);
     }
 
-    /**
-     * Streams a local source file to the Wings node without buffering the
-     * whole payload in memory (the transport uploads from the file handle).
-     */
+    // Streams a local source file to the Wings node without buffering the whole payload in memory (the transport uploads from...
     public function putFile(string $relativePath, string $sourcePath): void
     {
         $path = ServerRelativePath::normalize($relativePath);
@@ -115,9 +104,7 @@ final class WingsFileClient
         $this->throwFor($response->status);
     }
 
-    /**
-     * @return array<int, array<string, mixed>> Wings file entry list
-     */
+    // @return array<int, array<string, mixed>> Wings file entry list
     public function listDirectory(string $directory): array
     {
         $path = ServerRelativePath::normalizeDirectory($directory);
@@ -163,9 +150,7 @@ final class WingsFileClient
         $this->throwFor($response->status);
     }
 
-    /**
-     * @param array<int, string> $files
-     */
+    // @param array<int, string> $files
     public function deleteFiles(string $root, array $files): void
     {
         $normalizedFiles = [];
