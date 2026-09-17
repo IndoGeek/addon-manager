@@ -72,7 +72,13 @@ import { FilterPanel } from './toolbar/FilterPanel';
 import { ActiveFilterChips } from './toolbar/ActiveFilterChips';
 
 import { CatalogResults } from './cards/CatalogResults';
-import { RefreshIcon, SpinnerIcon, WarningIcon } from './icons';
+import {
+    CurseForgeIcon,
+    ModrinthIcon,
+    RefreshIcon,
+    SpinnerIcon,
+    WarningIcon,
+} from './icons';
 
 // How long a freshly-started install may report no backend progress before
 // the polling loop treats it as abandoned. The install POST can take several
@@ -341,6 +347,12 @@ export default () => {
             ? provider.label
             : `${provider.label} (unavailable)`,
         disabled: !provider.available,
+        icon:
+            provider.name === 'modrinth'
+                ? <ModrinthIcon />
+                : provider.name === 'curseforge'
+                    ? <CurseForgeIcon />
+                    : undefined,
     }));
 
     const providerLabels: Record<string, string> =

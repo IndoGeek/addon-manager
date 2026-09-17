@@ -62,10 +62,10 @@
  */
 .modpackinstaller-dropdown--compact .modpackinstaller-dropdown-trigger {
   min-width: 0;
-  width: 92px;
+  width: 104px;
   justify-content: center;
   gap: 5px;
-  padding: 0 8px;
+  padding: 0 10px;
 }
 
 .modpackinstaller-dropdown--compact .modpackinstaller-dropdown-menu {
@@ -176,8 +176,32 @@
 
 @media (max-width: 480px) {
   .modpackinstaller-dropdown--compact .modpackinstaller-dropdown-trigger {
-    width: 84px;
+    width: 94px;
   }
+}
+
+
+/* Icon + label inner layout for triggers and menu options. */
+.modpackinstaller-dropdown-trigger-inner {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.modpackinstaller-dropdown-trigger-inner svg {
+  flex: 0 0 auto;
+}
+
+.modpackinstaller-dropdown-option-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.modpackinstaller-dropdown-option-label svg {
+  flex: 0 0 auto;
+  opacity: 0.85;
 }
 
 .modpackinstaller-filters-toggle {

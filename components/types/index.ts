@@ -1,3 +1,5 @@
+import type React from 'react';
+
 export interface ManualDownloadInfo {
     provider: string;
     project_name: string;
@@ -282,4 +284,6 @@ export interface DropdownOption {
     label: string;
     detail?: string;
     disabled?: boolean;
+    /** Optional icon rendered before the label. */
+    icon?: React.ReactNode;
 }

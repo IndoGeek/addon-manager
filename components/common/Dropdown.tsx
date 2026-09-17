@@ -10,6 +10,7 @@ export const Dropdown = ({
     disabled,
     compact = false,
     icon,
+    hideLabel = false,
 }: {
     id: string;
     label: string;
@@ -20,6 +21,8 @@ export const Dropdown = ({
     /** Compact mode: square icon-only trigger sized like the view toggle. */
     compact?: boolean;
     icon?: React.ReactNode;
+    /** Hide the visible heading label (kept for a11y attributes). */
+    hideLabel?: boolean;
 }) => {
     const [open, setOpen] = useState(false);
 
@@ -157,7 +160,7 @@ export const Dropdown = ({
                     : ''
             }`}
         >
-            {!compact && (
+            {!compact && !hideLabel && (
                 <label id={`${id}-label`} htmlFor={id}>
                     {label}
                 </label>
@@ -185,8 +188,12 @@ export const Dropdown = ({
                         </span>
                     </>
                 ) : (
-                    <span className="modpackinstaller-dropdown-value">
-                        {selected ? selected.label : 'Any'}
+                    <span className="modpackinstaller-dropdown-value modpackinstaller-dropdown-trigger-inner">
+                        {selected?.icon}
+
+                        <span>
+                            {selected ? selected.label : 'Any'}
+                        </span>
                     </span>
                 )}
 
@@ -225,7 +232,13 @@ export const Dropdown = ({
                                 setOpen(false);
                             }}
                         >
-                            <span>{option.label}</span>
+                            <span className="modpackinstaller-dropdown-option-label">
+                                {option.icon}
+
+                                <span>
+                                    {option.label}
+                                </span>
+                            </span>
 
                             {option.detail && (
                                 <small>{option.detail}</small>

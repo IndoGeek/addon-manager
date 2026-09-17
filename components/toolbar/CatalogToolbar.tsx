@@ -1,8 +1,33 @@
 import React, { useEffect, useRef } from 'react';
 import { Dropdown } from '../common/Dropdown';
-import { FilterIcon, GridIcon, ListIcon, PackageIcon, SearchIcon, StackIcon } from '../icons';
-import { STACK_OPTIONS } from '../utils/constants';
-import { SORT_OPTIONS } from '../utils/constants';
+import {
+    DownloadStatIcon,
+    FilterIcon,
+    FollowsStatIcon,
+    GridIcon,
+    ListIcon,
+    PackageIcon,
+    SearchIcon,
+    StackIcon,
+    UpdatedStatIcon,
+} from '../icons';
+import { SORT_OPTIONS, STACK_OPTIONS } from '../utils/constants';
+import type { DropdownOption } from '../types';
+
+const SORT_ICONS: Record<string, React.ReactNode> = {
+    relevance: <SearchIcon />,
+    downloads: <DownloadStatIcon />,
+    follows: <FollowsStatIcon />,
+    newest: <UpdatedStatIcon />,
+    updated: <UpdatedStatIcon />,
+};
+
+const SORTED_OPTIONS_WITH_ICONS: DropdownOption[] = SORT_OPTIONS.map(
+    (option) => ({
+        ...option,
+        icon: SORT_ICONS[option.value],
+    }),
+);
 
 interface ToolbarProps {
     query: string;
@@ -227,6 +252,7 @@ export const CatalogToolbar = ({
                     onChange={onProviderChange}
                     options={providerOptions}
                     disabled={catalogBusy}
+                    hideLabel
                 />
 
                 <Dropdown
@@ -234,8 +260,9 @@ export const CatalogToolbar = ({
                     label="Sort"
                     value={sortValue}
                     onChange={onSortChange}
-                    options={SORT_OPTIONS}
+                    options={SORTED_OPTIONS_WITH_ICONS}
                     disabled={catalogBusy}
+                    hideLabel
                 />
 
                 <Dropdown

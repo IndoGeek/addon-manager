@@ -523,10 +523,10 @@
  */
 .modpackinstaller-dropdown--compact .modpackinstaller-dropdown-trigger {
   min-width: 0;
-  width: 92px;
+  width: 104px;
   justify-content: center;
   gap: 5px;
-  padding: 0 8px;
+  padding: 0 10px;
 }
 
 .modpackinstaller-dropdown--compact .modpackinstaller-dropdown-menu {
@@ -637,8 +637,32 @@
 
 @media (max-width: 480px) {
   .modpackinstaller-dropdown--compact .modpackinstaller-dropdown-trigger {
-    width: 84px;
+    width: 94px;
   }
+}
+
+
+/* Icon + label inner layout for triggers and menu options. */
+.modpackinstaller-dropdown-trigger-inner {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.modpackinstaller-dropdown-trigger-inner svg {
+  flex: 0 0 auto;
+}
+
+.modpackinstaller-dropdown-option-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.modpackinstaller-dropdown-option-label svg {
+  flex: 0 0 auto;
+  opacity: 0.85;
 }
 
 .modpackinstaller-filters-toggle {
@@ -1283,6 +1307,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 6px;
   padding: 6px 12px;
   border: 0;
   border-radius: 6px;
@@ -1295,6 +1320,11 @@
     background 0.12s ease,
     transform 0.12s ease,
     opacity 0.12s ease;
+}
+
+.modpackinstaller-card-action-open svg,
+.modpackinstaller-card-action-details svg {
+  flex: 0 0 auto;
 }
 
 .modpackinstaller-card-action-open {
@@ -1318,18 +1348,22 @@
   cursor: wait;
 }
 
+/* Details/View: a step darker than the card surface with the same white
+ * border as the view toggle, so it reads as a button without competing
+ * with the green Open button. */
 .modpackinstaller-card-action-details {
-  color: #111827;
-  background: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.9);
+  background: rgba(0, 0, 0, 0.3);
 }
 
 .modpackinstaller-card-action-details:hover,
 .modpackinstaller-card-action-details:focus-visible {
-  background: #e5e7eb;
+  background: rgba(0, 0, 0, 0.42);
 }
 
 .modpackinstaller-card-action-details:active {
-  background: #d1d5db;
+  background: rgba(0, 0, 0, 0.5);
   transform: translateY(1px);
 }
 

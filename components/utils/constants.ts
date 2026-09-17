@@ -25,6 +25,8 @@ export const STACK_OPTIONS: Array<{ value: string; label: string }> = [
     { value: '30', label: '30 stack' },
 ];
 
+export const STACK_GRID_SIZE = 44;
+
 export const DEFAULT_STACK = '10';
 
 export const ENVIRONMENT_OPTIONS: Array<{

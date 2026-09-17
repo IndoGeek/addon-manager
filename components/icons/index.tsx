@@ -302,6 +302,32 @@ export const DownloadIcon = () => (
     </svg>
 );
 
+/** Modrinth brand mark: circular pinwheel ring with the wrench notch. */
+export const ModrinthIcon = () => (
+    <svg
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="currentColor"
+        aria-hidden="true"
+    >
+        <path d="M12 1.5C6.2 1.5 1.5 6.2 1.5 12S6.2 22.5 12 22.5 22.5 17.8 22.5 12 17.8 1.5 12 1.5zm0 3.2c4 0 7.3 3.3 7.3 7.3 0 1.5-.5 2.9-1.2 4l-3.6-3.6a2.9 2.9 0 0 0-5-2l3 3-1.1 1.1-3-3a2.9 2.9 0 0 0 2 5l3.6 3.6c-1.1.8-2.5 1.2-4 1.2-4 0-7.3-3.3-7.3-7.3S8 4.7 12 4.7z" />
+    </svg>
+);
+
+/** CurseForge brand mark: the anvil silhouette. */
+export const CurseForgeIcon = () => (
+    <svg
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="currentColor"
+        aria-hidden="true"
+    >
+        <path d="M2 5.5h20v3.2c0 1.4-1 2.5-2.4 2.7-2 .3-4.2.5-6.3.5v2.4c0 1 .6 1.8 1.5 2.2l3 1.2c.7.3 1.2 1 1.2 1.8v.5H5v-.5c0-.8.5-1.5 1.2-1.8l3-1.2c.9-.4 1.5-1.2 1.5-2.2v-2.4c-2.1 0-4.3-.2-6.3-.5C3 11.2 2 10.1 2 8.7V5.5zm2.5 2.3c0 .5.4.9.9 1 2.1.3 4.3.4 6.6.4s4.5-.1 6.6-.4c.5-.1.9-.5.9-1v-.1H4.5v.1z" />
+    </svg>
+);
+
 export const OpenIcon = () => (
     <svg
         width="16"

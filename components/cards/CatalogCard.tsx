@@ -163,7 +163,8 @@ export const CatalogCard = ({
                             aria-label="Open modpack"
                             title="Open"
                         >
-                            Open
+                            <OpenIcon />
+                            <span>Open</span>
                         </button>
 
                         {item.project_url && (
@@ -176,7 +177,8 @@ export const CatalogCard = ({
                                 aria-label="View on provider page"
                                 title="View"
                             >
-                                Details
+                                <ViewIcon />
+                                <span>Details</span>
                             </a>
                         )}
                     </div>
