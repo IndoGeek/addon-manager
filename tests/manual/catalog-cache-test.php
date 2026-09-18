@@ -244,9 +244,7 @@ if ($keyA === $keyB || $keyA === $keyC) {
 
 pass('cache keys are scoped and query-sensitive');
 
-// Regression: versions() must work end-to-end through the service for both
-// providers, with strict error handling (undefined property access on the
-// query object would previously fatal here in production).
+// Regression: versions() must work end-to-end through the service for both providers, with strict error handlin...
 $versionsService = new CatalogService(
     new CatalogProviderRegistry([
         new CurseForgeCatalogProvider($http, 'secret-key'),

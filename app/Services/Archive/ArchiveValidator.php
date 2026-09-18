@@ -91,9 +91,7 @@ final class ArchiveValidator
                 }
             }
 
-            // A file entry must never be a directory prefix of another entry,
-            // otherwise extraction would have to clobber a directory to place
-            // the file.
+            // A file entry must never be a directory prefix of another entry, otherwise extraction would have to clobber a ...
             foreach ($seenNames as $canonicalName => $isDirectory) {
                 if ($isDirectory) {
                     continue;
@@ -127,8 +125,7 @@ final class ArchiveValidator
             );
         }
 
-        // Backslashes are rejected so Windows-style traversal cannot bypass
-        // the path checks performed by the deployment layer.
+        // Backslashes are rejected so Windows-style traversal cannot bypass the path checks performed by the deployment...
         if (str_contains($path, '\\')) {
             throw new InvalidArgumentException(
                 "Archive contains an invalid path: {$path}"

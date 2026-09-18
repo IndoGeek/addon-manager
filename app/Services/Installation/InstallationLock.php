@@ -71,8 +71,7 @@ final class InstallationLock
             );
         }
 
-        // Refresh the modification time so the lock is not mistaken for a
-        // stale one immediately after being acquired.
+        // Refresh the modification time so the lock is not mistaken for a stale one immediately after being acquired.
         @touch($lockPath);
 
         return $lockPath;
@@ -92,8 +91,7 @@ final class InstallationLock
             return;
         }
 
-        // Only the holder that recorded its token may release the lock. This
-        // prevents a burst of requests from deleting a newer lock.
+        // Only the holder that recorded its token may release the lock.
         $recorded = is_file($tokenPath)
             ? trim((string) @file_get_contents($tokenPath))
             : '';
@@ -120,8 +118,6 @@ final class InstallationLock
         }
 
         // Best-effort removal of a lock that has aged past the stale window.
-        // If the directory is still in use the removal will fail (non-empty
-        // token file) and the caller continues polling.
         @unlink($lockPath . '/.token');
         @rmdir($lockPath);
 

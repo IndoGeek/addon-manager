@@ -5,9 +5,7 @@ namespace Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Ma
 use RuntimeException;
 use Throwable;
 
-// Append-only JSON audit log of install/update/restore/uninstall activity,
-// shown on the extension's admin settings page. Entries are capped so the
-// file cannot grow indefinitely.
+// Append-only JSON audit log of install/update/restore/uninstall activity, shown on the extension's admin setti...
 final class InstallHistoryStore
 {
     private const FILE = 'history.json';
@@ -19,8 +17,7 @@ final class InstallHistoryStore
     ) {
     }
 
-    // Record one completed action. Best-effort by design: callers wrap this
-    // so a logging failure never masks the operation's outcome.
+    // Record one completed action.
     public function append(array $entry): void
     {
         $this->mutate(static function (array $entries) use ($entry): array {

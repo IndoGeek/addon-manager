@@ -7,7 +7,7 @@ use Throwable;
 // Short-lived cache for upstream catalog responses, backed by the panel's Laravel cache repository (Redis on every stock...
 final class CatalogCache
 {
-    /** Prefix shared with build.sh's flush step — do not rename casually. */
+    /** Prefix shared with tools/build.sh's flush step — do not rename casually. */
     public const KEY_PREFIX = 'modpackinstaller:catalog:';
 
     private ?object $store = null;

@@ -163,10 +163,7 @@ export const DetailsModalBody = ({
             ),
         );
 
-    // CurseForge does not record a loader for every content type: plugins,
-    // resource packs, data packs and shaders publish files tagged with
-    // Minecraft versions only (verified live — a plugin file's modLoader is
-    // null). Those get a single dropdown instead of an invented loader list.
+    // CurseForge does not record a loader for every content type: plugins, resource packs, data packs and shaders...
     const modHasLoaders = modLoaders.length > 0;
 
     const modMcForLoader = modVersions === null
@@ -335,9 +332,7 @@ export const DetailsModalBody = ({
                     && modalDescription.html.trim() !== '' && (
                         <div
                             className="modpackinstaller-detail-description"
-                            // Sanitized server-side by
-                            // DescriptionSanitizer: allowlisted tags only,
-                            // event handlers and scripting URLs stripped.
+                            // Sanitized server-side by DescriptionSanitizer: allowlisted tags only, event handlers and scripting URLs...
                             dangerouslySetInnerHTML={{
                                 __html: modalDescription.html,
                             }}
@@ -694,10 +689,7 @@ export const DetailsModalBody = ({
     );
 };
 
-// Version selection window for single-file content (mods): two dropdowns
-// (loader, Minecraft version). The install button appears only once both
-// selections resolve to a published version; dependency recommendations are
-// informational and never block the install.
+// Version selection window for single-file content (mods): two dropdowns (loader, Minecraft version).
 const ModVersionPickerBody = ({
     modVersions,
     loading,

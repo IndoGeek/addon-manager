@@ -8,36 +8,14 @@ use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Download
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Server\ServerFileTarget;
 use RuntimeException;
 
-// Lightweight install path for single-file content (mods, plugins,
-// datapacks, resource packs, shaders).
-//
-// Modpacks need the full pipeline (mrpack/zip extraction, dependency
-// resolution, overrides). Content is downloads plus uploads: fetch the
-// primary file of each version, stream it into the directory its content
-// type belongs to, and return the relative path of each so the caller can
-// record file-level ownership for uninstall.
-//
-// When several files are installed in one run (the picked content plus its
-// recommended dependencies) they are downloaded concurrently through the
-// shared batch engine, so every file in the run makes progress at once;
-// uploads to the server node still happen one file at a time.
+// Lightweight install path for single-file content (mods, plugins, datapacks, resource packs, shaders).
 final class SimpleContentInstaller
 {
     public function __construct(
         private readonly Downloader $downloader,
     ) {}
 
-    /**
-     * Downloads $sourceUrl and uploads it as <targetDirectory>/<filename>.
-     *
-     * @param  callable(): bool  $cancelChecker
-     * @param  callable(?int, ?int): void  $onProgress  Mirror of the
-     *         downloader's progress callback, so the controller can surface
-     *         percent-complete and keep the install lock alive.
-     *
-     * @return array{path: string, size: int} The server-relative path the
-     *         file was placed at and its byte size.
-     */
+    /** Downloads $sourceUrl and uploads it as <targetDirectory>/<filename>. */
     public function install(
         string $sourceUrl,
         string $filename,
@@ -59,8 +37,7 @@ final class SimpleContentInstaller
             $this->downloader->setProgressCallback($onProgress);
         }
 
-        // The DownloadManager returns a temporary file path it controls;
-        // ownership of cleanup stays with it via its own workspace rules.
+        // The DownloadManager returns a temporary file path it controls; ownership of cleanup stays with it via its own...
         $downloaded = $this->downloader->download($sourceUrl);
 
         if (!is_file($downloaded)) {
@@ -74,8 +51,7 @@ final class SimpleContentInstaller
         $target->ensureDirectory($targetDirectory);
         $target->putFile($targetDirectory . '/' . $filename, $downloaded);
 
-        // The temporary download is owned by this call; removing it here
-        // keeps the temporary root clean without waiting for GC.
+        // The temporary download is owned by this call; removing it here keeps the temporary root clean without waiting...
         @unlink($downloaded);
 
         return [
@@ -84,23 +60,7 @@ final class SimpleContentInstaller
         ];
     }
 
-    /**
-     * Downloads every item at once and uploads each into its own target
-     * directory.
-     *
-     * @param  array<int, array{url: string, bytes?: int, filename: string, directory: string}>  $items
-     * @param  string  $workspace  Scratch directory the concurrent engine
-     *         streams into; created when missing and removed afterwards.
-     * @param  callable(): bool  $cancelChecker
-     * @param  callable(?int, ?int): void  $onProgress  Aggregate progress.
-     * @param  callable(array<int, array{downloaded_bytes: int, total_bytes: int, done: bool, failed: bool}>): void  $onFileProgress
-     *         Per-file progress, keyed by item index.
-     * @param  callable(int, int): void  $onUpload  Called with the 0-based
-     *         index and the total file count before each upload.
-     *
-     * @return array<int, array{path: string, size: int}> Results keyed by
-     *         the item index they came from.
-     */
+    /** Downloads every item at once and uploads each into its own target directory. */
     public function installBatch(
         array $items,
         ServerFileTarget $target,
@@ -136,8 +96,7 @@ final class SimpleContentInstaller
             return [];
         }
 
-        // A single file needs no batch engine, and a downloader without one
-        // (test doubles, alternative drivers) falls back to one at a time.
+        // A single file needs no batch engine, and a downloader without one (test doubles, alternative drivers) falls b...
         if (
             count($prepared) === 1
             || !$this->downloader instanceof ConcurrentDownloader
@@ -183,9 +142,7 @@ final class SimpleContentInstaller
             $this->downloader->setBatchProgressCallback($onFileProgress);
         }
 
-        // Anchor the aggregate bar on the total the provider declared, so
-        // the percentage measures progress rather than mirroring the sum of
-        // what already arrived.
+        // Anchor the aggregate bar on the total the provider declared, so the percentage measures progress rather than ...
         $declaredTotal = 0;
 
         foreach ($prepared as $item) {
@@ -204,8 +161,7 @@ final class SimpleContentInstaller
                 'id' => $index,
                 'urls' => [$item['url']],
                 'bytes' => $item['bytes'],
-                // Each file gets its own on-disk name so two items that
-                // happen to resolve to the same module name cannot clash.
+                // Each file gets its own on-disk name so two items that happen to resolve to the same module name cannot clash.
                 'destination' => $workspace . '/' . $index . '-'
                     . $item['filename'],
             ];
@@ -266,8 +222,7 @@ final class SimpleContentInstaller
         return $results;
     }
 
-    // Strips anything that could escape the target directory, keeping the
-    // basename the provider actually advertises (e.g. "sodium-0.6.0.jar").
+    // Strips anything that could escape the target directory, keeping the basename the provider actually advertises...
     private function safeFilename(string $filename): string
     {
         $filename = basename(str_replace('\\', '/', $filename));

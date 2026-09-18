@@ -188,8 +188,7 @@ if (
 
 echo "PASS: content kind round trips.\n";
 
-// Records written before the kind existed infer it from where the files
-// were placed.
+// Records written before the kind existed infer it from where the files were placed.
 $legacyKinds = [
     'mods/a.jar' => 'mod',
     'plugins/vault.jar' => 'plugin',
@@ -230,8 +229,7 @@ if ($roundTripped->contentKind !== 'modpack') {
 
 echo "PASS: modpack records report the modpack kind.\n";
 
-// An unrecognized stored kind falls back to inference instead of a label
-// nobody understands.
+// An unrecognized stored kind falls back to inference instead of a label nobody understands.
 $unknown = InstallRecord::fromArray([
     'id' => str_repeat('d', 32),
     'server_uuid' => 'server-aaa',

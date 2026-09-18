@@ -890,9 +890,7 @@ if (is_file($serverPackPath)) {
 
 pass('server-pack archive returned as-is and cleaned up');
 
-// A wrapped dedicated server pack (every entry inside one top-level folder,
-// e.g. SERVER_1.21/) must be materialized with the wrapper stripped so the
-// content deploys at the server root instead of a stray folder.
+// A wrapped dedicated server pack (every entry inside one top-level folder, e.g.
 $wrappedServerPackPath = $temporaryRoot . '/wrapped-server-pack.zip';
 buildZip($wrappedServerPackPath, [
     'SERVER_1.21/server.properties' => 'motd=wrapped',
@@ -915,8 +913,7 @@ $wrappedFilesResponse = new ProviderHttpResponse(200, [
     ],
 ]);
 
-// The referenced server pack ships with an empty gameVersions array; the
-// referencing file's versions must be inherited so metadata resolution works.
+// The referenced server pack ships with an empty gameVersions array; the referencing file's versions must be in...
 $emptyGvServerPackResponse = new ProviderHttpResponse(200, [
     'data' => [
         'id' => 8827604,

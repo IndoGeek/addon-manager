@@ -460,8 +460,7 @@ function assertSecretFree(string $message, int|string $context): void
 $count++;
 echo "PASS: no secrets appear in wings exception messages\n";
 
-// 14: the client cannot be pointed at an arbitrary URL, and relative paths are
-// strictly validated before any request is issued.
+// 14: the client cannot be pointed at an arbitrary URL, and relative paths are strictly validated before any re...
 $transport = new FakeWingsTransport([
     ok(json_encode([])),
 ]);

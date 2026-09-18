@@ -148,8 +148,7 @@ final class ModpackController extends Controller
 
     public function catalogProviders(Request $request): JsonResponse
     {
-        // The active tab decides which category/loader lists apply, so the
-        // facet payload is built for the requested content type.
+        // The active tab decides which category/loader lists apply, so the facet payload is built for the requested con...
         $contentType = $this->paramString(
             $request,
             'content_type',
@@ -171,8 +170,7 @@ final class ModpackController extends Controller
             $service = $service->withFacetsContentType($contentType);
         }
 
-        // Admins can hide CurseForge entirely from the extension settings
-        // page; the UI then only ever sees Modrinth.
+        // Admins can hide CurseForge entirely from the extension settings page; the UI then only ever sees Modrinth.
         $disableCurseforge = $this->setting('disable_curseforge') === '1';
 
         $providers = array_values(array_filter(
@@ -302,9 +300,7 @@ final class ModpackController extends Controller
         }
     }
 
-    // Version catalog for single-file content: per-version loader and
-    // Minecraft-version options plus recommended dependencies, so the mod
-    // version window can offer two dropdowns and a non-blocking hint.
+    // Version catalog for single-file content: per-version loader and Minecraft-version options plus recommended de...
     public function catalogModVersions(Request $request): JsonResponse
     {
         try {
@@ -326,8 +322,7 @@ final class ModpackController extends Controller
                 '/^[a-z0-9-]{1,32}$/',
             ) ?? 'modrinth';
 
-            // Both providers normalize into the same payload, so the version
-            // window, the install path and the uninstall path are shared.
+            // Both providers normalize into the same payload, so the version window, the install path and the uninstall pat...
             $catalog = match ($provider) {
                 'modrinth' => new ModVersionCatalog(
                     $this->providerHttp(),
@@ -433,13 +428,7 @@ final class ModpackController extends Controller
         $token = bin2hex(random_bytes(16));
         $progressToken = '';
 
-        // A modpack install is a many-minute operation (a 600MB+ mod phase,
-        // packaging and deployment), but PHP-FPM's default max_execution_time
-        // is 30 seconds. Without lifting it, the engine dies mid-transfer with
-        // a fatal "Maximum execution time exceeded" and the frontend is left
-        // polling a frozen progress snapshot forever. Unblock this request's
-        // timer; the install lock's own staleness timeout remains the safety
-        // net that reclaims an actually-abandoned install.
+        // A modpack install is a many-minute operation (a 600MB+ mod phase, packaging and deployment), but PHP-FPM's de...
         @set_time_limit(0);
 
         try {
@@ -478,12 +467,7 @@ final class ModpackController extends Controller
 
             $lastLockTouch = 0.0;
 
-            // Ordered steps of a modpack install. Providers announce the ones
-            // they walk (archive, extract, manifest, mods); prepare and deploy
-            // are the controller's own. The downloading card renders this list,
-            // so an install reads as labelled stages with a bar each instead of
-            // one anonymous percentage that resets whenever the progress window
-            // re-anchors between phases.
+            // Ordered steps of a modpack install.
             $stages = [];
 
             $stageIndex = -1;
@@ -498,11 +482,7 @@ final class ModpackController extends Controller
                 'deploy' => 'Deploying files',
             ];
 
-            // Enters a step, closing whichever one was in flight. A step that
-            // already has a row is left alone: providers announce one again
-            // when they re-enter it later in the same install (the archive is
-            // opened, then streamed out), and a counted update arrives on every
-            // tick, so neither may append a second row or reopen a closed step.
+            // Enters a step, closing whichever one was in flight.
             $enterStage = static function (string $key) use (
                 &$stages,
                 &$stageIndex,
@@ -530,8 +510,7 @@ final class ModpackController extends Controller
                 $stageIndex = count($stages) - 1;
             };
 
-            // Single writer for every progress snapshot of this install, so the
-            // stage list travels with each one no matter which callback fired.
+            // Single writer for every progress snapshot of this install, so the stage list travels with each one no matter ...
             $publish = static function (array $state) use (
                 $progress,
                 $progressToken,
@@ -544,8 +523,7 @@ final class ModpackController extends Controller
                 if (($now - $lastLockTouch) >= 2.0) {
                     $lastLockTouch = $now;
 
-                    // Keep the install lock alive so a long download is never
-                    // reclaimed as stale while it is still running.
+                    // Keep the install lock alive so a long download is never reclaimed as stale while it is still running.
                     @touch($lock);
                 }
 
@@ -567,9 +545,7 @@ final class ModpackController extends Controller
                     $enterStage($key);
 
                     if (($stages[$stageIndex]['key'] ?? null) !== $key) {
-                        // A late announcement of a step this install has already
-                        // left: ignore it rather than rewinding the bar of the
-                        // step actually in flight.
+                        // A late announcement of a step this install has already left: ignore it rather than rewinding the bar of the s...
                         return;
                     }
 
@@ -579,8 +555,7 @@ final class ModpackController extends Controller
                     }
 
                     if ($alreadyActive) {
-                        // A counted update inside the step already in flight:
-                        // keep its bar where it is and only refresh the counts.
+                        // A counted update inside the step already in flight: keep its bar where it is and only refresh the counts.
                         $publish([
                             'phase' => 'download',
                             'percent' => (int) ($stages[$stageIndex]['percent'] ?? 0),
@@ -592,9 +567,7 @@ final class ModpackController extends Controller
                         return;
                     }
 
-                    // A stage transition carries no bytes of its own, so the
-                    // bar restarts at zero (indeterminate) until the step it
-                    // announced streams something.
+                    // A stage transition carries no bytes of its own, so the bar restarts at zero (indeterminate) until the step it...
                     $publish([
                         'phase' => 'download',
                         'percent' => 0,
@@ -616,10 +589,7 @@ final class ModpackController extends Controller
                         )
                         : 0;
 
-                    // The byte window is per stage, so this percentage is the
-                    // active step's own progress: the archive bar fills to 100%
-                    // and then the extract bar starts, instead of the whole run
-                    // sharing one window that freezes and rewinds.
+                    // The byte window is per stage, so this percentage is the active step's own progress: the archive bar fills to ...
                     if ($stageIndex >= 0) {
                         $stages[$stageIndex]['percent'] = $percent;
                         $stages[$stageIndex]['downloaded_bytes'] = $downloadedBytes;
@@ -640,8 +610,7 @@ final class ModpackController extends Controller
 
             $package = $provider->getPackage($source);
 
-            // Acquisition is done: the replace/unpack bookkeeping happens here,
-            // after the download has fully succeeded and before deployment.
+            // Acquisition is done: the replace/unpack bookkeeping happens here, after the download has fully succeeded and ...
             $enterStage('prepare');
 
             $publish([
@@ -652,17 +621,7 @@ final class ModpackController extends Controller
 
             $target = $this->serverTarget($server);
 
-            // Replace semantics: the previous modpack's files must not survive
-            // alongside the new install. The deployment planner only overwrites
-            // paths the new pack also uses — every other file the old pack owns
-            // would be orphaned in the server root (most visibly its mods).
-            // Remove exactly those owned files (the same OwnershipRemover the
-            // uninstall endpoint uses, so nothing outside the record's manifest
-            // is ever touched), then drop the stale records. This runs after
-            // the download has fully succeeded — the point where the install is
-            // definitely proceeding — and before the new files deploy. Record
-            // deletion happens only after complete file removal, mirroring the
-            // uninstall endpoint's all-or-nothing behavior.
+            // Replace semantics: the previous modpack's files must not survive alongside the new install.
             $existingRecords = $this->store()->all((string) $server->uuid);
 
             if ($existingRecords !== []) {
@@ -754,10 +713,7 @@ final class ModpackController extends Controller
 
                 $this->store()->save($record);
             } catch (Throwable $exception) {
-                // The deployment itself succeeded, so a failure while recording
-                // it (metadata lookup, record store) must not leave newly
-                // deployed files stranded without a record. Best-effort remove
-                // exactly the files this install created.
+                // The deployment itself succeeded, so a failure while recording it (metadata lookup, record store) must not lea...
                 $this->rollbackDeployedFiles($server, $result);
 
                 throw $exception;
@@ -857,8 +813,7 @@ final class ModpackController extends Controller
                 try {
                     $this->installationLock()->release($lock, $token);
                 } catch (Throwable) {
-                    // Releasing the lock must never mask the installation
-                    // outcome; stale-lock handling covers leftover locks.
+                    // Releasing the lock must never mask the installation outcome; stale-lock handling covers leftover locks.
                 }
             }
 
@@ -870,12 +825,7 @@ final class ModpackController extends Controller
         }
     }
 
-    // Simple content install (mods, plugins, datapacks, resource packs,
-    // shaders): download one file from the provider and upload it into the
-    // server's target directory for that content type. No archive
-    // extraction, dependency resolution, or replace semantics — each file is
-    // tracked in its own install record so uninstall removes exactly what
-    // was added.
+    // Simple content install (mods, plugins, datapacks, resource packs, shaders): download one file from the provid...
     public function installContent(
         Request $request,
         Server $server,
@@ -902,9 +852,7 @@ final class ModpackController extends Controller
             [$source, $displayName, $iconUrl, $mcVersion, $loader]
                 = $this->contentInstallInput($request, $target['label']);
 
-            // Optional additional dependency sources: the user picks
-            // recommended mods in the version window and they are downloaded
-            // in the same run, each as its own tracked record.
+            // Optional additional dependency sources: the user picks recommended mods in the version window and they are do...
             $dependencySources = $this->contentDependencySources($request);
 
             [$provider, $projectId, $versionId] = $this->sourceParts($source);
@@ -923,9 +871,7 @@ final class ModpackController extends Controller
 
             $installer = new SimpleContentInstaller($downloader);
 
-            // Every install in this run: the main content first, then any
-            // selected dependencies. Each entry gets its own file and its
-            // own install record so uninstall removes exactly what was added.
+            // Every install in this run: the main content first, then any selected dependencies.
             $installItems = [[
                 'source' => $source,
                 'provider' => $provider,
@@ -955,10 +901,7 @@ final class ModpackController extends Controller
 
             $totalItems = count($installItems);
 
-            // Resolve every file up front. The concrete download URL and the
-            // upstream filename live in the version payload, and knowing all
-            // of them is what lets the files of this run download at the
-            // same time instead of one after another.
+            // Resolve every file up front.
             $resolver = new CatalogVersionFileResolver(
                 $this->providerHttp(),
                 $this->curseForgeApiKey(),
@@ -973,9 +916,7 @@ final class ModpackController extends Controller
                     $item['version_id'] ?? '',
                 );
 
-                // A dependency can be a different kind of content than the
-                // entry the user picked (a shader's Iris dependency is a
-                // mod), so each file resolves its own destination.
+                // A dependency can be a different kind of content than the entry the user picked (a shader's Iris dependency is...
                 $itemTarget = $item['is_dependency']
                     ? ContentInstallTarget::forDependency(
                         $target,
@@ -983,17 +924,13 @@ final class ModpackController extends Controller
                     )
                     : $target;
 
-                // The uploaded file is renamed to encode the selection so
-                // server owners can see at a glance what each file targets,
-                // e.g. example-mod-fabric-1-20-1.jar.
+                // The uploaded file is renamed to encode the selection so server owners can see at a glance what each file targ...
                 $prepared[] = [
                     'item' => $item,
-                    // Which catalog kind this file is: a dependency can be a
-                    // mod even when the picked entry was a shader.
+                    // Which catalog kind this file is: a dependency can be a mod even when the picked entry was a shader.
                     'kind' => $itemTarget['kind'],
                     'url' => $file['url'],
-                    // Declared size drives the per-file progress bars; the
-                    // transfer itself is size-agnostic.
+                    // Declared size drives the per-file progress bars; the transfer itself is size-agnostic.
                     'bytes' => max(0, (int) ($file['size'] ?? 0)),
                     'filename' => ContentInstallTarget::filename(
                         basename($file['filename']),
@@ -1006,8 +943,7 @@ final class ModpackController extends Controller
                 ];
             }
 
-            // Per-file state reported by the concurrent download engine, so
-            // the downloading window can show one live card per file.
+            // Per-file state reported by the concurrent download engine, so the downloading window can show one live card p...
             $fileProgress = [];
 
             $lastLockTouch = 0.0;
@@ -1050,8 +986,7 @@ final class ModpackController extends Controller
                 cancelChecker: fn (): bool => $this->wasCancelled(
                     $this->lockKey($server),
                 ),
-                // Downloads own the 0–90% window; the uploads that follow
-                // report the rest.
+                // Downloads own the 0–90% window; the uploads that follow report the rest.
                 onProgress: static function (
                     ?int $downloadedBytes,
                     ?int $totalBytes,
@@ -1276,8 +1211,7 @@ final class ModpackController extends Controller
         }
     }
 
-    // Which single-file content type an install targets. Defaults to a mod
-    // so older clients (and the previous frontend) keep working.
+    // Which single-file content type an install targets.
     private function contentTypeInput(Request $request): string
     {
         $value = $request->input('content_type');
@@ -1299,7 +1233,6 @@ final class ModpackController extends Controller
     }
 
     // Validates the JSON body of a simple-content install request.
-    // @return array{0: string, 1: string, 2: ?string, 3: ?string, 4: ?string}
     private function contentInstallInput(
         Request $request,
         string $label,
@@ -1307,9 +1240,7 @@ final class ModpackController extends Controller
     {
         $source = $this->installationSource($request);
 
-        // Single-file content comes from either provider. Both are addressed
-        // as "provider://project@version" and both install through the same
-        // path; the resolver knows how to fetch each one's file.
+        // Single-file content comes from either provider.
         if (
             preg_match(
                 '#^(modrinth://[A-Za-z0-9_-]{1,64}|curseforge://\d{1,12})@[A-Za-z0-9]{1,64}$#',
@@ -1340,18 +1271,13 @@ final class ModpackController extends Controller
 
         $iconUrl = is_string($icon) && $icon !== '' ? $icon : null;
 
-        // Loader and Minecraft version come from the version window's two
-        // dropdowns; both are required before an install can start.
+        // Loader and Minecraft version come from the version window's two dropdowns; both are required before an instal...
         $mcVersion = $this->contentSlug(
             $request->input('mc_version'),
             'Minecraft version',
         );
 
-        // The loader is optional. Mods and modpacks need it to pick a
-        // compatible file, but CurseForge does not record a loader for
-        // plugins, resource packs, data packs or shaders — their version
-        // window offers a Minecraft version only, and requiring a loader
-        // here would make those installs impossible.
+        // The loader is optional.
         $loader = $this->optionalContentSlug(
             $request->input('loader'),
             'Loader',
@@ -1360,10 +1286,7 @@ final class ModpackController extends Controller
         return [$source, $displayName, $iconUrl, $mcVersion, $loader];
     }
 
-    // Optional "dependencies" body entries: recommended mods the user chose
-    // in the version window. Each needs a Modrinth source with an explicit
-    // version and a display name; icons are best-effort.
-    // @return array<int, array{source: string, name: string, icon_url: ?string}>
+    // Optional "dependencies" body entries: recommended mods the user chose in the version window.
     private function contentDependencySources(Request $request): array
     {
         $dependencies = $request->input('dependencies');
@@ -1427,8 +1350,7 @@ final class ModpackController extends Controller
         return $items;
     }
 
-    // Validates an optional loader value: absent or empty is allowed (a
-    // loader-less content type), anything present must be well formed.
+    // Validates an optional loader value: absent or empty is allowed (a loader-less content type), anything present...
     private function optionalContentSlug(
         mixed $value,
         string $label,
@@ -1463,8 +1385,7 @@ final class ModpackController extends Controller
         return $value;
     }
 
-    // Best-effort human version label for a content install: the Modrinth
-    // version number when it can be fetched, otherwise the version id.
+    // Best-effort human version label for a content install: the Modrinth version number when it can be fetched, ot...
     private function contentVersionNumber(
         string $provider,
         string $projectId,
@@ -1676,9 +1597,7 @@ final class ModpackController extends Controller
 
             $target = $this->serverTarget($server);
 
-            // Single-file content (mods) shares the directory with mods the
-            // user installed themselves — only the recorded files may be
-            // removed, never the (now possibly non-empty) directory.
+            // Single-file content (mods) shares the directory with mods the user installed themselves — only the recorded f...
             $outcome = (new OwnershipRemover($target))->remove(
                 $record->ownedFiles(),
                 pruneEmptyDirs: $record->contentType !== InstallRecord::TYPE_CONTENT,
@@ -1907,9 +1826,7 @@ final class ModpackController extends Controller
         $record = null;
         $token = bin2hex(random_bytes(16));
 
-        // A restore still downloads the pack archive (the manifest inside it
-        // identifies the files), which can take minutes on slow links. Lift
-        // the request timer for the same reason the install route does.
+        // A restore still downloads the pack archive (the manifest inside it identifies the files), which can take minu...
         @set_time_limit(0);
 
         try {
@@ -1963,11 +1880,7 @@ final class ModpackController extends Controller
             $provider = $this->providerRegistry($downloader)
                 ->resolve($record->source);
 
-            // Providers that support partial builds fetch only the missing
-            // files: the pack archive still downloads (the manifest inside it
-            // identifies every file), but the mods phase resolves and fetches
-            // exactly the wanted paths instead of re-downloading hundreds of
-            // mods that are already deployed and intact.
+            // Providers that support partial builds fetch only the missing files: the pack archive still downloads (the man...
             if ($provider instanceof PartialPackageProvider) {
                 $package = $provider->getPackageForPaths(
                     $record->source,
@@ -2408,9 +2321,7 @@ final class ModpackController extends Controller
 
 
 
-    // Settings saved from the admin page live in the panel database and take
-    // precedence over the .env-backed config values. Empty stored values mean
-    // "use the environment".
+    // Settings saved from the admin page live in the panel database and take precedence over the .env-backed config...
     private function setting(string $key): ?string
     {
         try {
@@ -2643,9 +2554,7 @@ final class ModpackController extends Controller
         return trim($mode);
     }
 
-    // Whether a source targets CurseForge while the admin has disabled the
-    // provider. Checked on install/update so hiding the provider is not just
-    // cosmetic.
+    // Whether a source targets CurseForge while the admin has disabled the provider.
     private function curseForgeBlocked(string $source): bool
     {
         if ($this->setting('disable_curseforge') !== '1') {
@@ -2655,8 +2564,7 @@ final class ModpackController extends Controller
         return stripos($source, 'curseforge:') === 0;
     }
 
-    // Append one entry to the admin-visible install history. Best-effort:
-    // a logging failure must never break the operation it records.
+    // Append one entry to the admin-visible install history.
     private function logHistory(
         string $action,
         Server $server,
@@ -2791,8 +2699,7 @@ final class ModpackController extends Controller
             status: InstallRecord::STATUS_INSTALLED,
             createdFiles: $result->created,
             overwrittenFiles: $result->overwritten,
-            // A modpack record keeps the kind it already had, so rewriting a
-            // record never relabels the content it tracks.
+            // A modpack record keeps the kind it already had, so rewriting a record never relabels the content it tracks.
             contentKind: $existingRecord?->contentKind
                 ?? ContentInstallTarget::KIND_MODPACK,
         );

@@ -184,8 +184,7 @@ final class WingsFileClient
             return;
         }
 
-        // Deleting a file that no longer exists is a no-op, mirroring the
-        // local filesystem target.
+        // Deleting a file that no longer exists is a no-op, mirroring the local filesystem target.
         if ($response->status === 404) {
             return;
         }

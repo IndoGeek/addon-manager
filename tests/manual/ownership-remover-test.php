@@ -111,10 +111,7 @@ try {
 
     echo "PASS: hostile and directory paths are rejected.\n";
 
-    // Content semantics (mods): pruneEmptyDirs=false must leave the parent
-    // directory in place even when the removed file was its last entry —
-    // the user may have other mods in mods/ that the store does not know
-    // about, and deleting the directory would be destructive.
+    // Content semantics (mods): pruneEmptyDirs=false must leave the parent directory in place even when the removed...
     $target->ensureDirectory('plugins');
     $target->write('plugins/only-mod.jar', 'mod');
 

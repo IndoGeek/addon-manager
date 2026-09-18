@@ -14,9 +14,7 @@ export const UninstallConfirmBody = ({
     onCancel,
     onConfirm,
 }: UninstallConfirmBodyProps) => {
-    // Single-file content (mods, plugins, datapacks, resource packs,
-    // shaders): only the recorded file is removed — its directory and any
-    // other files in it are left untouched.
+    // Single-file content (mods, plugins, datapacks, resource packs, shaders): only the recorded file is removed —...
     const isContent =
         pendingUninstall?.content_type === 'content';
 

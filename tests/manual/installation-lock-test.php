@@ -52,8 +52,7 @@ if (is_dir($first)) {
 
 echo "PASS: lock released with matching token\n";
 
-// A lock left behind must stop a fresh acquire but survive release attempts
-// from a token it does not hold.
+// A lock left behind must stop a fresh acquire but survive release attempts from a token it does not hold.
 mkdir($first, 0750, true);
 
 try {

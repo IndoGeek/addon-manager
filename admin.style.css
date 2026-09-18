@@ -1,10 +1,4 @@
-/* Addon Manager — admin panel styles.
-   Loaded on every Blueprint admin page (Blueprint imports this file into
-   admin.extensions.css), which lets us also restyle our extension card on
-   the main extensions list.
-
-   Theme: matches Pterodactyl's dark admin palette (#1f2933 page background)
-   with panels one step darker so cards read as distinct surfaces. */
+/* Addon Manager — admin panel styles. */
 
 /* ------------------------------------------------------------------ */
 /* Settings page — dark theme                                          */
@@ -122,10 +116,7 @@
   color: #7d8b99;
 }
 
-/* Custom checkbox: native inputs are unreliable inside the panel layout
-   (AdminLTE positions them absolutely, which makes them untappable), so the
-   input is visually hidden and the box is drawn by the label. Gray box with
-   border when unchecked; blue with a white tick when checked. */
+/* Custom checkbox: native inputs are unreliable inside the panel layout (AdminLTE positions them absolutely,... */
 .mi-settings .checkbox {
   margin: 0 0 4px;
 }

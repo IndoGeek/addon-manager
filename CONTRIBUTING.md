@@ -1,5 +1,7 @@
 # Contributing to Addon Manager
 
+![Addon Manager](assets/banner.webp)
+
 Thanks for your interest in contributing! This guide gets you from clone to
 merged PR with minimal friction.
 
@@ -16,12 +18,19 @@ sudo ln -sf "$PWD/mi" /usr/local/bin/mi   # one-time: global `mi` command
 
 Two supported layouts:
 
-- **Repo checkout** (anywhere, e.g. your home dir) — `mi build` rsyncs into
-  `/var/www/pterodactyl`.
-- **Panel dev tree** (`/var/www/pterodactyl/.blueprint/dev/`) — `mi build`
-  detects this and uses Blueprint's native developer-build instead.
+1. **Blueprint developer tree** (recommended for development) — enable
+   Blueprint's developer mode **once** in the panel: **Admin → Extensions →
+   Blueprint → set `developer` to `true`** (confirm with `blueprint -info` →
+   `Developer: true`). Then clear and clone the repo into
+   `/var/www/pterodactyl/.blueprint/dev`. `mi build` detects this layout,
+   regenerates `root.css`, syncs the install-time files and runs Blueprint's
+   native `blueprint -build`; `mi watch` rebuilds on every change.
+2. **Repo checkout anywhere else** (e.g. your home dir) — `mi build` deploys via
+   the rsync pipeline (`tools/build.sh`) into `/var/www/pterodactyl`. No
+   developer mode needed, but every deploy is a full sync.
 
-Either works; pick one. See `INSTALLATION.md` for full panel setup.
+Either works; pick one. Only layout 1 requires Blueprint developer mode. See
+`INSTALLATION.md` for full panel setup.
 
 ## The `mi` workflow
 

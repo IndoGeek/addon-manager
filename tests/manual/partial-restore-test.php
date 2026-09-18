@@ -342,8 +342,6 @@ $provider->cleanup($package);
 pass('partial build fetches only the requested overrides and mods');
 
 // A wanted path that no longer exists in the pack must fail loudly.
-// The first restore consumed (deleted) the downloaded client pack and the
-// shared mod source file, so rebuild both for this attempt.
 file_put_contents($temporaryRoot . '/mod-gamma.jar', 'MODG');
 
 buildZip($clientPackPath, [

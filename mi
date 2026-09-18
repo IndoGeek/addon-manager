@@ -1,26 +1,9 @@
 #!/usr/bin/env bash
-#
 # mi — developer CLI for the Addon Manager Blueprint extension.
-#
-# Usage:
-#   mi test  [all|<name-substring>]   Run manual test suites (default: all)
-#   mi lint  [--fix]                  PHP syntax + style lint (--fix applies)
-#   mi check                          lint + audit + test — run before pushing
-#   mi audit [path...] [--json]       Static check for dead catch clauses
-#   mi install-hooks [--remove]       Install/remove the git pre-push gate
-#   mi build                          Deploy to the local panel (build.sh)
-#   mi css                            Regenerate root.css from modular styles
-#   mi help                           Show this help
-#
-# Install (optional): sudo ln -sf "$PWD/mi" /usr/local/bin/mi
-#
-# Author: IndoGeek
-# License: MIT
 set -uo pipefail
 
 SRC="${BASH_SOURCE[0]}"
-# Resolve symlinks (e.g. /usr/local/bin/mi -> repo/mi) so the CLI works from
-# anywhere with no setup.
+# Resolve symlinks (e.g. /usr/local/bin/mi -> repo/mi) so the CLI works from anywhere with no setup.
 while [ -L "$SRC" ]; do
   DIR="$(cd -P "$(dirname "$SRC")" && pwd)"
   SRC="$(readlink "$SRC")"
@@ -29,8 +12,7 @@ done
 SRC="$(cd -P "$(dirname "$SRC")" && pwd)"
 cd "$SRC" || exit 1
 
-# ───────────────────────────── arg helpers ─────────────────────────
-# Tiny, dependency-free flag parsing shared by every subcommand.
+# ───────────────────────────── arg helpers ───────────────────────── Tiny, dependency-free flag parsing...
 arg_has() { # arg_has <flag> <args...> → true when the flag is present
   local needle="$1"; shift
   local a
@@ -86,8 +68,7 @@ color_off() {
   TTY=0   # also drops the in-place progress bar, so logs stay line-per-event
 }
 
-# Plain output for CI logs and redirects: the standard NO_COLOR env var, or
-# --no-color anywhere on the command line.
+# Plain output for CI logs and redirects: the standard NO_COLOR env var, or --no-color anywhere on the command...
 if [ -n "${NO_COLOR:-}" ] || arg_has --no-color "$@"; then
   color_off
 fi
@@ -105,8 +86,7 @@ trap 'cleanup_tty; exit 130' INT TERM
 
 info()  { printf '%s[..]%s %s\n' "$C_BLUE" "$C_RESET" "$*"; }
 ok()    { printf '%s[ok]%s %s\n' "$C_GREEN" "$C_RESET" "$*"; }
-# Success line for in-progress checks (smoke): silent under --quiet/--json so
-# only failures and the machine-readable summary reach the terminal.
+# Success line for in-progress checks (smoke): silent under --quiet/--json so only failures and the...
 okq()   { if [ "${QUIET:-0}" = 0 ] && [ "${JSON:-0}" = 0 ]; then ok "$*"; fi; }
 warn()  { printf '%s[!!]%s %s\n' "$C_YELLOW" "$C_RESET" "$*"; }
 die()   { cleanup_tty; printf '%s[!!]%s %s\n' "$C_RED" "$C_RESET" "$*" >&2; exit 1; }
@@ -131,8 +111,7 @@ draw() { # $1=done $2=total $3=frame $4=current-label
     "$C_BOLD" "$1" "$2" "$C_RESET" "${4:-}"
 }
 
-# ───────────────────────────── mi test ─────────────────────────────
-# Machine-readable summary for CI (--json): just the fields a pipeline needs.
+# ───────────────────────────── mi test ───────────────────────────── Machine-readable summary for CI...
 print_test_json() {
   local passed="$1" failed="$2" secs="$3"; shift 3
   local rows=("$@") row name rest status dur first=1
@@ -252,9 +231,7 @@ cmd_test() {
   cleanup_tty
   [ "$JSON" = 1 ] || printf '\n'
 
-  # Per-suite results — compact: one glyph line per suite, details only on fail.
-  # --quiet keeps the failures (that's the point of running it) and drops the
-  # success noise; --json drops both and prints the summary object alone.
+  # Per-suite results — compact: one glyph line per suite, details only on fail. --quiet keeps the failures...
   local entry
   for entry in "${timings[@]}"; do
     if [[ "$entry" == ok* ]]; then
@@ -338,9 +315,7 @@ cmd_lint() {
   ok "syntax scan: $fcount files${failed:+, ${C_RED}$failed failed${C_RESET}}"
   fi
 
-  # Blade compile check: compile with the panel's real BladeCompiler, then
-  # php -l the generated PHP. This catches the "directives inside attribute"
-  # class of bug that php -l on the raw blade file cannot see.
+  # Blade compile check: compile with the panel's real BladeCompiler, then php -l the generated PHP.
   local panel="/var/www/pterodactyl"
   if stage_wanted blade; then
   if [ -f "$panel/vendor/autoload.php" ] && [ -f "$SRC/view.blade.php" ]; then
@@ -381,8 +356,7 @@ file_put_contents("'"$tmpc"'", $blade->compileString(file_get_contents("'"$SRC"'
   fi
   fi
 
-  # Frontend typecheck: catches TS regressions before the panel's slow
-  # yarn build does. Needs axios types (provided by the panel in production).
+  # Frontend typecheck: catches TS regressions before the panel's slow yarn build does.
   if stage_wanted ts && [ "$skip_ts" = 0 ]; then
   if [ -d "$SRC/node_modules/typescript" ] || command -v npx >/dev/null 2>&1; then
     local ts_out ts_status
@@ -414,11 +388,7 @@ file_put_contents("'"$tmpc"'", $blade->compileString(file_get_contents("'"$SRC"'
   ONLY_STAGE=""
 }
 
-# ───────────────────────────── mi audit ───────────────────────────
-# Static check for dead catch clauses: a caught type that cannot resolve
-# (an unimported global, a class that lives in another namespace, an import
-# with no file) is a clause that never matches, so the error it was written
-# to handle escapes instead. Pass paths to narrow the scan.
+# ───────────────────────────── mi audit ─────────────────────────── Static check for dead catch clauses: a...
 cmd_audit() {
   [ -f "$SRC/tools/audit-php.php" ] || die "tools/audit-php.php not found."
 
@@ -428,9 +398,7 @@ cmd_audit() {
   php "$SRC/tools/audit-php.php" "${paths[@]}"
 }
 
-# ───────────────────────────── mi install-hooks ──────────────
-# Symlinks the versioned hooks in tools/hooks into .git/hooks, so the checks
-# that gate a push live in the repository instead of on one machine.
+# ───────────────────────────── mi install-hooks ────────────── Symlinks the versioned hooks in tools/hooks...
 cmd_hooks() {
   local action="${1:-install}"
   local hooks_dir="$SRC/tools/hooks"
@@ -472,11 +440,7 @@ cmd_hooks() {
   info "bypass a single push with MI_SKIP_CHECKS=1 git push"
 }
 
-# ───────────────────────────── mi check ────────────────────────────
-# The pre-push gate: lint → audit → every suite.
-#   --fast          static gates only (lint + audit), skip the 55 suites
-#   --only <stage>  run one of lint|audit|test on its own
-#   --json          forwards --json to the audit and the suites
+# ───────────────────────────── mi check ──────────────────────────── The pre-push gate: lint → audit → every...
 cmd_check() {
   local fast=0 only="" extra=()
   if arg_has --fast "$@" || arg_has -F "$@"; then fast=1; fi
@@ -506,16 +470,11 @@ cmd_check() {
   fi
 }
 
-# ───────────────────────────── mi build / css ──────────────────
-# Detects which panel layout we're working with:
-#   1. Working directly in the panel's dev tree (/var/www/pterodactyl/
-#      .blueprint/dev): no rsync pipeline needed — regenerate css, sync the
-#      install-time files, reinstall via Blueprint's developer-build.
-#   2. Repo checkout elsewhere: deploy via build.sh (rsync pipeline).
+# ───────────────────────────── mi build / css ────────────────── Detects which panel layout we're working...
 panel_dir() {
-  # repo sits inside a panel?
+  # repo sits inside a panel? (resolve, so no trailing /.. in the path)
   if [ -f "$SRC/../artisan" ] && [ -f "$SRC/../blueprint.sh" ]; then
-    dirname "$SRC/../artisan"
+    ( cd "$SRC/.." && pwd )
     return 0
   fi
   # standard local-dev location?
@@ -533,9 +492,7 @@ in_panel_dev_tree() {
   esac
 }
 
-# `mi build [-n|--dry-run] [--css-only]`
-#   -n          show which layout/target would be used, then stop
-#   --css-only  regenerate root.css and nothing else
+# `mi build [-n|--dry-run] [--css-only]` -n show which layout/target would be used, then stop --css-only...
 cmd_build() {
   local panel dry=0
   if arg_has --dry-run "$@" || arg_has -n "$@"; then dry=1; fi
@@ -546,7 +503,8 @@ cmd_build() {
   fi
 
   if in_panel_dev_tree; then
-    panel="$(dirname "$(dirname "$(dirname "$SRC")")")"   # .blueprint/dev -> panel
+    # .blueprint/dev holds the extension directly (Blueprint packages that dir as-is), so strip from the first...
+    panel="${SRC%%/.blueprint/dev*}"
 
     if [ "$dry" = 1 ]; then
       info "layout:   panel dev tree"
@@ -574,45 +532,50 @@ cmd_build() {
       info "layout:   repo checkout"
       info "source:   $SRC"
       info "panel:    $panel"
-      info "steps:    build.sh rsync pipeline → blueprint -build"
+      info "steps:    tools/build.sh rsync pipeline → blueprint -build"
       return 0
     fi
     info "Deploying from repo checkout to panel at $panel"
-    exec bash "$SRC/build.sh"
+    # pass the detected panel explicitly — tools/build.sh defaults to /var/www/pterodactyl otherwise, which is...
+    exec env PANEL_DIR="$panel" bash "$SRC/tools/build.sh"
   fi
 
   die "No Pterodactyl panel found. Run from the repo or the panel dev tree."
 }
 
-# Copies the admin-page files Blueprint only places at install time (view,
-# controller, conf, admin css) from the current tree into the installed
-# extension, keeping the version in sync.
+# Copies the admin-page files Blueprint only places at install time (view, controller, conf, admin css) from...
 sync_admin_files() {
   local panel="$1"
   local identifier
   identifier="$(sed -n 's/^[[:space:]]*identifier:[[:space:]]*"\([^"]*\)".*/\1/p' "$SRC/conf.yml" | head -1)"
   [ -n "$identifier" ] || die "conf.yml: missing identifier."
 
-  # Match the owner the panel actually runs as (same logic as the installer:
-  # never assume www-data — RHEL nginx/apache and custom FPM pools differ).
+  # Match the owner the panel actually runs as (same logic as the installer: never assume www-data — RHEL...
   local web_owner
   web_owner="$(sudo -n stat -c '%U:%G' "$panel/storage" 2>/dev/null || echo "www-data:www-data")"
   if [ "${web_owner%%:*}" = "root" ] || [ -z "$web_owner" ]; then
     web_owner="www-data:www-data"
   fi
 
-  local version
+  local version icon icon_ext icon_url
   version="$(sed -n 's/^[[:space:]]*version:[[:space:]]*"\([^"]*\)".*/\1/p' "$SRC/conf.yml" | head -1)"
+  # Extension icon: conf.yml holds a repo-relative path (e.g. assets/logo.png); Blueprint serves it from...
+  icon="$(sed -n 's/^[[:space:]]*icon:[[:space:]]*"\([^"]*\)".*/\1/p' "$SRC/conf.yml" | head -1)"
+  icon_ext="${icon##*.}"
+  [ -n "$icon" ] || icon_ext="jpg"
+  icon_url="/assets/extensions/$identifier/icon.$icon_ext"
 
   local installed_view="$panel/resources/views/admin/extensions/$identifier/index.blade.php"
   local installed_ctl="$panel/app/Http/Controllers/Admin/Extensions/$identifier/${identifier}ExtensionController.php"
   local installed_conf="$panel/.blueprint/extensions/$identifier/private/.store/conf.yml"
   local installed_css="$panel/.blueprint/extensions/$identifier/assets/admin.style.css"
+  local installed_icon="$panel/.blueprint/extensions/$identifier/assets/icon.$icon_ext"
 
   local tmpv="$(mktemp)"
   {
     sed -n '1,/extension\.description/p' "$installed_view" 2>/dev/null \
-      | sed -E 's~\$EXTENSION_VERSION = ".*";~\$EXTENSION_VERSION = "'"${version:-unknown}"'";~'
+      | sed -E -e 's~\$EXTENSION_VERSION = ".*";~\$EXTENSION_VERSION = "'"${version:-unknown}"'";~' \
+               -e 's~\$EXTENSION_ICON = ".*";~\$EXTENSION_ICON = "'"$icon_url"'";~'
     cat "$SRC/view.blade.php"
     printf '\n@endsection\n'
   } > "$tmpv"
@@ -624,6 +587,12 @@ sync_admin_files() {
     && sudo -n rsync -a "$SRC/admin.style.css" "$installed_css" \
     && sudo -n chown "$web_owner" "$installed_ctl" "$installed_conf" "$installed_css" \
     || die "syncing admin files failed (is the extension installed?)."
+
+  if [ -n "$icon" ] && [ -f "$SRC/$icon" ]; then
+    sudo -n rsync -a "$SRC/$icon" "$installed_icon" \
+      && sudo -n chown "$web_owner" "$installed_icon" \
+      || die "syncing extension icon failed."
+  fi
 
   rm -f "$tmpv"
 
@@ -637,9 +606,7 @@ sync_admin_files() {
   fi
 }
 
-# `mi css [--check]`
-#   --check   fail when root.css is stale (hand-edited or not regenerated),
-#             for CI; the file is regenerated either way.
+# `mi css [--check]` --check fail when root.css is stale (hand-edited or not regenerated), for CI; the file is...
 cmd_css() {
   if ! arg_has --check "$@"; then
     node "$SRC/tools/build-css.mjs"
@@ -663,10 +630,7 @@ cmd_css() {
   return 1
 }
 
-# ───────────────────────────── mi release ───────────────────
-# Computes the next version from the commit history (feat → minor,
-# fix → patch), updates conf.yml + constants.ts, and prepends a
-# CHANGELOG.md section. Pass --tag to also commit and tag.
+# ───────────────────────────── mi release ─────────────────── Computes the next version from the commit...
 cmd_release() {
   local bump="" do_tag=0 dry=0
   local arg
@@ -688,9 +652,7 @@ cmd_release() {
   local maj=${cur%%.*} rest=${cur#*.}
   local min=${rest%%.*} pat=${rest#*.}
 
-  # Version scheme: 0.<feat-count>.<fix-count> — counts over ALL history
-  # (deterministic, matches how conf.yml versions were derived). `major`
-  # bumps the leading component instead for a 1.x.y-style release.
+  # Version scheme: 0.<feat-count>.<fix-count> — counts over ALL history (deterministic, matches how conf.yml...
   local subjects=()
   while IFS= read -r s; do [ -n "$s" ] && subjects+=("$s"); done < <(
     git -C "$SRC" log --pretty=format:%s 2>/dev/null
@@ -781,12 +743,81 @@ cmd_release() {
   fi
 }
 
-# ───────────────────────────── mi coverage ────────────────────
-# Maps app/ classes against test suites: which classes have no test file
-# referencing them. Fast gap report, not a real coverage tool.
-# `mi coverage [--min <pct>] [--json]`
-#   --min   exit non-zero when coverage is below the given percentage
-#           (otherwise any uncovered class fails, as before)
+# ───────────────────────────── mi update ──────────────────── Explicit version bump — the opposite of `mi...
+cmd_update() {
+  local nMaj=0 nMin=0 nPat=0 gaveM=0 gavem=0 gavep=0 do_tag=0 dry=0 arg
+  while [ "$#" -gt 0 ]; do
+    arg="$1"; shift
+    case "$arg" in
+      -M|--major) gaveM=1; nMaj=1; [ "$#" -gt 0 ] && [[ "$1" =~ ^[0-9]+$ ]] && { nMaj="$1"; shift; } ;;
+      -m|--minor) gavem=1; nMin=1; [ "$#" -gt 0 ] && [[ "$1" =~ ^[0-9]+$ ]] && { nMin="$1"; shift; } ;;
+      -p|--patch) gavep=1; nPat=1; [ "$#" -gt 0 ] && [[ "$1" =~ ^[0-9]+$ ]] && { nPat="$1"; shift; } ;;
+      --tag)        do_tag=1 ;;
+      --dry-run|-n) dry=1 ;;
+      major)        gaveM=1; nMaj=$(( nMaj + 1 )) ;;
+      minor)        gavem=1; nMin=$(( nMin + 1 )) ;;
+      patch)        gavep=1; nPat=$(( nPat + 1 )) ;;
+      *) die "mi update: unknown argument '$arg' (use -M|-m|-p [n] [--tag] [--dry-run])" ;;
+    esac
+  done
+
+  [ "$gaveM$gavem$gavep" != "000" ] || die "mi update: nothing to bump (pass -M, -m or -p)."
+  [ -f "$SRC/conf.yml" ] || die "conf.yml not found."
+
+  local cur maj rest min pat
+  cur="$(sed -n 's/^[[:space:]]*version:[[:space:]]*"\([^"]*\)".*/\1/p' "$SRC/conf.yml" | head -1)"
+  [[ "$cur" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "conf.yml version '$cur' is not X.Y.Z."
+  maj=${cur%%.*}; rest=${cur#*.}; min=${rest%%.*}; pat=${rest#*.}
+
+  if [ "$gaveM" = 1 ]; then maj=$(( maj + nMaj )); min=0; pat=0; fi
+  if [ "$gavem" = 1 ]; then min=$(( min + nMin )); pat=0; fi
+  if [ "$gavep" = 1 ]; then pat=$(( pat + nPat )); fi
+  local next="$maj.$min.$pat"
+  [ "$next" != "$cur" ] || die "Version already at $next."
+
+  local entry="\n## $next — $(date +%Y-%m-%d)\n\n### Changed\n- version bumped $cur → $next\n"
+
+  if [ "$dry" = 1 ]; then
+    printf '%b' "$entry"
+    info "dry run — nothing written; $cur would become $next"
+    return 0
+  fi
+
+  sed -i 's~^\([[:space:]]*version:[[:space:]]*\)"[^"]*"~\1"'"$next"'"~' "$SRC/conf.yml" \
+    || die "failed to update conf.yml."
+  sed -E "s~^(export const EXTENSION_VERSION = ).*;~\1\"$next\";~" \
+    "$SRC/components/utils/constants.ts" > "$SRC/components/utils/constants.ts.tmp" \
+    && mv "$SRC/components/utils/constants.ts.tmp" "$SRC/components/utils/constants.ts" \
+    || die "failed to update components/utils/constants.ts."
+
+  # Insert the new section above the newest existing one, but below any intro/ banner at the top of the file...
+  local anchor=1 tmpcl="$(mktemp)"
+  if [ -f "$SRC/CHANGELOG.md" ]; then
+    local banner_line
+    banner_line="$(grep -n '^!\[' "$SRC/CHANGELOG.md" | head -1 | cut -d: -f1)"
+    [ -n "$banner_line" ] && anchor="$banner_line"
+    { head -n "$anchor" "$SRC/CHANGELOG.md"; printf '%b' "$entry"; tail -n +"$(( anchor + 1 ))" "$SRC/CHANGELOG.md"; } > "$tmpcl"
+  else
+    { printf '# Changelog\n\n'; printf '%b' "$entry"; } > "$tmpcl"
+  fi
+  mv "$tmpcl" "$SRC/CHANGELOG.md"
+
+  ok "version: $cur → $next"
+  info "updated: conf.yml, components/utils/constants.ts, CHANGELOG.md"
+
+  if [ "$do_tag" = 1 ]; then
+    git -C "$SRC" add conf.yml components/utils/constants.ts CHANGELOG.md
+    git -C "$SRC" commit -m "chore: release $next" \
+      || die "git commit failed."
+    git -C "$SRC" tag -a "v$next" -m "Release $next" \
+      || die "git tag failed."
+    ok "committed and tagged v$next — push with: git push --follow-tags"
+  else
+    info "review the diff, then commit, or re-run with --tag."
+  fi
+}
+
+# ───────────────────────────── mi coverage ──────────────────── Maps app/ classes against test suites: which...
 cmd_coverage() {
   local classes=() f base
   local min
@@ -859,9 +890,7 @@ cmd_coverage() {
   [ "$untested" -eq 0 ]
 }
 
-# ───────────────────────────── mi smoke ────────────────────────
-# Post-deploy health check against the local panel: admin page renders,
-# API route responds, admin CSS asset serves.
+# ───────────────────────────── mi smoke ──────────────────────── Post-deploy health check against the local...
 cmd_smoke() {
   local panel="${PANEL_DIR:-/var/www/pterodactyl}" fails=0
   local url_override
@@ -896,8 +925,7 @@ cmd_smoke() {
     warn "panel responded $code (expected 200/302)"; fails=$(( fails + 1 ))
   fi
 
-  # 2. Admin extension page renders (via session-less curl this may 302 to
-  #    login — the point is it must NOT 500)
+  # 2.
   code="$(curl -sk -o /dev/null -w '%{http_code}' --max-time 10 "$base/admin/extensions/$identifier")"
   admin_code="$code"
   if [ "$code" = 500 ]; then
@@ -957,10 +985,134 @@ echo $d["data_dir"] ?? "/var/lib/pterodactyl/modpack-installer";
   okq "smoke passed — deployment looks healthy"
 }
 
-# ───────────────────────────── mi db:reset ────────────────────
-# Wipes extension-owned local state: install records, history, catalog
-# cache keys. Settings in the panel DB are preserved (pass --all to drop
-# them too). Requires sudo when the data dir is root-owned.
+# ───────────────────────────── mi doctor ────────────────────
+# Panel compatibility check. A Pterodactyl update can rename a class, move a
+# view or drop a route the extension relies on; this verifies every
+# integration point still resolves, so a breaking update is caught before it
+# 500s. Exit 1 on any failure — gaps are usually fixed by `mi install`
+# (re-registers the extension) or `mi build` (re-publishes assets).
+# `--json` prints a machine-readable summary.
+cmd_doctor() {
+  local panel="${PANEL_DIR:-/var/www/pterodactyl}" fails=0
+  local identifier
+  identifier="$(sed -n 's/^[[:space:]]*identifier:[[:space:]]*"\([^"]*\)".*/\1/p' "$SRC/conf.yml" | head -1)"
+  [ -n "$identifier" ] || die "conf.yml: missing identifier."
+
+  local json_classes=() json_views=()
+
+  # In --json mode the progress log goes to stderr so stdout stays one object.
+  if [ "$JSON" = 1 ]; then exec 3>&1 1>&2; fi
+
+  if [ "$JSON" = 0 ]; then
+    printf '%s▲%s %smi doctor%s — panel compatibility check\n\n' \
+      "$C_CYAN" "$C_RESET" "$C_BOLD" "$C_RESET"
+  fi
+
+  # Panel present
+  local panel_ok=0
+  if [ -f "$panel/artisan" ] && [ -f "$panel/vendor/autoload.php" ]; then
+    panel_ok=1; okq "panel found at $panel"
+  else
+    fails=$(( fails + 1 )); warn "panel not found at $panel — run 'mi install'"
+  fi
+
+  # Versions
+  local panel_ver="" bp_ver=""
+  [ -f "$panel/config/app.php" ] && \
+    panel_ver="$(sed -n "s/.*'version'[[:space:]]*=>[[:space:]]*'\([^']*\)'.*/\1/p" "$panel/config/app.php" | head -1)"
+  bp_ver="$(sudo -n blueprint -version 2>/dev/null | head -1 || true)"
+  [ -n "$bp_ver" ] || bp_ver="$(cat "$panel/.blueprint/extensions/blueprint/private/db/version" 2>/dev/null || true)"
+  [ -n "$panel_ver" ] && info "pterodactyl $panel_ver"
+  if [ -n "$bp_ver" ]; then info "blueprint $bp_ver"; else warn "blueprint version unknown (is Blueprint installed?)"; fi
+
+  # Integration points: classes + views, via the panel's own autoloader.
+  if [ "$panel_ok" = 1 ]; then
+    local tmpc php_out
+    tmpc="$(mktemp)"
+    cat > "$tmpc" <<'PHP'
+<?php
+require $argv[1] . '/vendor/autoload.php';
+$id = $argv[2];
+$classes = [
+    'Pterodactyl\Http\Controllers\Controller',
+    'Pterodactyl\Http\Controllers\Api\Client\ClientApiController',
+    'Pterodactyl\Http\Middleware\Activity\ServerSubject',
+    'Pterodactyl\Http\Middleware\Api\Client\Server\AuthenticateServerAccess',
+    'Pterodactyl\Http\Middleware\Api\Client\Server\ResourceBelongsToServer',
+    'Pterodactyl\Models\Server',
+    'Pterodactyl\Models\Node',
+    'Pterodactyl\Services\Helpers\SoftwareVersionService',
+    'Pterodactyl\BlueprintFramework\Libraries\ExtensionLibrary\Admin\BlueprintAdminLibrary',
+];
+foreach ($classes as $c) {
+    $ok = class_exists($c) || interface_exists($c) || trait_exists($c);
+    echo ($ok ? 'OK' : 'MISS') . "\tclass\t" . $c . "\n";
+}
+$views = [
+    'resources/views/layouts/admin.blade.php',
+    'resources/views/blueprint/admin/template.blade.php',
+    'resources/views/admin/extensions/' . $id . '/index.blade.php',
+];
+foreach ($views as $v) {
+    echo (is_file($argv[1] . '/' . $v) ? 'OK' : 'MISS') . "\tview\t" . $v . "\n";
+}
+PHP
+    php_out="$(sudo -n php "$tmpc" "$panel" "$identifier" 2>/dev/null || true)"
+    rm -f "$tmpc"
+
+    if [ -z "$php_out" ]; then
+      fails=$(( fails + 1 )); warn "could not introspect the panel (sudo or autoload failed)"
+    else
+      local state kind name
+      while IFS=$'\t' read -r state kind name; do
+        [ -n "$name" ] || continue
+        if [ "$state" = OK ]; then
+          if [ "$kind" = class ]; then json_classes+=("\"$name\""); else json_views+=("\"$name\""); fi
+          okq "$kind: $name"
+        else
+          fails=$(( fails + 1 ))
+          if [ "$kind" = class ]; then json_classes+=("\"!$name\""); else json_views+=("\"!$name\""); fi
+          warn "$kind missing: $name — a panel update moved it; run 'mi install'"
+        fi
+      done <<< "$php_out"
+    fi
+  fi
+
+  # Extension installed + published assets
+  if [ -d "$panel/.blueprint/extensions/$identifier" ]; then
+    okq "extension installed ($identifier)"
+  else
+    fails=$(( fails + 1 )); warn "extension not installed — run 'mi install'"
+  fi
+  local css="$panel/public/assets/extensions/$identifier/admin.style.css"
+  if [ -e "$css" ]; then
+    okq "admin assets published"
+  else
+    fails=$(( fails + 1 )); warn "admin assets missing ($css) — run 'mi build'"
+  fi
+
+  # Install-record data dir
+  local datadir="/var/lib/pterodactyl/modpack-installer"
+  if sudo -n test -d "$datadir" && sudo -n test -w "$datadir"; then
+    okq "data dir writable ($datadir)"
+  elif sudo -n test -d "$datadir"; then
+    fails=$(( fails + 1 )); warn "data dir exists but not writable: $datadir"
+  else
+    info "data dir not created yet ($datadir) — ok until first install"
+  fi
+
+  if [ "$JSON" = 1 ]; then
+    exec 1>&3 3>&-   # restore stdout for the machine-readable summary
+    printf '{"panel":"%s","panel_version":"%s","blueprint_version":"%s","failures":%d,"classes":[%s],"views":[%s]}\n' \
+      "$panel" "$panel_ver" "$bp_ver" "$fails" \
+      "$(IFS=,; echo "${json_classes[*]}")" "$(IFS=,; echo "${json_views[*]}")"
+  fi
+
+  [ "$fails" -eq 0 ] || die "doctor: $fails compatibility issue(s) — run 'mi install'."
+  okq "doctor: all integration points resolve"
+}
+
+# ───────────────────────────── mi db:reset ──────────────────── Wipes extension-owned local state: install...
 cmd_dbreset() {
   local wipe_settings=0 dry=0
   if arg_has --all "$@" || arg_has -a "$@"; then wipe_settings=1; fi
@@ -992,7 +1144,7 @@ cmd_dbreset() {
     info "no data dir at $datadir — nothing on disk to wipe"
   fi
 
-  # Catalog cache keys in the panel cache store (same scan pattern build.sh uses)
+  # Catalog cache keys in the panel cache store (same scan pattern tools/build.sh uses)
   if [ -f "$panel/artisan" ]; then
     sudo -n php -r '
 require "'"$panel"'/vendor/autoload.php";
@@ -1026,10 +1178,7 @@ echo $n . " settings removed\n";
   ok "reset complete"
 }
 
-# ───────────────────────────── mi watch ───────────────────────
-# Live-rebuild loop: watches the source tree, redeploys on change.
-# Uses Blueprint's own watch when working in the panel dev tree, otherwise
-# a portable inotifywait/fswatch fallback driving `mi build`.
+# ───────────────────────────── mi watch ─────────────────────── Live-rebuild loop: watches the source tree,...
 cmd_watch() {
   if in_panel_dev_tree; then
     info "handing off to Blueprint's native watch (dev tree)"
@@ -1078,13 +1227,7 @@ cmd_watch() {
   fi
 }
 
-# ───────────────────────────── mi install ──────────────────────
-# One-command panel install — wraps tools/installer.sh (system deps, PHP
-# extensions, PHP-FPM limits, ACLs, Blueprint, extension, assets).
-# `mi install [--force] [--panel-dir <path>] [--web-user <user>]`
-#   --force      reinstall over an existing install
-#   --panel-dir  panel path when it is not /var/www/pterodactyl
-#   --web-user   override PHP-FPM's user when it cannot be auto-detected
+# ───────────────────────────── mi install ────────────────────── One-command panel install — wraps...
 cmd_install() {
   [ -f "$SRC/tools/installer.sh" ] || die "tools/installer.sh not found."
 
@@ -1101,8 +1244,7 @@ cmd_install() {
   exec bash "$SRC/tools/installer.sh"
 }
 
-# ───────────────────────────── mi version ─────────────────────────
-# The version the panel's extension card shows, straight from conf.yml.
+# ───────────────────────────── mi version ───────────────────────── The version the panel's extension card...
 cmd_version() {
   local v id
   v="$(sed -n 's/^[[:space:]]*version:[[:space:]]*"\([^"]*\)".*/\1/p' "$SRC/conf.yml" | head -1)"
@@ -1129,6 +1271,7 @@ ${C_BOLD}Quality${C_RESET}
   ${C_CYAN}mi audit${C_RESET} [path...]   Static check: catch clauses that never match
   ${C_CYAN}mi check${C_RESET}             lint + audit + test — run before pushing
   ${C_CYAN}mi coverage${C_RESET}          App classes with no test coverage
+  ${C_CYAN}mi doctor${C_RESET}            Check panel/Blueprint integration points still resolve
 
 ${C_BOLD}Deploy${C_RESET}
   ${C_CYAN}mi build${C_RESET}             Deploy to the panel (auto-detects repo vs dev tree)
@@ -1141,6 +1284,7 @@ ${C_BOLD}Deploy${C_RESET}
 
 ${C_BOLD}Release${C_RESET}
   ${C_CYAN}mi release${C_RESET} [mmp]      Bump version from commits + write CHANGELOG.md
+  ${C_CYAN}mi update${C_RESET} -m|-p|-M    Explicit bump: -m 1 (minor), -p 1 (patch), -M 1 (major)
   ${C_CYAN}mi version${C_RESET}           Version + identifier from conf.yml
   ${C_CYAN}mi help${C_RESET}              This help
 
@@ -1217,6 +1361,18 @@ ${C_BOLD}mi release${C_RESET} [major|minor|patch] [flags]
   -n, --dry-run     show the next version and changelog, write nothing
 EOF
       ;;
+    update|bump) cat <<EOF
+${C_BOLD}mi update${C_RESET} [flags]      explicit version bump (adds n, default 1)
+  -M, --major [n]   major + n (resets minor and patch to 0)
+  -m, --minor [n]   minor + n (resets patch to 0)
+  -p, --patch [n]   patch + n
+  -n, --dry-run     show the next version and changelog, write nothing
+      --tag         commit + tag after bumping
+
+  Examples:  mi update -m 1   mi update -p 1   mi update -M 1 -m 2
+  Unlike 'mi release', this does not read the commit history.
+EOF
+      ;;
     coverage) cat <<EOF
 ${C_BOLD}mi coverage${C_RESET} [flags]
       --min <pct>   exit non-zero below this percentage
@@ -1227,6 +1383,13 @@ EOF
 ${C_BOLD}mi smoke${C_RESET} [flags]
       --url <base>  check a panel other than the local APP_URL
       --json        JSON summary on stdout
+EOF
+      ;;
+    doctor) cat <<EOF
+${C_BOLD}mi doctor${C_RESET} [--json]
+  Verifies the panel classes, views, extension install and published assets
+  the extension depends on still resolve. Run after a Pterodactyl update;
+  exit 1 on any gap. Fix with 'mi install' / 'mi build'.
 EOF
       ;;
     db:reset|dbreset|reset) cat <<EOF
@@ -1286,8 +1449,10 @@ case "$cmd" in
   install) cmd_install "$@" ;;
   css)   cmd_css "$@" ;;
   release) cmd_release "$@" ;;
+  update|bump) cmd_update "$@" ;;
   coverage) cmd_coverage "$@" ;;
   smoke) cmd_smoke "$@" ;;
+  doctor) cmd_doctor "$@" ;;
   db:reset|dbreset|reset) cmd_dbreset "$@" ;;
   watch) cmd_watch "$@" ;;
   version|--version|-V) cmd_version ;;

@@ -1,24 +1,6 @@
 <?php
 
-// Static audit for error-handling bugs that `php -l` and the test suites
-// cannot see: catch clauses that can never match, so the error they are
-// meant to handle escapes instead.
-//
-// Three ways a catch clause is dead, all of them silent:
-//
-//   1. A GLOBAL class referred to by short name in a namespaced file without
-//      an import. `catch (Throwable)` then resolves to a class inside the
-//      file's own namespace, which does not exist, so the clause never
-//      matches. Fully-qualified `catch (\Throwable)` is correct.
-//   2. A class that exists in a DIFFERENT namespace of this extension,
-//      caught by short name without an import.
-//   3. An imported extension class whose file is missing (typo, rename), so
-//      the type can never be thrown.
-//
-// Usage:
-//   php tools/audit-php.php [path ...] [--json]
-//
-// Exit code is 1 when anything is found, so it can gate a commit or CI.
+// Static audit for error-handling bugs that `php -l` and the test suites cannot see: catch clauses that can nev...
 
 const AUDIT_GLOBAL_CLASSES = [
     'Throwable', 'Exception', 'Error', 'TypeError', 'ValueError',
@@ -36,10 +18,7 @@ const AUDIT_GLOBAL_CLASSES = [
 const AUDIT_NAMESPACE_PREFIX =
     'Pterodactyl\\BlueprintFramework\\Extensions\\modpackinstaller\\';
 
-/**
- * @param array<int, string> $paths
- * @return array<int, string>
- */
+/** @param array<int, string> $paths @return array<int, string> */
 function auditFiles(array $paths): array
 {
     $files = [];
@@ -75,11 +54,7 @@ function auditFiles(array $paths): array
     return $files;
 }
 
-/**
- * Class/interface/trait/enum names declared in one file.
- *
- * @return array<int, string>
- */
+/** Class/interface/trait/enum names declared in one file. */
 function auditDeclaredClasses(string $source): array
 {
     if (
@@ -96,12 +71,7 @@ function auditDeclaredClasses(string $source): array
     return $matches[1];
 }
 
-/**
- * Every class/interface/trait/enum declared in the scanned tree.
- *
- * @param array<int, string> $files
- * @return array<string, array<int, string>> short name => namespaces
- */
+/** Every class/interface/trait/enum declared in the scanned tree. */
 function auditClassIndex(array $files): array
 {
     $index = [];
@@ -127,11 +97,7 @@ function auditClassIndex(array $files): array
     return $index;
 }
 
-/**
- * Names imported into a file, keyed by the name used in code.
- *
- * @return array<string, string> local name => fully qualified name
- */
+/** Names imported into a file, keyed by the name used in code. */
 function auditImports(string $source): array
 {
     if (preg_match_all('/^use\s+([^;]+);/m', $source, $matches) === 0) {
@@ -191,18 +157,14 @@ function auditImports(string $source): array
     return $imports;
 }
 
-/**
- * @return array<int, array{name: string, offset: int, kind: string}>
- */
+/** @return array<int, array{name: string, offset: int, kind: string}> */
 function auditReferencedClasses(string $source): array
 {
     $references = [];
 
     if (preg_match_all('/catch\s*\(([^)]*)\)/', $source, $catches, PREG_OFFSET_CAPTURE) > 0) {
         foreach ($catches[1] as [$clause, $clauseOffset]) {
-            // Types come before the variable in a catch clause, so dropping
-            // `$e` keeps every type's offset valid. Splitting the rest on the
-            // pattern also handles `A | B $e` unions in one pass.
+            // Types come before the variable in a catch clause, so dropping `$e` keeps every type's offset valid.
             $types = preg_replace('/\$[A-Za-z_][A-Za-z0-9_]*/', '', $clause)
                 ?? $clause;
 
@@ -251,11 +213,7 @@ function auditReferencedClasses(string $source): array
     return $references;
 }
 
-/**
- * @param array<int, string> $files
- * @param array<string, array<int, string>> $classIndex
- * @return array<int, array<string, mixed>>
- */
+/** @param array<int, string> $files @param array<string, array<int, string>> $classIndex @return array<int, arra... */
 function auditTree(array $files, array $classIndex): array
 {
     $findings = [];
@@ -268,14 +226,12 @@ function auditTree(array $files, array $classIndex): array
             continue;
         }
 
-        // Unqualified names resolve to the file's namespace, so a file that
-        // declares none needs no import and is always correct.
+        // Unqualified names resolve to the file's namespace, so a file that declares none needs no import and is always...
         if (preg_match('/^namespace\s+([^;{]+);/m', $source, $namespace) !== 1) {
             continue;
         }
 
-        // Bracketed/multi-namespace files (test harnesses that stub models in
-        // one file) resolve names per block; auditing them would be guesswork.
+        // Bracketed/multi-namespace files (test harnesses that stub models in one file) resolve names per block; auditi...
         if (preg_match('/^namespace\s+[^;{]+{/m', $source) === 1) {
             $skipped[] = $path;
 
@@ -315,8 +271,7 @@ function auditTree(array $files, array $classIndex): array
             ) + 1;
 
             if (isset($imports[$name])) {
-                // Imported. If it is one of our own classes, the file must
-                // exist, or the catch can never match.
+                // Imported.
                 $imported = $imports[$name];
 
                 if (!str_starts_with($imported, AUDIT_NAMESPACE_PREFIX)) {
@@ -353,8 +308,7 @@ function auditTree(array $files, array $classIndex): array
                 continue;
             }
 
-            // A class of this name declared elsewhere in the tree: the catch
-            // looks right but the type cannot be thrown from here.
+            // A class of this name declared elsewhere in the tree: the catch looks right but the type cannot be thrown from...
             if (isset($classIndex[$name])) {
                 $homes = array_values(array_unique($classIndex[$name]));
 
@@ -374,10 +328,7 @@ function auditTree(array $files, array $classIndex): array
     return [$findings, $skipped];
 }
 
-/**
- * @param array<int, array<string, mixed>> $findings
- * @param array<int, string> $skipped
- */
+/** @param array<int, array<string, mixed>> $findings @param array<int, string> $skipped */
 function auditReport(
     array $findings,
     array $skipped,

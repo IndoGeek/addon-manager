@@ -61,8 +61,7 @@ function assertRejected(string $name, callable $run): void
 // Duplicate normalization: identical names, and file/directory collisions.
 $duplicatePath = $temporaryRoot . '/duplicates.zip';
 
-// libzip/ZipArchive deduplicates same-name entries, so build a genuinely
-// duplicate entry archive with Python's zipfile instead.
+// libzip/ZipArchive deduplicates same-name entries, so build a genuinely duplicate entry archive with Python's ...
 $duplicateCode = sprintf(
     "import zipfile, sys\nz = zipfile.ZipFile(sys.argv[1], 'w')\nz.writestr('config/a.txt', 'first')\nz.writestr('config/a.txt', 'second')\nz.close()\n",
 );
@@ -128,8 +127,7 @@ assertRejected('symlink entries rejected', function () use (
     $validator->validate($symlinkPath);
 });
 
-// The extractor must refuse the same archives without leaving any
-// extraction directories behind.
+// The extractor must refuse the same archives without leaving any extraction directories behind.
 $extractor = new ArchiveExtractor($temporaryRoot . '/extractions');
 
 foreach ([$duplicatePath, $collisionPath, $symlinkPath] as $badArchive) {
@@ -170,8 +168,7 @@ assertRejected('low archive limits rejected by extractor', function () use (
     $lowLimitExtractor->extract($bigPath);
 });
 
-// Workspace cleanup is best-effort: an unwritable inner directory must not
-// let cleanup throw.
+// Workspace cleanup is best-effort: an unwritable inner directory must not let cleanup throw.
 $workspaceManager = new InstallationWorkspace($temporaryRoot . '/workspaces');
 
 $workspace = $temporaryRoot . '/workspaces/doomed';

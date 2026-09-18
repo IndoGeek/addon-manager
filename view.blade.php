@@ -1,7 +1,5 @@
 <?php
-// Load the settings-page stylesheet directly (with a cache-busting query)
-// instead of relying on Blueprint's admin.extensions.css @import chain, which
-// browsers and CDNs cache aggressively.
+// Load the settings-page stylesheet directly (with a cache-busting query) instead of relying on Blueprint's adm...
 $miStylePath = public_path('assets/extensions/modpackinstaller/admin.style.css');
 $miStyleVersion = is_file($miStylePath) ? filemtime($miStylePath) : '1';
 ?>

@@ -101,26 +101,19 @@ export const CatalogToolbar = ({
 }: ToolbarProps) => {
     const searchInputRef = useRef<HTMLInputElement | null>(null);
 
-    // Scroll positions (page and extension container) captured when the
-    // input gains focus. The virtual keyboard opening itself fires a small
-    // scroll on some mobile browsers, so the dismiss threshold must be
-    // large enough to ignore that.
+    // Scroll positions (page and extension container) captured when the input gains focus.
     const focusScrollY = useRef<{ windowY: number; rootTop: number }>({
         windowY: 0,
         rootTop: 0,
     });
 
-    // Lower-case plural label for the active tab, used in the search
-    // placeholder ("Search modpacks", "Search mods", ...).
+    // Lower-case plural label for the active tab, used in the search placeholder ("Search modpacks", "Search...
     const searchLabel =
         CONTENT_TYPE_OPTIONS.find(
             (option) => option.value === contentType,
         )?.label.toLowerCase() ?? 'modpacks';
 
-    // Backend content-type names are singular ('modpack', 'mod') while tab
-    // values are plural ('modpacks', 'mods'); translate before comparing.
-    // CurseForge advertises modpacks only, so its bar shows exactly two
-    // entries: Modpacks (clickable) and Mods (visible but disabled).
+    // Backend content-type names are singular ('modpack', 'mod') while tab values are plural ('modpacks', 'mods');...
     const tabSupported = (value: CatalogContentType): boolean =>
         enabledContentTypes.includes(backendContentType(value));
 
@@ -142,9 +135,7 @@ export const CatalogToolbar = ({
             const isDocument = target === document;
             const element = isDocument ? null : (target as Element);
 
-            // Only the page itself or the extension's own container can
-            // meaningfully move the input; a tiny inner scroller (a dropdown
-            // menu, for instance) must not dismiss the keyboard.
+            // Only the page itself or the extension's own container can meaningfully move the input; a tiny inner scroller...
             if (!isDocument && !element?.closest('.modpackinstaller-root')) {
                 return;
             }
@@ -157,17 +148,13 @@ export const CatalogToolbar = ({
                 ? window.scrollY
                 : (element as Element).scrollTop;
 
-            // The keyboard opening itself fires a small scroll on some
-            // mobile browsers; anything beyond that threshold means the
-            // user moved away from the input, which is the moment to
-            // dismiss the keyboard.
+            // The keyboard opening itself fires a small scroll on some mobile browsers; anything beyond that threshold...
             if (Math.abs(after - before) > 40) {
                 input.blur();
             }
         };
 
-        // Capture phase on document: scroll events do not bubble, and the
-        // panel may scroll inside an inner container rather than the window.
+        // Capture phase on document: scroll events do not bubble, and the panel may scroll inside an inner container...
         document.addEventListener('scroll', onScroll, {
             capture: true,
             passive: true,
@@ -201,10 +188,7 @@ export const CatalogToolbar = ({
                                 }
                             }}
                             onFocus={(event) => {
-                                // Remember where the page and the extension
-                                // container were when focus landed, so the
-                                // scroll-away dismissal compares like with
-                                // like.
+                                // Remember where the page and the extension container were when focus landed, so the scroll-away dismissal...
                                 const container = (
                                     event.target as HTMLElement
                                 ).closest('.modpackinstaller-root');
@@ -214,10 +198,7 @@ export const CatalogToolbar = ({
                                     rootTop: container?.scrollTop ?? 0,
                                 };
                             }}
-                            // Never disabled while searching: disabling a
-                            // focused input dismisses the mobile keyboard
-                            // mid-typing. The debounced search simply keeps
-                            // running underneath whatever is typed next.
+                            // Never disabled while searching: disabling a focused input dismisses the mobile keyboard mid-typing.
                             placeholder={`Search ${searchLabel}`}
                             aria-label={`Search ${searchLabel}`}
                             aria-busy={catalogBusy}
@@ -228,8 +209,7 @@ export const CatalogToolbar = ({
                                 type="button"
                                 className="modpackinstaller-search-clear"
                                 onClick={onQueryClear}
-                                // Keep the keyboard open: preventDefault on
-                                // mousedown stops the input losing focus.
+                                // Keep the keyboard open: preventDefault on mousedown stops the input losing focus.
                                 onMouseDown={(event) => event.preventDefault()}
                                 aria-label="Clear search"
                                 disabled={catalogBusy}
@@ -284,9 +264,7 @@ export const CatalogToolbar = ({
                 aria-label="Content type"
             >
                 {visibleOptions.map((option) => {
-                    // A tab is clickable only when the active provider can
-                    // actually serve it: unsupported tabs are disabled, and
-                    // providers that only serve some types trim the bar.
+                    // A tab is clickable only when the active provider can actually serve it: unsupported tabs are disabled, and...
                     const unsupported = !tabSupported(option.value);
 
                     const disabled = catalogBusy || unsupported;

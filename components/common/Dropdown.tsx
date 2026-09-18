@@ -32,10 +32,7 @@ export const Dropdown = ({
 }) => {
     const [open, setOpen] = useState(false);
 
-    // Viewport coordinates for the fixed-position menu variant, measured
-    // from the trigger each time the menu opens. Opens downward when there
-    // is room, upward when the trigger sits near the bottom of the viewport
-    // (e.g. the bottom-anchored version picker on phones).
+    // Viewport coordinates for the fixed-position menu variant, measured from the trigger each time the menu opens.
     const [menuCoords, setMenuCoords] = useState<{
         top: number | null;
         bottom: number | null;
@@ -169,10 +166,7 @@ export const Dropdown = ({
         const onPointerDown = (event: MouseEvent) => {
             const target = event.target as Node;
 
-            // Ignore clicks inside the trigger wrapper AND inside the menu
-            // itself — the portal'd menu lives outside the wrapper in the
-            // DOM, and closing on its mousedown would swallow the option
-            // click that follows.
+            // Ignore clicks inside the trigger wrapper AND inside the menu itself — the portal'd menu lives outside the...
             if (
                 wrapperRef.current
                 && !wrapperRef.current.contains(target)

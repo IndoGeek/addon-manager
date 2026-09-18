@@ -1,5 +1,7 @@
 # Installation Guide
 
+![Addon Manager](assets/banner.webp)
+
 This guide walks a normal user through installing the **Addon Manager**
 extension onto a **Pterodactyl Panel** that already has the
 [Blueprint](https://blueprint.zip) extension framework. The whole process is
@@ -216,6 +218,35 @@ cd /var/www/pterodactyl/addon-manager
 sudo git pull
 sudo mi install               # reinstalls the updated extension
 ```
+
+---
+
+## Developing the extension
+
+Everything above installs and updates the extension from a clone at
+`/var/www/pterodactyl/addon-manager` — that is all a panel owner ever needs.
+
+Only **extension developers** changing the code need Blueprint's developer tree:
+
+1. Turn on Blueprint's developer mode **once**: **Admin → Extensions → Blueprint
+   → set `developer` to `true`** (verify with `blueprint -info` →
+   `Developer: true`).
+2. Clear the dev directory and clone the repo there:
+   ```bash
+   cd /var/www/pterodactyl
+   sudo rm -rf .blueprint/dev/* .blueprint/dev/.gitkeep   # or: sudo blueprint -wipe
+   sudo git clone https://github.com/indogeek/addon-manager.git .blueprint/dev
+   ```
+3. Deploy from inside the clone. `mi build` regenerates `root.css`, syncs the
+   install-time files and runs `blueprint -build` for you; `mi watch` rebuilds on
+   every change:
+   ```bash
+   cd /var/www/pterodactyl/.blueprint/dev
+   sudo ln -sf "$PWD/mi" /usr/local/bin/mi   # one-time, if not already installed
+   mi build
+   ```
+
+See **[CONTRIBUTING.md](CONTRIBUTING.md)** for the full developer workflow.
 
 ---
 

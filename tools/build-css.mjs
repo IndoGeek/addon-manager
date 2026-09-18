@@ -10,7 +10,7 @@ const stylesDir = join(repoRoot, 'components', 'styles');
 const indexCss = join(stylesDir, 'index.css');
 const outFile = join(repoRoot, 'root.css');
 
-const GUARD = `/* GENERATED FILE — DO NOT EDIT. root.css is generated from the modular sources in components/styles/; edit those and regenerate with: node tools/build-css.mjs (build.sh runs this automatically before every deploy). */
+const GUARD = `/* GENERATED FILE — DO NOT EDIT. root.css is generated from the modular sources in components/styles/; edit those and regenerate with: node tools/build-css.mjs (tools/build.sh runs this automatically before every deploy). */
 `;
 
 // Parse @import './x.css' lines out of index.css, preserving order.

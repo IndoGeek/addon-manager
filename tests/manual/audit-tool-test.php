@@ -1,9 +1,6 @@
 <?php
 
-// Guards tools/audit-php.php: the static audit must flag every shape of dead
-// catch (the bug class it was written for) and stay quiet on correct code.
-// A detector that silently stops detecting is worse than none, so the shapes
-// are exercised against a fixture written for each one.
+// Guards tools/audit-php.php: the static audit must flag every shape of dead catch (the bug class it was writte...
 
 $root = dirname(__DIR__, 2);
 
@@ -12,8 +9,7 @@ $fixture = sys_get_temp_dir()
     . bin2hex(random_bytes(6))
     . '.php';
 
-// Each shape lives in its own namespace so imports cannot leak between them,
-// exactly like the audit expects in real files.
+// Each shape lives in its own namespace so imports cannot leak between them, exactly like the audit expects in ...
 file_put_contents($fixture, <<<'PHP'
 <?php
 
@@ -138,8 +134,7 @@ if (!is_file($binary)) {
 }
 
 try {
-    // The fixture is scanned alongside the real tree so the audit can see
-    // which namespaces this extension's classes live in.
+    // The fixture is scanned alongside the real tree so the audit can see which namespaces this extension's classes...
     [$output, $status] = runAudit([$binary, $root . '/app', $fixture]);
 
     if ($status !== 1) {

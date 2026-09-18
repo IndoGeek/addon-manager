@@ -19,6 +19,6 @@
 # PHP CS Fixer configuration
 /.php-cs-fixer.php
 
-# Binaries
+# Shell scripts — ship the tooling in tools/ (installer + deploy pipeline) only.
 *.sh
-!installer.sh
+!tools/*.sh

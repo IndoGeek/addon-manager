@@ -1,5 +1,7 @@
 # Changelog
 
+![Addon Manager](assets/banner.webp)
+
 ## 0.46.22 — 2026-09-17
 
 ### Features

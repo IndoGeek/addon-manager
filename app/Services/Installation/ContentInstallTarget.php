@@ -4,19 +4,12 @@ namespace Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\In
 
 use InvalidArgumentException;
 
-// Where each single-file catalog content type lands on the server, and how
-// its downloaded file is named.
-//
-// Every content type follows the same install path as a mod: one download,
-// one upload, one install record. Only the destination directory and the
-// allowed file extensions differ — and datapacks belong inside the world
-// folder so the server picks them up without extra configuration.
+// Where each single-file catalog content type lands on the server, and how its downloaded file is named.
 final class ContentInstallTarget
 {
     public const DEFAULT_TYPE = 'mod';
 
-    // The kind of a full modpack install; single-file kinds are the keys of
-    // TYPES below.
+    // The kind of a full modpack install; single-file kinds are the keys of TYPES below.
     public const KIND_MODPACK = 'modpack';
 
     // @var array<string, array{kind: string, directory: string, extensions: array<int, string>, label: string}>
@@ -70,9 +63,7 @@ final class ContentInstallTarget
         return self::TYPES[$contentType];
     }
 
-    // The kind of content a recorded file belongs to, inferred from where it
-    // was placed. Used to label install records written before the kind was
-    // stored alongside them.
+    // The kind of content a recorded file belongs to, inferred from where it was placed.
     public static function kindForPath(string $path): ?string
     {
         $path = ltrim(str_replace('\\', '/', $path), '/');
@@ -93,18 +84,12 @@ final class ContentInstallTarget
             || self::supports($kind);
     }
 
-    // Where a recommended *dependency* file belongs, which is not always the
-    // same place as the content the user picked: a shader's Iris dependency
-    // or a datapack's Fabric API dependency is a mod, and dropping it in
-    // shaderpacks/ or world/datapacks/ would leave it unusable.
-    // Jar-packaged dependencies of zip-packaged content go to the mods
-    // directory; everything else stays with the main content.
+    // Where a recommended *dependency* file belongs, which is not always the same place as the content the user pic...
     public static function forDependency(
         array $mainTarget,
         string $filename,
     ): array {
-        // Mod and plugin installs are jar-packaged, and so are all of their
-        // dependencies.
+        // Mod and plugin installs are jar-packaged, and so are all of their dependencies.
         if (!in_array('zip', $mainTarget['extensions'], true)) {
             return $mainTarget;
         }
@@ -121,11 +106,6 @@ final class ContentInstallTarget
     }
 
     // Builds the on-server file name from the user's selections, e.g.
-    // "example-mod-fabric-1-20-1.jar". The upstream file name is ignored on
-    // purpose: the encoded name is what makes each file self-describing.
-    // An extension outside the content type's allow-list falls back to the
-    // type's primary one.
-    // @param array<int, string> $extensions allowed extensions, best first
     public static function filename(
         string $originalFilename,
         string $displayName,
@@ -156,8 +136,7 @@ final class ContentInstallTarget
         ], static fn (?string $part): bool => $part !== null && $part !== '');
 
         if ($parts === []) {
-            // The display name is validated non-empty upstream, but a safe
-            // fallback beats an empty filename.
+            // The display name is validated non-empty upstream, but a safe fallback beats an empty filename.
             $parts = ['content'];
         }
 

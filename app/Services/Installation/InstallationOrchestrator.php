@@ -309,8 +309,7 @@ final class InstallationOrchestrator
 
             @rmdir($directory);
         } catch (\Throwable) {
-            // Backup cleanup is best-effort and must never mask the
-            // installation outcome.
+            // Backup cleanup is best-effort and must never mask the installation outcome.
         }
     }
 }

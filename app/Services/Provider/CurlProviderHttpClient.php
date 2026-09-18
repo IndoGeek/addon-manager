@@ -133,12 +133,7 @@ final class CurlProviderHttpClient implements ProviderHttpClient
         return new ProviderHttpResponse($status, $payload);
 }
 
-    // CURLOPT_HTTPHEADER takes raw header LINES, and curl uses the array's
-    // VALUES: a "Name => value" map is therefore sent as a bare value with no
-    // header name, which silently drops the header entirely (an API key that
-    // never leaves the panel, answered with a 403). Both shapes are accepted
-    // here so that mistake can never produce an unauthenticated request.
-    // @param array<mixed> $headers @return array<int, string>
+    // CURLOPT_HTTPHEADER takes raw header LINES, and curl uses the array's VALUES: a "Name => value" map is therefo...
     private function normalizeHeaders(array $headers): array
     {
         $normalized = [];

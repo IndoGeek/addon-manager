@@ -62,8 +62,7 @@ final class WingsServerFileTarget implements ServerFileTarget
         try {
             $this->client->putContents($path, $contents);
         } catch (WingsFileNotFoundException $exception) {
-            // The parent directory disappeared between the ensure and the
-            // write; rebuild the tree once and retry before failing.
+            // The parent directory disappeared between the ensure and the write; rebuild the tree once and retry before fai...
             if ($parent !== self::ROOT) {
                 $this->ensureDirectoryInternal($parent);
             }
@@ -101,8 +100,7 @@ final class WingsServerFileTarget implements ServerFileTarget
         try {
             $this->client->putFile($path, $sourcePath);
         } catch (WingsFileNotFoundException $exception) {
-            // The parent directory disappeared between the ensure and the
-            // write; rebuild the tree once and retry before failing.
+            // The parent directory disappeared between the ensure and the write; rebuild the tree once and retry before fai...
             if ($parent !== self::ROOT) {
                 $this->ensureDirectoryInternal($parent);
             }
@@ -247,9 +245,7 @@ final class WingsServerFileTarget implements ServerFileTarget
                     $exception,
                 );
             } catch (WingsHttpException $exception) {
-                // Wings reports an already-existing directory with a non-2xx
-                // status. It may have just been created by a concurrent
-                // install; re-check before surfacing an error.
+                // Wings reports an already-existing directory with a non-2xx status.
                 if (
                     $exception->getStatusCode() >= 500
                     && $this->freshEntryType($current) === 'dir'

@@ -6,7 +6,7 @@ info:
   version: "0.46.22"
   target: "beta-2026-08"
   author: "IndoGeek"
-  icon: ""
+  icon: "assets/logo.png"
   website: "https://github.com/IndoGeek/addon-manager"
 
 admin:

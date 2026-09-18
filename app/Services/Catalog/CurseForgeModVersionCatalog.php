@@ -6,12 +6,6 @@ use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Provider
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Provider\ProviderHttpException;
 
 // Version catalog for CurseForge single-file content (mods).
-//
-// CurseForge has no Modrinth-style version objects: a file IS the version. It
-// also publishes loader and Minecraft-version facts in one mixed gameVersions
-// array, and its dependencies as numeric mod ids, so this normalizes all of it
-// into the same shape ModVersionCatalog returns — the version window, the
-// install path and the uninstall path are shared between both providers.
 final class CurseForgeModVersionCatalog
 {
     private const API_BASE = 'https://api.curseforge.com/v1';
@@ -22,8 +16,7 @@ final class CurseForgeModVersionCatalog
 
     private const VERSION_PATTERN = '/^\d+\.\d+(\.\d+)*$/';
 
-    // CurseForge serves files in pages; three pages is plenty for the two
-    // dropdowns and keeps one open of the version window cheap.
+    // CurseForge serves files in pages; three pages is plenty for the two dropdowns and keeps one open of the versi...
     private const PAGE_SIZE = 50;
 
     private const MAX_PAGES = 3;
@@ -41,8 +34,7 @@ final class CurseForgeModVersionCatalog
         'Cauldron' => 'cauldron',
     ];
 
-    // Dependency relation types that are worth recommending; everything else
-    // (embedded libraries, tools, incompatibilities) is not a user choice.
+    // Dependency relation types that are worth recommending; everything else (embedded libraries, tools, incompatib...
     private const RELATION_REQUIRED = 3;
 
     private const RELATION_OPTIONAL = 2;
@@ -52,12 +44,7 @@ final class CurseForgeModVersionCatalog
         private readonly ?string $apiKey,
     ) {}
 
-    /**
-     * Every installable file of a CurseForge mod, enriched with the loader and
-     * game-version options plus resolvable dependency titles.
-     *
-     * @return array{provider: string, project: string, versions: array<int, array<string, mixed>>}
-     */
+    /** Every installable file of a CurseForge mod, enriched with the loader and game-version options plus resolvable... */
     public function versions(string $project): array
     {
         $this->assertConfigured();
@@ -92,21 +79,14 @@ final class CurseForgeModVersionCatalog
             'provider' => 'curseforge',
             'project' => $project,
             'versions' => $versions,
-            // CurseForge nulls every downloadUrl when an author turns off
-            // third-party downloads (allowModDistribution=false), which is
-            // common for plugins. The list is then legitimately empty, but
-            // "no versions available" would be misleading: the files exist,
-            // they just cannot be fetched automatically.
+            // CurseForge nulls every downloadUrl when an author turns off third-party downloads (allowModDistribution=false...
             'unavailable_reason' => $versions === [] && $distributionBlocked
                 ? 'distribution_disabled'
                 : null,
         ];
     }
 
-    // Every publicly downloadable file of the project, newest first. Files
-    // CurseForge refuses to serve (distribution disabled, withheld, removed)
-    // are dropped rather than offered as a version that can never install.
-    // @return array<int, array<string, mixed>>
+    // Every publicly downloadable file of the project, newest first.
     private function files(string $project, bool &$distributionBlocked): array
     {
         $files = [];
@@ -140,8 +120,7 @@ final class CurseForgeModVersionCatalog
                     continue;
                 }
 
-                // Public file with no download URL: the author disabled
-                // automated distribution for this project.
+                // Public file with no download URL: the author disabled automated distribution for this project.
                 if (
                     $this->isPubliclyListed($entry)
                     && $this->downloadUrl($entry) === null
@@ -176,8 +155,7 @@ final class CurseForgeModVersionCatalog
         return $this->isPubliclyListed($file) && $this->downloadUrl($file) !== null;
     }
 
-    // Whether the file is visible to the public, regardless of whether
-    // CurseForge is willing to hand out a download URL for it.
+    // Whether the file is visible to the public, regardless of whether CurseForge is willing to hand out a download...
     private function isPubliclyListed(array $file): bool
     {
         if (($file['isAvailable'] ?? true) === false) {
@@ -248,11 +226,7 @@ final class CurseForgeModVersionCatalog
         return $recommended;
     }
 
-    // Dependency entries only carry numeric mod ids; batch-resolve the human
-    // name, slug and icon so the UI can render them as proper cards and build
-    // install sources. A failed lookup is cosmetic only.
-    // @param array<int, string> $ids
-    // @return array<string, array{title: string, slug: ?string, icon_url: ?string}>
+    // Dependency entries only carry numeric mod ids; batch-resolve the human name, slug and icon so the UI can rend...
     private function resolveProjects(array $ids): array
     {
         $numeric = [];
@@ -313,8 +287,7 @@ final class CurseForgeModVersionCatalog
         return $projects;
     }
 
-    // @param array<string, array{title: string, slug: ?string, icon_url: ?string}> $projects
-    // @return array<string, mixed>
+    // @param array<string, array{title: string, slug: ?string, icon_url: ?string}> $projects @return array<string, ...
     private function mapVersion(
         string $project,
         array $file,
@@ -362,9 +335,7 @@ final class CurseForgeModVersionCatalog
         ];
     }
 
-    // A file's gameVersions mixes Minecraft versions with loader names, so the
-    // two are split apart: the version window needs them as separate options.
-    // @return array{0: array<int, string>, 1: array<int, string>}
+    // A file's gameVersions mixes Minecraft versions with loader names, so the two are split apart: the version win...
     private function parseGameVersions(mixed $values): array
     {
         $gameVersions = [];
@@ -407,11 +378,7 @@ final class CurseForgeModVersionCatalog
         }
     }
 
-    // Header LINES, not a name => value map: the HTTP client hands this
-    // straight to CURLOPT_HTTPHEADER, which only understands "Name: value"
-    // strings. A map would be sent as a bare value and the API key would
-    // silently never leave the panel (CurseForge answers 403).
-    // @return array<int, string>
+    // Header LINES, not a name => value map: the HTTP client hands this straight to CURLOPT_HTTPHEADER, which only ...
     private function headers(): array
     {
         return [self::API_KEY_HEADER . ': ' . (string) $this->apiKey];

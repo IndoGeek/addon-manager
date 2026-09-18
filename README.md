@@ -13,6 +13,8 @@
 
 # Addon Manager
 
+![Addon Manager](assets/banner.webp)
+
 A powerful Pterodactyl Panel extension for browsing and installing Minecraft content — modpacks, mods, plugins, datapacks, resource packs and shaders — from **Modrinth** and **CurseForge** with a modern, user-friendly interface.
 
 ## Features
@@ -116,10 +118,11 @@ mi smoke --url https://panel.example.com
 `mi check` is exactly what the pre-push hook runs (`mi install-hooks`), and it
 is what CI runs — so a passing local check means a passing pipeline.
 
-`mi build` works in two layouts with zero configuration:
+Which deploy command you use depends on **why** you cloned the repo:
 
-- **Working in `/var/www/pterodactyl/.blueprint/dev/`** — regenerates css, syncs the install-time files and runs `blueprint -build` for you.
-- **Working in a repo checkout** (e.g. `/home/you/addon-manager`) — deploys via the rsync pipeline to the local panel.
+- **You just want to install the extension** — clone into `/var/www/pterodactyl` and run `mi install` (see [Installation](#installation) above). No Blueprint developer mode required.
+- **You are developing the extension** — turn on Blueprint's developer mode **once** (**Admin → Extensions → Blueprint → set `developer` to `true`**), clear and clone the repo into `/var/www/pterodactyl/.blueprint/dev`, then `mi build` (regenerates css, syncs the install-time files and runs `blueprint -build`) or `mi watch` to rebuild on every change. Only this layout needs developer mode.
+- **Any other checkout** (e.g. `/home/you/addon-manager`) — `mi build` deploys via the rsync pipeline (`tools/build.sh`) into the panel at `/var/www/pterodactyl`.
 
 `root.css` is **generated** from `components/styles/*.css` — edit the modular files, never `root.css`. `mi css` or any `mi build` regenerates it.
 

@@ -283,8 +283,7 @@
   background: transparent;
 }
 
-/* What the entry actually is (mod, plugin, datapack, ...), so a downloaded
-   datapack is never mistaken for a mod. */
+/* What the entry actually is (mod, plugin, datapack, ...), so a downloaded datapack is never mistaken for a mod. */
 .modpackinstaller-pill--kind {
   color: #d8b4fe;
   background: rgba(126, 34, 206, 0.22);
@@ -701,8 +700,7 @@
   opacity: 1;
 }
 
-/* The one progress bar of the extension: a slim track with a green fill,
-   shared by the whole-run card and every file/stage row. */
+/* The one progress bar of the extension: a slim track with a green fill, shared by the whole-run card and... */
 .modpackinstaller-progress {
   position: relative;
   height: 4px;

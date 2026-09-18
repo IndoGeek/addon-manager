@@ -34,8 +34,7 @@ final readonly class CatalogSearchQuery
         'client-and-server',
     ];
 
-    // Content types a catalog search can target. The provider maps each to
-    // its upstream project-type facet ('modpack', 'mod', ...).
+    // Content types a catalog search can target.
     public const CONTENT_TYPE_VALUES = [
         'modpack',
         'mod',

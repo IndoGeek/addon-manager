@@ -172,9 +172,7 @@ const SECRET_KEY = 'SUPER-SECRET-CF-KEY';
 $temporaryRoot = sys_get_temp_dir() . '/curseforge-large-entry-test';
 @mkdir($temporaryRoot, 0750, true);
 
-// A large, incompressible override payload forces the streaming writer through
-// many 256 KiB chunks and exercises local-header patching (CRC + sizes only
-// known once the stream has been fully consumed).
+// A large, incompressible override payload forces the streaming writer through many 256 KiB chunks and exercise...
 $bigWorld = random_bytes(2_621_440 + 1024); // 2.5 MiB + tail
 
 $clientPackPath = $temporaryRoot . '/client-pack.zip';
@@ -290,9 +288,7 @@ removeDirectoryTree($package->archivePath);
 
 pass('large multi-chunk override entry round-trips through the streaming package writer');
 
-// The writer must also abort mid-stream when cancellation is requested. The
-// flag flips only after the first few checks so the abort happens inside
-// writeArchiveEntry() once some bytes have already been streamed.
+// The writer must also abort mid-stream when cancellation is requested.
 $cancellingDownloader = new class ($clientPackPath) extends FakeDownloader {
     private int $checks = 0;
 

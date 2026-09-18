@@ -1,8 +1,6 @@
 /* buttons.css — standalone action buttons and icon buttons. */
 
-/* Every button in the UI carries the same resting border as the view
-   toggle: 1px of white at 0.15. Green/dark fills read as the same family of
-   control rather than as a separate, outline-less style. */
+/* Every button in the UI carries the same resting border as the view toggle: 1px of white at 0.15. */
 .modpackinstaller-install-toggle {
   flex: 0 0 auto;
   display: inline-flex;
@@ -103,8 +101,7 @@
     opacity 0.12s ease;
 }
 
-/* Neutral: the resting dark surface the View/details buttons use — no hue,
-   so a utility action (refresh) never competes with the coloured ones. */
+/* Neutral: the resting dark surface the View/details buttons use — no hue, so a utility action (refresh) never... */
 .modpackinstaller-icon-button--neutral {
   background: rgba(0, 0, 0, 0.3);
 }

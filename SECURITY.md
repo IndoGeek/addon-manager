@@ -1,5 +1,7 @@
 # Security Policy
 
+![Addon Manager](assets/banner.webp)
+
 ## Supported versions
 
 Only the latest release (see `CHANGELOG.md`) receives security fixes.

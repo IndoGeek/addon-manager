@@ -109,8 +109,7 @@ final class LocalFilesystemServerFileTarget implements ServerFileTarget
             );
         }
 
-        // Write to a sibling temporary file and atomically rename it into
-        // place so a crash mid-copy never leaves a truncated target file.
+        // Write to a sibling temporary file and atomically rename it into place so a crash mid-copy never leaves a trun...
         $temporary = $parent
             . '/.'
             . basename($path)

@@ -356,8 +356,7 @@ if ($metadata->version !== '1.5.0') {
 
 pass('release version preferred deterministically');
 
-// Metadata resolution is display-only and accepts both modpacks and mods;
-// the modpack gate only guards the package pipeline (getPackage).
+// Metadata resolution is display-only and accepts both modpacks and mods; the modpack gate only guards the pack...
 $http = new FakeProviderHttpClient([
     new ProviderHttpResponse(200, array_merge(
         sampleResponses()['project'],
@@ -402,8 +401,7 @@ if ($metadata->name !== 'Prominence 2 RPG') {
 
 pass('mod project resolves metadata for version picking');
 
-// The missing-Minecraft-version rejection is gone: mods do not always
-// declare game versions, so an empty list now resolves with an empty label.
+// The missing-Minecraft-version rejection is gone: mods do not always declare game versions, so an empty list n...
 $http = new FakeProviderHttpClient([
     new ProviderHttpResponse(200, [
         'id' => 'AANobbMI',

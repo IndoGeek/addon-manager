@@ -49,10 +49,7 @@
   gap: 8px;
 }
 
-/* Options render as pill-shaped toggle buttons, not checkboxes: selected options take the filter toggle's green...
-   The resting border is the same hairline every other control uses (see the
-   view toggle), so an unselected pill reads as clickable rather than shouting
-   a bright white outline. */
+/* Options render as pill-shaped toggle buttons, not checkboxes: selected options take the filter toggle's... */
 .modpackinstaller-filter-option {
   display: inline-flex;
   align-items: center;

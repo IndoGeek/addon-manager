@@ -1,11 +1,6 @@
 <?php
 
-// CurseForge single-file content wiring:
-// - CurseForgeModVersionCatalog normalizes a mod's files into the same shape
-//   the version window consumes for Modrinth (loaders, game versions, sources
-//   and dependencies), and refuses files that cannot be downloaded.
-// - CatalogVersionFileResolver turns a "curseforge://mod@file" source into the
-//   concrete CDN URL, and rejects anything that is not on CurseForge's own CDN.
+// CurseForge single-file content wiring: - CurseForgeModVersionCatalog normalizes a mod's files into the same s...
 
 $projectRoot = dirname(__DIR__, 2);
 
@@ -210,10 +205,7 @@ if (
 
 pass('uninstallable CurseForge files are dropped, newest first');
 
-// A project whose author turned off automated downloads: CurseForge returns
-// the files with downloadUrl = null (verified live on EssentialsX, whose
-// allowModDistribution is false). The list is empty, but the reason must
-// travel so the UI can say why instead of "no versions".
+// A project whose author turned off automated downloads: CurseForge returns the files with downloadUrl = null (...
 $withheldFiles = new ProviderHttpResponse(200, [
     'data' => [
         [
@@ -342,10 +334,7 @@ if (
     );
 }
 
-// The header must be a raw "Name: value" LINE: the HTTP client hands these
-// straight to CURLOPT_HTTPHEADER, which uses the array's values. A
-// name => value map would be sent as a bare value, the API key would never
-// reach CurseForge and every request would come back 403.
+// The header must be a raw "Name: value" LINE: the HTTP client hands these straight to CURLOPT_HTTPHEADER, whic...
 if (($lookup['headers'][0] ?? null) !== 'X-Api-Key: secret-key') {
     throw new RuntimeException(
         'Dependency lookup did not send the API key as a header line: '
@@ -355,8 +344,7 @@ if (($lookup['headers'][0] ?? null) !== 'X-Api-Key: secret-key') {
 
 pass('dependency titles come from one batched, authenticated lookup');
 
-// The version list request must stay on the mods endpoints and identify
-// itself too, or CurseForge answers 403.
+// The version list request must stay on the mods endpoints and identify itself too, or CurseForge answers 403.
 $list = $http->requests[0] ?? null;
 
 if (
@@ -472,8 +460,7 @@ if ($modrinth['filename'] !== 'example.jar' || $modrinth['size'] !== 2048) {
 
 pass('Modrinth resolution is unchanged by the new provider');
 
-// Only CurseForge's own CDN may be fetched, and a file that forbids
-// automated distribution must say so instead of downloading something else.
+// Only CurseForge's own CDN may be fetched, and a file that forbids automated distribution must say so instead ...
 $untrusted = new ProviderHttpResponse(200, [
     'data' => [
         'id' => 300,

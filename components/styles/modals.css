@@ -481,8 +481,7 @@
   }
 }
 
-/* One-dropdown window: narrower, so a single select is not stranded in a
-   half-empty sheet. */
+/* One-dropdown window: narrower, so a single select is not stranded in a half-empty sheet. */
 .modpackinstaller-version-picker--compact {
   max-width: 400px;
 }
@@ -507,9 +506,7 @@
   gap: 10px;
 }
 
-/* Loader-less content (CurseForge plugins, resource packs, data packs,
-   shaders) has one dropdown only: it spans the window rather than sitting in
-   the left half of a two-column grid. */
+/* Loader-less content (CurseForge plugins, resource packs, data packs, shaders) has one dropdown only: it... */
 .modpackinstaller-mod-version-selects--single {
   grid-template-columns: 1fr;
 }
@@ -538,8 +535,7 @@
   background: rgba(255, 255, 255, 0.04);
 }
 
-/* Keep the selection pills and the dependency box visually separate:
-   the pills wrap, the box starts below whatever height they take. */
+/* Keep the selection pills and the dependency box visually separate: the pills wrap, the box starts below... */
 .modpackinstaller-modal-selected-pills {
   margin-top: 0;
   margin-bottom: 2px;

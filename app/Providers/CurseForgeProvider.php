@@ -56,11 +56,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
         return $this->parseSource($source) !== null;
     }
 
-    // Names the install step now in progress, when the downloader can report
-    // stages. A CurseForge install walks them in the order it really performs
-    // them: fetch the client pack, read its manifest, extract the pack's own
-    // files, then fetch every mod the manifest references. Any one of those can
-    // take minutes, so the card can say which one is running.
+    // Names the install step now in progress, when the downloader can report stages.
     private function announceStage(
         string $key,
         ?int $current = null,
@@ -819,8 +815,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
             $prefix = '';
 
             if ($source->statName(self::MANIFEST_FILE) === false) {
-                // The manifest may sit inside a single wrapper folder (some
-                // packs zip their whole tree one level deep).
+                // The manifest may sit inside a single wrapper folder (some packs zip their whole tree one level deep).
                 $wrapper = $this->singleRootPrefix($source);
 
                 if (
@@ -829,9 +824,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
                 ) {
                     $prefix = $wrapper;
                 } elseif ($wrapper !== '') {
-                    // Dedicated server pack wrapped in one folder: stream it
-                    // out with the wrapper stripped so its content deploys at
-                    // the server root instead of a stray folder.
+                    // Dedicated server pack wrapped in one folder: stream it out with the wrapper stripped so its content deploys a...
                     return $this->materializeStrippedArchive(
                         $source,
                         $wrapper,
@@ -986,8 +979,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
             );
         }
 
-        // Dedicated server pack: this archive IS the payload, so the extract
-        // step streams it straight out with no manifest or mods phase after.
+        // Dedicated server pack: this archive IS the payload, so the extract step streams it straight out with no manif...
         $this->announceStage('extract');
 
         $this->downloader->setProgressOffset(0, max(1, $totalBytes));
@@ -1113,8 +1105,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
         );
 
         if ($content === []) {
-            // Restore flow: an all-mods wanted set legitimately produces no
-            // overrides content, so only a full build must fail here.
+            // Restore flow: an all-mods wanted set legitimately produces no overrides content, so only a full build must fa...
             if ($wantedPaths === null) {
                 throw new UnsupportedModpackPackageException(
                     'The CurseForge modpack contains no server content to install (no mods or overrides).',
@@ -1126,10 +1117,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
             );
         }
 
-        // Every step of this install owns its own progress window. The bytes
-        // streamed out of the archive and the mods still to be fetched are
-        // unrelated footprints, and sharing one window was what made the bar
-        // freeze part-way and then jump back to zero between phases.
+        // Every step of this install owns its own progress window.
         $overridesBytes = 0;
         $modsBytes = 0;
 
@@ -1145,17 +1133,14 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
             $overridesBytes += $bytes;
         }
 
-        // Extract step: the overrides (and any mods shipped inside the pack)
-        // are streamed out of the archive onto disk. It owns the overrides'
-        // byte window, so its bar measures exactly this work.
+        // Extract step: the overrides (and any mods shipped inside the pack) are streamed out of the archive onto disk.
         $this->announceStage('extract');
 
         $this->downloader->setProgressOffset(0, max(1, $overridesBytes));
 
         $outputPath = $this->createPackageDirectory();
 
-        // Materialize every overrides entry directly into the package
-        // directory, keeping the progress bar alive with the bytes streamed.
+        // Materialize every overrides entry directly into the package directory, keeping the progress bar alive with th...
         $overridesWritten = 0;
 
         try {
@@ -1201,10 +1186,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
             if ($wantedMods > 0 && $downloadedMods < $wantedMods) {
                 $failedCount = count($failedMods);
 
-                // Restore flow: every requested path must come back. A restore
-                // that silently skips a requested file would report success
-                // while the server is still broken, so the missing names are
-                // reported and the restore fails.
+                // Restore flow: every requested path must come back.
                 if ($wantedPaths !== null) {
                     throw new UnsupportedModpackPackageException(
                         'The modpack restore could not fetch: '
@@ -1237,9 +1219,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
             throw $exception;
         }
 
-        // Restore flow: any wanted path that neither matched an overrides
-        // entry nor a manifest mod (renamed upstream, absent from the pack,
-        // or never part of this pack) makes the restore fail loudly.
+        // Restore flow: any wanted path that neither matched an overrides entry nor a manifest mod (renamed upstream, a...
         if ($wantedPaths !== null) {
             $provided = [];
 
@@ -1310,9 +1290,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
 
         $totalMods = count($modTasks);
 
-        // Mods step: the manifest's own count drives the label ("12 / 34"),
-        // and its own byte footprint drives the bar. The scratch counter below
-        // is stage-local for the same reason the window is.
+        // Mods step: the manifest's own count drives the label ("12 / 34"), and its own byte footprint drives the bar.
         $this->announceStage('mods', 0, $totalMods);
 
         $bytesDone = 0;
@@ -1348,10 +1326,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
                     continue;
                 }
 
-                // The parallel engine cannot hash-verify mid-flight, so every
-                // successful transfer is checked here. A body that fails its
-                // CurseForge digest is corrupt (truncated transfer, stale CDN
-                // mirror) and counts as a failed mod, never as installed.
+                // The parallel engine cannot hash-verify mid-flight, so every successful transfer is checked here.
                 $expectedSha1 = $sha1ById[$id] ?? '';
 
                 if ($expectedSha1 !== '' && !$this->matchesSha1($destination, $expectedSha1)) {
@@ -1366,10 +1341,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
                 $succeededMods[] = (string) $id;
             }
 
-            // Closing count for the step: the batch's last progress tick can
-            // land before the final transfers settle, so the resolved total is
-            // announced once more here (the downloader never throttles a
-            // completed count) instead of leaving the card a few short.
+            // Closing count for the step: the batch's last progress tick can land before the final transfers settle, so the...
             $this->announceStage('mods', $downloadedMods, $totalMods);
 
             return $downloadedMods;
@@ -1378,9 +1350,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
         $downloadedMods = 0;
         $downloadedTemps = [];
 
-        // A dead mod's declared bytes must be deflated out of the window's
-        // total as well as skipped in the running count, or the bar can never
-        // reach its end and appears to stall just short of 100%.
+        // A dead mod's declared bytes must be deflated out of the window's total as well as skipped in the running coun...
         $failedBytes = 0;
 
         try {
@@ -1396,10 +1366,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
                     $failedBytes += $task['bytes'];
                     $failedMods[] = $task['id'];
 
-                    // A dead mod must never freeze the progress store: keep
-                    // pinging so the card stays alive through long stretches of
-                    // failed downloads instead of the store expiring and the
-                    // frontend dropping the install.
+                    // A dead mod must never freeze the progress store: keep pinging so the card stays alive through long stretches ...
                     $this->downloader->reportProgress(
                         $bytesDone,
                         max(1, $modsBytes - $failedBytes),
@@ -1408,8 +1375,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
                     continue;
                 }
 
-                // The source is a shared or disposable temp file; copy it into
-                // the package and let the shared cleanup unlink the temp.
+                // The source is a shared or disposable temp file; copy it into the package and let the shared cleanup unlink th...
                 if (!@copy($downloadPath, $task['destination'])) {
                     throw new RuntimeException(
                         'Unable to place a downloaded mod file.',
@@ -1422,9 +1388,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
                 $bytesDone += $task['bytes'];
             }
 
-            // Closing report: land the window on exactly 100% (unthrottled)
-            // so the frontend flips to the deploy phase instead of appearing
-            // to stall a few percent short.
+            // Closing report: land the window on exactly 100% (unthrottled) so the frontend flips to the deploy phase inste...
             $this->downloader->reportProgress(
                 max(1, $modsBytes - $failedBytes),
                 max(1, $modsBytes - $failedBytes),
@@ -1720,8 +1684,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
 
             $relative = 'mods/' . $fileName;
 
-            // Restore flow: skip every manifest mod outside the wanted set
-            // before resolution work (candidate building) begins.
+            // Restore flow: skip every manifest mod outside the wanted set before resolution work (candidate building) begi...
             if ($wantedPaths !== null && !isset($wantedPaths[$relative])) {
                 continue;
             }
@@ -1749,10 +1712,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
             );
         }
 
-        // Restore flow reports its own scope: the wanted count is the number
-        // of manifest mods actually in the wanted path set, so the caller's
-        // tolerance math (installed vs wanted) never compares against the
-        // whole manifest.
+        // Restore flow reports its own scope: the wanted count is the number of manifest mods actually in the wanted pa...
         if ($wantedPaths !== null) {
             $wantedInScope = 0;
 

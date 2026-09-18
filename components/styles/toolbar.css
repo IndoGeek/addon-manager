@@ -114,9 +114,7 @@
   animation: modpackinstaller-pop-in 0.14s ease-out;
 }
 
-/* Fixed-viewport variant for dropdowns inside scrollable/modals containers:
-   absolutely-positioned menus get clipped by overflow ancestors, this one
-   escapes via fixed coords measured from the trigger. */
+/* Fixed-viewport variant for dropdowns inside scrollable/modals containers: absolutely-positioned menus get... */
 .modpackinstaller-dropdown-menu--fixed {
   position: fixed;
   top: auto;
@@ -289,8 +287,7 @@
   gap: 6px;
   max-width: 100%;
   padding: 4px 8px;
-  /* Same resting border as every other control, so an active-filter chip
-     matches the filter pills it replaces. */
+  /* Same resting border as every other control, so an active-filter chip matches the filter pills it replaces. */
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 999px;
   font-size: 0.8rem;

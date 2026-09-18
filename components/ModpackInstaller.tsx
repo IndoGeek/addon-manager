@@ -78,32 +78,17 @@ import {
     WarningIcon,
 } from './icons';
 
-// How long a freshly-started install may report no backend progress before
-// the polling loop treats it as abandoned. The install POST can take several
-// seconds to reach and be processed by the server (mobile connections,
-// replace-confirmation flow), so an 'idle' poll in this window just means
-// the first progress snapshot has not landed yet — the card must stay alive.
+// How long a freshly-started install may report no backend progress before the polling loop treats it as...
 const IDLE_GRACE_MS = 30000;
 
-// How long a requested cancellation may stay in the 'cancelling' phase before
-// the poll loop gives up on hearing back from the backend. The backend makes
-// real cancellations land in seconds, so this only fires for a wedged install
-// request and stops the card from spinning "Cancelling ..." indefinitely.
+// How long a requested cancellation may stay in the 'cancelling' phase before the poll loop gives up on...
 const CANCEL_STUCK_TIMEOUT_MS = 90000;
 
-// How long the backend's progress snapshot may go without its CONTENT
-// changing before the poll loop declares the install dead (e.g. the PHP
-// request was killed by a timeout or a crash) and surfaces a failure instead
-// of freezing on the last snapshot forever. Generous by design: the backend
-// legitimately pauses while retrying slow transfers (up to several seconds
-// of backoff per attempt, multiple candidates per mod), so only a truly
-// frozen snapshot across this window counts as dead.
+// How long the backend's progress snapshot may go without its CONTENT changing before the poll loop declares...
 const PROGRESS_STALE_TIMEOUT_MS = 90000;
 
 const snapshotKey = (state: InstallProgressData): string => {
-    // The active step's own counters count as liveness: a counted stage (the
-    // mods a manifest lists) can sit on the same overall percentage for a
-    // while, and those updates must not read as a dead request.
+    // The active step's own counters count as liveness: a counted stage (the mods a manifest lists) can sit on the...
     const activeStage = (state.stages ?? []).find(
         (stage) => stage.state === 'active',
     );
@@ -174,8 +159,6 @@ export default () => {
     });
 
     // Selected toolbar content type (Modpacks / Mods / Plugins / ...).
-    // Persisted so the user's last tab survives reloads; switching tabs
-    // resets the search state so each type starts from a clean query.
     const [contentType, setContentType] = useState<CatalogContentType>(() => {
         try {
             const stored = window.localStorage.getItem(
@@ -190,8 +173,7 @@ export default () => {
         }
     });
 
-    // Backend-driven defaults (admin settings page): applied when the
-    // providers endpoint responds, before the first search runs.
+    // Backend-driven defaults (admin settings page): applied when the providers endpoint responds, before the...
     const applyBackendDefaults = (
         data: ProvidersResponse['data'],
     ): { sort: string; stack: string } => {
@@ -217,8 +199,7 @@ export default () => {
 
     filtersRef.current = filters;
 
-    // Mirrors the contentType state for callbacks that must read the active
-    // tab without re-creating on every keystroke (runSearch's closure).
+    // Mirrors the contentType state for callbacks that must read the active tab without re-creating on every...
     const contentTypeRef = useRef(contentType);
 
     contentTypeRef.current = contentType;
@@ -284,9 +265,7 @@ export default () => {
     const [modalVersionsError, setModalVersionsError] =
         useState<string | null>(null);
 
-    // Mod-specific version data (loader / game-version options per version
-    // plus dependency recommendations), loaded instead of the modpack list
-    // when the details modal opens for a mod.
+    // Mod-specific version data (loader / game-version options per version plus dependency recommendations),...
     const [modVersions, setModVersions] =
         useState<ModVersion[] | null>(null);
 
@@ -296,21 +275,17 @@ export default () => {
     const [modVersionsError, setModVersionsError] =
         useState<string | null>(null);
 
-    // The two dropdown selections of the mod version window; the install
-    // button only appears once both are chosen.
+    // The two dropdown selections of the mod version window; the install button only appears once both are chosen.
     const [modLoaderSelection, setModLoaderSelection] = useState('');
 
     const [modMcSelection, setModMcSelection] = useState('');
 
-    // Project ids of recommended dependencies the user opted into with the
-    // select toggle. Non-blocking: the install works with or without them.
+    // Project ids of recommended dependencies the user opted into with the select toggle.
     const [selectedDependencyIds, setSelectedDependencyIds] = useState<
         string[]
     >([]);
 
-    // Per-dependency-project version lists, fetched once the loader + MC
-    // pair is chosen so each recommendation card can show (and install) the
-    // exact build that matches the selection. Keyed by Modrinth project id.
+    // Per-dependency-project version lists, fetched once the loader + MC pair is chosen so each recommendation...
     const [dependencyVersions, setDependencyVersions] = useState<
         Record<string, ModVersion[] | null>
     >({});
@@ -428,17 +403,12 @@ export default () => {
 
     const capabilities = activeProvider?.capabilities ?? null;
 
-    // Which toolbar tabs the active provider can actually serve. CurseForge
-    // only wires modpacks, so the mods tab is disabled while it is selected.
+    // Which toolbar tabs the active provider can actually serve.
     const enabledContentTypes = providerSupportedContentTypes(
         activeProvider?.capabilities,
     );
 
-    // ── Mod version window derived state ─────────────────────────────
-    // Loaders and game versions offered in the two dropdowns, computed from
-    // the versions the mod actually publishes, sorted newest-game-version
-    // first. The install button only appears once both dropdowns resolve to
-    // exactly one version.
+    // ── Mod version window derived state ───────────────────────────── Loaders and game versions offered in the...
     const modLoaders = modVersions === null
         ? []
         : Array.from(
@@ -452,10 +422,7 @@ export default () => {
         )
             .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
 
-    // CurseForge records a loader only for mods and modpacks. Plugins,
-    // resource packs, data packs and shaders are tagged with Minecraft
-    // versions alone, so those resolve from the Minecraft dropdown only
-    // instead of demanding a loader that does not exist upstream.
+    // CurseForge records a loader only for mods and modpacks.
     const modHasLoaders = modLoaders.length > 0;
 
     const modVersionSource = (() => {
@@ -491,8 +458,7 @@ export default () => {
             ) ?? null
             : null;
 
-    // Loaders/versions that share at least one version with the current
-    // other selection, so the dropdowns guide toward installable combos.
+    // Loaders/versions that share at least one version with the current other selection, so the dropdowns guide...
     const modLoadersForMc = modVersions === null || modMcSelection === ''
         ? modLoaders
         : modLoaders.filter((loader) =>
@@ -513,9 +479,7 @@ export default () => {
             ),
         );
 
-    // Recommended dependencies of the currently resolved version, annotated
-    // with the exact version of each dependency that matches the selected
-    // loader + Minecraft version pair (or null when none does).
+    // Recommended dependencies of the currently resolved version, annotated with the exact version of each...
     const modDependencyCards =
         modSelectedVersion === null
             ? []
@@ -596,9 +560,7 @@ export default () => {
             limit: Number.parseInt(next.stack, 10) || PAGE_LIMIT,
         };
 
-        // Tab → backend content type. Tabs without backend support (null)
-        // send 'modpack' so validation passes; a defined empty result is
-        // shown instead of a 422.
+        // Tab → backend content type.
         params.content_type =
             backendContentType(contentTypeRef.current) ?? 'modpack';
 
@@ -657,10 +619,7 @@ export default () => {
         let cancelled = false;
         let chosenProvider = DEFAULT_PROVIDER;
 
-        // The facet lists the backend advertises (categories, loaders) are
-        // content-type specific, so the providers endpoint is re-read
-        // whenever the tab changes. Only the first run applies the backend
-        // defaults and kicks off the initial search.
+        // The facet lists the backend advertises (categories, loaders) are content-type specific, so the providers...
         const initial = !initialSearchRan.current;
 
         const fetchProviders = async () => {
@@ -708,8 +667,6 @@ export default () => {
                 }
 
                 // A persisted tab the chosen provider cannot serve (e.g.
-                // Mods with a modpack-only provider) would search a catalog
-                // that never has rows; fall back to its first served tab.
                 const supported = providerSupportedContentTypes(
                     response.data.data.providers.find(
                         (provider) => provider.name === chosenProvider,
@@ -1046,9 +1003,7 @@ export default () => {
             return;
         }
 
-        // The new provider may not serve the current tab (CurseForge has no
-        // mods wiring); fall back to its first supported tab so the next
-        // search never hits a provider that returns empty rows for it.
+        // The new provider may not serve the current tab (CurseForge has no mods wiring); fall back to its first...
         const nextProvider = providers?.find(
             (entry) => entry.name === provider,
         );
@@ -1088,10 +1043,7 @@ export default () => {
             return;
         }
 
-        // Update the ref synchronously: the search fired below must carry
-        // the NEW tab's content type, but a plain setState only lands in the
-        // ref after a re-render — the stale value made tab switches search
-        // the previous tab's catalog (Mods → modpacks, Modpacks → mods).
+        // Update the ref synchronously: the search fired below must carry the NEW tab's content type, but a plain...
         contentTypeRef.current = next;
 
         setContentType(next);
@@ -1102,8 +1054,7 @@ export default () => {
             // Storage unavailable (private mode) — selection just won't persist.
         }
 
-        // Each content type is its own search: drop the query, filters and
-        // pagination so the new tab starts clean.
+        // Each content type is its own search: drop the query, filters and pagination so the new tab starts clean.
         applyFilters({
             query: '',
             gameVersions: [],
@@ -1173,8 +1124,7 @@ export default () => {
         metadataRequestId.current++;
         descriptionRequestId.current++;
 
-        // Single-file content (mods, plugins, datapacks, ...) opens the
-        // loader/Minecraft-version window; modpacks keep the version list.
+        // Single-file content (mods, plugins, datapacks, ...) opens the loader/Minecraft-version window; modpacks keep...
         const isContent = isSingleFileContentType(contentTypeRef.current);
 
         setDetailsItem(item);
@@ -1350,8 +1300,7 @@ export default () => {
         }
     };
 
-    // Mod flavor of loadVersions: hits the mod-versions endpoint which
-    // returns per-version loader/game-version options and dependencies.
+    // Mod flavor of loadVersions: hits the mod-versions endpoint which returns per-version loader/game-version...
     const loadModVersions = async () => {
         const item = detailsItem;
 
@@ -1389,9 +1338,7 @@ export default () => {
 
             setModVersions(payload.versions);
 
-            // Files exist but every download URL is withheld: the author
-            // disabled automated downloads. Saying "no versions" there would
-            // be wrong, so name the actual reason.
+            // Files exist but every download URL is withheld: the author disabled automated downloads.
             if (
                 payload.versions.length === 0
                 && payload.unavailable_reason === 'distribution_disabled'
@@ -1411,10 +1358,7 @@ export default () => {
                 return;
             }
 
-            // `error` is this extension's shape and `message` is the panel's
-            // generic handler: showing whichever arrived beats a generic
-            // sentence that hides the real cause (a missing API key, a rate
-            // limit, an upstream 403).
+            // `error` is this extension's shape and `message` is the panel's generic handler: showing whichever arrived...
             setModVersionsError(
                 requestError.response?.data?.error ||
                 requestError.response?.data?.message ||
@@ -1676,8 +1620,7 @@ export default () => {
         return token;
     };
 
-    // Human label for an install run: a multi-file run names how many extra
-    // files came along with the main content.
+    // Human label for an install run: a multi-file run names how many extra files came along with the main content.
     const installLabel = (record: ActiveInstallRecord): string => {
         const extra = (record.files?.length ?? 1) - 1;
 
@@ -1691,13 +1634,7 @@ export default () => {
         record: ActiveInstallRecord,
     ) => {
         if (state.phase === 'idle') {
-            // 'idle' means the backend has no progress snapshot for the token
-            // yet. Immediately after starting an install this is expected:
-            // the install POST may still be in flight / being processed, so a
-            // poll can win the race against the first store write. Only treat
-            // an empty store as an abandoned install once the local record is
-            // well past its start; otherwise keep the card alive and keep
-            // polling so the running install resurfaces when it lands.
+            // 'idle' means the backend has no progress snapshot for the token yet.
             const startedAt = new Date(record.started_at).getTime();
             const ageMs = Number.isNaN(startedAt)
                 ? Number.POSITIVE_INFINITY
@@ -1744,11 +1681,7 @@ export default () => {
         }
 
         if (state.phase === 'cancelling') {
-            // A requested cancellation normally resolves to 'cancelled' within
-            // a few seconds. If the backend has not reported back for a long
-            // time the install request is wedged (e.g. an upstream that never
-            // closes a stalled connection), so stop the card from spinning
-            // "Cancelling ..." forever and surface the outcome locally.
+            // A requested cancellation normally resolves to 'cancelled' within a few seconds.
             if (cancellingSince.current === null) {
                 cancellingSince.current = Date.now();
             } else if (
@@ -1772,14 +1705,7 @@ export default () => {
             cancellingSince.current = null;
         }
 
-        // Stale-snapshot watchdog: a running phase whose snapshot content has
-        // not changed for a long time means the install request died (killed
-        // by a PHP timeout, OOM, or a crash) — without this the card would
-        // sit on the last snapshot forever. Measured entirely with the LOCAL
-        // clock against the last time the snapshot CONTENT changed, so server
-        // vs browser clock skew can never trigger a false failure. A long
-        // window is required because the backend legitimately goes quiet
-        // while retrying slow transfers and connecting to mirrors.
+        // Stale-snapshot watchdog: a running phase whose snapshot content has not changed for a long time means the...
         const runningPhase
             = state.phase === 'download'
             || state.phase === 'deploy'
@@ -1842,8 +1768,7 @@ export default () => {
                 },
             );
         } catch {
-            // The install request clears the flag when it finishes; the
-            // polling loop still surfaces the cancelled state on its own.
+            // The install request clears the flag when it finishes; the polling loop still surfaces the cancelled state on...
         }
 
         setActiveProgress((current) =>
@@ -1896,8 +1821,7 @@ export default () => {
 
                 handleProgressState(response.data.data, record);
             } catch {
-                // Transient poll failures are ignored; the loop keeps going
-                // and store expiry surfaces as an 'idle' state.
+                // Transient poll failures are ignored; the loop keeps going and store expiry surfaces as an 'idle' state.
             }
         };
 
@@ -2046,8 +1970,7 @@ export default () => {
             detailsItem.provider === 'modrinth';
 
         if (isContentInstall) {
-            // Both dropdowns must be chosen; the resolved version follows
-            // from them.
+            // Both dropdowns must be chosen; the resolved version follows from them.
             if (!modVersionSource) {
                 setModalStatus({
                     kind: 'error',
@@ -2074,10 +1997,7 @@ export default () => {
             return;
         }
 
-        // Single-file content is not a full modpack: installing a mod,
-        // plugin, datapack, resource pack, or shader never replaces an
-        // existing modpack, so the replace warning that guards the modpack
-        // pipeline does not apply here.
+        // Single-file content is not a full modpack: installing a mod, plugin, datapack, resource pack, or shader...
         if (
             !isContentInstall
             && !skipReplaceCheck.current
@@ -2089,14 +2009,12 @@ export default () => {
 
         skipReplaceCheck.current = false;
 
-        // Narrowed above: content installs have a resolved source; modpack
-        // installs have both a source and metadata.
+        // Narrowed above: content installs have a resolved source; modpack installs have both a source and metadata.
         const installSource = isContentInstall
             ? (modVersionSource as string)
             : (modalVersionSource as string);
 
-        // Selected recommended dependencies install in the same run, each
-        // becoming its own tracked record on the server.
+        // Selected recommended dependencies install in the same run, each becoming its own tracked record on the server.
         const chosenDependencies = isContentInstall
             ? modDependencyCards.filter(
                 (card) =>
@@ -2105,11 +2023,7 @@ export default () => {
             )
             : [];
 
-        // The downloading window lists every file this run fetches, so a
-        // multi-file install shows one card per file instead of a single
-        // card for the whole run. Each carries the kind of content it is;
-        // the backend corrects a dependency whose kind differs from the
-        // entry the user picked (a shader's Iris dependency is a mod).
+        // The downloading window lists every file this run fetches, so a multi-file install shows one card per file...
         const tabKind = isContentInstall
             ? backendContentType(contentTypeRef.current)
             : null;
@@ -2164,9 +2078,7 @@ export default () => {
         setModalStatus(null);
         setModalResult(null);
 
-        // Single-file content uses the simple install endpoint; modpacks
-        // keep the full archive pipeline. Both speak the same
-        // progress/cancel protocol, so the polling loop below is shared.
+        // Single-file content uses the simple install endpoint; modpacks keep the full archive pipeline.
         const endpoint = isContentInstall
             ? `${API_BASE}/servers/${server}/install/mod`
             : `${API_BASE}/servers/${server}/install`;
@@ -2177,13 +2089,11 @@ export default () => {
 
         if (isContentInstall) {
             body.name = detailsItem?.name ?? '';
-            // Tells the backend which directory the file belongs in
-            // (mods, plugins, world/datapacks, ...).
+            // Tells the backend which directory the file belongs in (mods, plugins, world/datapacks, ...).
             body.content_type = backendContentType(contentTypeRef.current);
             body.mc_version = modMcSelection;
 
-            // Loader-less content (CurseForge plugins, packs, shaders, data
-            // packs) sends no loader: there is none to send.
+            // Loader-less content (CurseForge plugins, packs, shaders, data packs) sends no loader: there is none to send.
             if (modHasLoaders) {
                 body.loader = modLoaderSelection;
             }
@@ -2221,23 +2131,17 @@ export default () => {
             }
 
             if (requestError.response?.status === 503) {
-                // Another install holds the lock; the Installed window is
-                // already open and shows the running install.
+                // Another install holds the lock; the Installed window is already open and shows the running install.
                 clearActiveInstall();
                 return;
             }
 
             if (requestError.response?.status === 409) {
-                // Our own cancel request; the polling loop surfaces the
-                // cancelled state on its next tick.
+                // Our own cancel request; the polling loop surfaces the cancelled state on its next tick.
                 return;
             }
 
-            // Network errors (timeout, closed tab/connection dropped) or 5xx
-            // from the reverse proxy / php-fpm. The request may still be
-            // running server-side, so do not tear down the active install;
-            // the polling loop resurfaces progress, completion, or an 'idle'
-            // cleanup on its next tick.
+            // Network errors (timeout, closed tab/connection dropped) or 5xx from the reverse proxy / php-fpm.
             if (
                 !requestError.response ||
                 (requestError.response?.status ?? 0) >= 500
@@ -2277,9 +2181,7 @@ export default () => {
             return;
         }
 
-        // Single-file content uses the dedicated version catalog
-        // (loader/game-version options + dependencies); modpacks keep the
-        // classic version list picker.
+        // Single-file content uses the dedicated version catalog (loader/game-version options + dependencies);...
         if (isSingleFileContentType(contentTypeRef.current)) {
             loadModVersions();
         } else {
@@ -2288,9 +2190,7 @@ export default () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [detailsItem]);
 
-    // Once the loader + MC pair resolves a version, fetch each recommended
-    // dependency project's own versions so the cards can offer the exact
-    // compatible build for the same pair. Cleared when the pair changes.
+    // Once the loader + MC pair resolves a version, fetch each recommended dependency project's own versions so...
     useEffect(() => {
         if (modSelectedVersion === null) {
             dependencyVersionsRequestId.current++;
@@ -2322,9 +2222,7 @@ export default () => {
             return next;
         });
 
-        // Dependencies belong to the same provider as the entry that
-        // references them: a CurseForge mod recommends CurseForge mods,
-        // addressed by their numeric id instead of a slug.
+        // Dependencies belong to the same provider as the entry that references them: a CurseForge mod recommends...
         const dependencyProvider = detailsItem?.provider ?? 'modrinth';
 
         const fetchOne = async (
@@ -2522,11 +2420,7 @@ export default () => {
                 return;
             }
 
-            // Network errors (timeout, closed tab/connection dropped) or 5xx
-            // from the reverse proxy / php-fpm. The request may still be
-            // running server-side, so do not tear down the active install;
-            // the polling loop resurfaces progress, completion, or an 'idle'
-            // cleanup on its next tick.
+            // Network errors (timeout, closed tab/connection dropped) or 5xx from the reverse proxy / php-fpm.
             if (
                 !requestError.response ||
                 (requestError.response?.status ?? 0) >= 500

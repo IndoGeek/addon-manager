@@ -31,8 +31,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
 
     private const MODPACK_CLASS_ID = 4471;
 
-    // The Mods class. Content installs (mods/) filter on this instead of the
-    // modpacks class.
+    // The Mods class.
     private const MOD_CLASS_ID = 6;
 
     private const PLUGIN_CLASS_ID = 5;
@@ -43,11 +42,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
 
     private const SHADER_CLASS_ID = 6552;
 
-    // The CurseForge class behind each content type we install, verified
-    // against GET /v1/categories?gameId=432 (classes: Bukkit Plugins 5,
-    // Mods 6, Resource Packs 12, Modpacks 4471, Shaders 6552, Data Packs
-    // 6945). CurseForge has no Sponge class: Sponge plugins are not
-    // published here at all, so no class maps to them.
+    // The CurseForge class behind each content type we install, verified against GET /v1/categories?gameId=432 (cla...
     private const CLASS_BY_CONTENT_TYPE = [
         'modpack' => self::MODPACK_CLASS_ID,
         'mod' => self::MOD_CLASS_ID,
@@ -57,12 +52,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
         'shader' => self::SHADER_CLASS_ID,
     ];
 
-    // Content types whose CurseForge files carry a mod loader. The Mods and
-    // Modpacks classes record one per file; every other class does not — a
-    // plugin file's modLoader is null and its gameVersions hold Minecraft
-    // versions only (verified live across EssentialsX, WorldEdit, Chunky,
-    // ViaVersion and LuckPerms). A loader filter there would filter on a
-    // field CurseForge never populates.
+    // Content types whose CurseForge files carry a mod loader.
     private const TYPES_WITH_LOADERS = ['modpack', 'mod'];
 
     // Project page prefix per class, for the "open on CurseForge" link.
@@ -122,12 +112,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
         '1.16.5',
     ];
 
-    // CurseForge modpack categories — the REAL slugs returned by
-    // GET /v1/categories?gameId=432&classId=4471 (the Modpacks class).
-    // These must match CurseForge exactly: search() resolves the slug to a
-    // categoryId and an unknown slug yields an empty result, and the
-    // multi-select post-filter intersects against the slugs embedded in
-    // each modpack's own categories.
+    // CurseForge modpack categories — the REAL slugs returned by GET /v1/categories?gameId=432&classId=4471 (the Mo...
     private const MODPACK_CATEGORIES = [
         'adventure-and-rpg',
         'combat-pvp',
@@ -150,10 +135,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
         'extra-large',
     ];
 
-    // Fallback Mods-class (6) category slugs, used only when the live category
-    // list cannot be loaded (no API key, network failure, rate limit). The
-    // live list is preferred because a slug CurseForge does not know resolves
-    // to no category at all, which would silently filter every mod out.
+    // Fallback Mods-class (6) category slugs, used only when the live category list cannot be loaded (no API key, n...
     private const MOD_CATEGORIES = [
         'adventure-and-rpg',
         'api-and-library',
@@ -173,11 +155,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
         'world-gen',
     ];
 
-    // Fallback category slugs per class, used only when the live category
-    // list cannot be loaded (no API key, network failure, rate limit). All of
-    // them are verbatim slugs from GET /v1/categories?gameId=432&classId=N:
-    // an unknown slug resolves to no category at all, which would silently
-    // filter every result out.
+    // Fallback category slugs per class, used only when the live category list cannot be loaded (no API key, networ...
     private const PLUGIN_CATEGORIES = [
         'admin-tools',
         'anti-griefing-tools',
@@ -332,14 +310,12 @@ final class CurseForgeCatalogProvider implements CatalogProvider
             'categories' => true,
             'environment' => false,
             'sort' => true,
-            // CurseForge serves modpacks plus the four single-file classes
-            // and mods; the UI enables exactly the tabs listed here.
+            // CurseForge serves modpacks plus the four single-file classes and mods; the UI enables exactly the tabs listed...
             'content_types' => array_keys(self::CLASS_BY_CONTENT_TYPE),
         ];
     }
 
-    // The CurseForge class behind a content type, or null when this provider
-    // does not serve that type at all.
+    // The CurseForge class behind a content type, or null when this provider does not serve that type at all.
     private static function classIdFor(string $contentType): ?int
     {
         return self::CLASS_BY_CONTENT_TYPE[$contentType] ?? null;
@@ -373,10 +349,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
             ];
         }
 
-        // Every type is a different CurseForge class with its own category
-        // set, so the facet list follows the active tab. Only the Mods and
-        // Modpacks classes record a mod loader; the others have no loader
-        // field to filter on and must not pretend otherwise.
+        // Every type is a different CurseForge class with its own category set, so the facet list follows the active ta...
         return [
             'game_versions' => self::COMMON_GAME_VERSIONS,
             'loaders' => in_array($contentType, self::TYPES_WITH_LOADERS, true)
@@ -396,15 +369,12 @@ final class CurseForgeCatalogProvider implements CatalogProvider
 
         $classId = self::classIdFor($query->contentType);
 
-        // A content type CurseForge has no class for (there is no Sponge
-        // class, for example) shows an empty result instead of wrong rows.
+        // A content type CurseForge has no class for (there is no Sponge class, for example) shows an empty result inst...
         if ($classId === null) {
             return $this->emptyResult($query);
         }
 
-        // Single-file content is directly installable, so it takes the plain
-        // upstream pagination instead of the modpack path below, which scans
-        // every project for a server-installable archive.
+        // Single-file content is directly installable, so it takes the plain upstream pagination instead of the modpack...
         if ($query->contentType !== 'modpack') {
             return $this->searchContent($query, $classId);
         }
@@ -590,11 +560,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
         );
     }
 
-    // Single-file search (mods, plugins, resource packs, data packs,
-    // shaders): a straight upstream page of the type's own CurseForge class,
-    // filtered with the same single-value parameters, plus the multi-select
-    // post-filter the modpack path uses so "Forge + Fabric" style picks still
-    // behave.
+    // Single-file search (mods, plugins, resource packs, data packs, shaders): a straight upstream page of the type...
     private function searchContent(
         CatalogSearchQuery $query,
         int $classId,
@@ -624,8 +590,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
             $parameters['gameVersion'] = $query->gameVersions[0];
         }
 
-        // Only the classes that record a loader accept the upstream filter;
-        // sending it for a plugin search would narrow it to nothing.
+        // Only the classes that record a loader accept the upstream filter; sending it for a plugin search would narrow...
         if (
             $query->loaders !== []
             && in_array(
@@ -693,12 +658,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
         );
     }
 
-    // The category slugs CurseForge actually exposes for a class. The live
-    // list is preferred over the curated fallback: a slug CurseForge does not
-    // know resolves to no categoryId at all, which would silently filter out
-    // every result. Never throws — the toolbar must survive a failed lookup.
-    // @param array<int, string> $fallback
-    // @return array<int, string>
+    // The category slugs CurseForge actually exposes for a class.
     private function categoriesForClass(int $classId, array $fallback): array
     {
         try {
@@ -767,12 +727,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
 
         $files = $this->requestAllFiles($query->project, $parameters);
 
-        // Resolve every referenced dedicated server pack in ONE bulk call
-        // instead of one sequential HTTP round-trip per file. The per-file
-        // approach turned the versions menu into a latency sink on projects
-        // like Tensura Neo Otherworld, where most of the dozens of files
-        // reference a server pack (17 sequential calls, seconds of dead
-        // air before the menu renders).
+        // Resolve every referenced dedicated server pack in ONE bulk call instead of one sequential HTTP round-trip per...
         $serverPacks = $this->bulkResolveServerPacks($files, $query->project);
 
         $versions = [];
@@ -848,8 +803,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
                 );
             }
 
-            // The details modal opens for both classes; anything else is not
-            // something this provider installs.
+            // The details modal opens for both classes; anything else is not something this provider installs.
             if (!$this->isCatalogClass($response->body['data'])) {
                 throw new CatalogProviderException(
                     'The requested project is not a modpack or a mod.',
@@ -877,8 +831,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
         }
 
         try {
-            // The project payload's `description` field is usually empty; the
-            // long-form body lives on its dedicated endpoint.
+            // The project payload's `description` field is usually empty; the long-form body lives on its dedicated endpoin...
             $response = $this->http->get(
                 self::API_BASE
                     . '/mods/'
@@ -900,8 +853,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
                 );
             }
 
-            // CurseForge serves the description as raw HTML (wrapped in its
-            // own page markup). Reduce it to the sanitized fragment directly.
+            // CurseForge serves the description as raw HTML (wrapped in its own page markup).
             $html = (new DescriptionSanitizer())->sanitize($raw);
 
             return new CatalogDescription(
@@ -918,11 +870,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
         }
     }
 
-    // Maps raw search entries, keeping only the class being searched: the
-    // modpack scan must never accept another class (its server-archive
-    // classification has no meaning there) and a plugin search must not
-    // return mods, so the expected class is a parameter.
-    // @param array<mixed> $entries @return array<int, CatalogItem>
+    // Maps raw search entries, keeping only the class being searched: the modpack scan must never accept another cl...
     private function mapSearchItems(array $entries, int $classId): array
     {
         $items = [];
@@ -934,9 +882,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
                 );
             }
 
-            // An absent classId is tolerated: the upstream request already
-            // filtered on classId, so a payload without one is still the
-            // class that was asked for.
+            // An absent classId is tolerated: the upstream request already filtered on classId, so a payload without one is...
             $entryClassId = $this->intOrNull($mod['classId'] ?? null);
 
             if ($entryClassId !== null && $entryClassId !== $classId) {
@@ -1191,9 +1137,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
                     headers: $this->headers(),
                 );
             } catch (ProviderHttpException $exception) {
-                // A bulk failure must not kill the whole version menu; the
-                // per-file fallback inside resolveInstallableFile() covers
-                // the ids this chunk could not resolve.
+                // A bulk failure must not kill the whole version menu; the per-file fallback inside resolveInstallableFile() co...
                 continue;
             }
 
@@ -1212,8 +1156,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
                 $id = $this->intOrNull($file['id'] ?? null);
                 $modId = $this->intOrNull($file['modId'] ?? null);
 
-                // The bulk endpoint returns files across projects, so every
-                // payload is checked against the requested project id.
+                // The bulk endpoint returns files across projects, so every payload is checked against the requested project id.
                 if (
                     $id === null
                     || $modId !== (int) $project
@@ -1510,9 +1453,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
                     }
                 }
 
-                // Tolerant fallback: CurseForge slugs use hyphens where a
-                // filter may say "vanilla+" or drop separators. Only used
-                // when no exact slug matched.
+                // Tolerant fallback: CurseForge slugs use hyphens where a filter may say "vanilla+" or drop separators.
                 if (
                     $fallback === null
                     && str_replace(['-', '+', '_'], '', $candidate)
@@ -1536,9 +1477,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
         }
     }
 
-    // Compares filter category slugs against an item's category slugs with
-    // hyphen/underscore/plus normalization, so "minigame" matches CF's
-    // "mini-game" etc. Exact matches still win — this only ever broadens.
+    // Compares filter category slugs against an item's category slugs with hyphen/underscore/plus normalization, so...
     private static function categoriesIntersect(array $filters, array $itemCategories): bool
     {
         $normalize = static function (string $value): string {
@@ -1594,9 +1533,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
                 continue;
             }
 
-            // Each index entry carries BOTH a mod loader and a Minecraft
-            // game version; they are independent facts, so the loader being
-            // mapped must not skip the version collection.
+            // Each index entry carries BOTH a mod loader and a Minecraft game version; they are independent facts, so the l...
             $modLoader = $this->intOrNull($entry['modLoader'] ?? null);
             $loaderSlug = $modLoader !== null
                 ? (self::MOD_LOADER_TO_SLUG[$modLoader] ?? null)
@@ -1689,8 +1626,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
 
         $sourceId = $slug ?? $id;
 
-        // Each class lives under its own CurseForge URL prefix (mods, modpacks,
-        // bukkit plugins, texture packs, data packs, shaders).
+        // Each class lives under its own CurseForge URL prefix (mods, modpacks, bukkit plugins, texture packs, data pac...
         $urlBase = self::URL_BASE_BY_CLASS_ID[
             $this->intOrNull($mod['classId'] ?? null) ?? self::MODPACK_CLASS_ID
         ] ?? self::MODPACK_URL_BASE;
@@ -1775,8 +1711,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
         return $this->stringOrNull($file['downloadUrl'] ?? null) !== null;
     }
 
-    // Every class this provider installs; the URL a project links to and the
-    // way it installs both follow from which one it is.
+    // Every class this provider installs; the URL a project links to and the way it installs both follow from which...
     private function isCatalogClass(array $mod): bool
     {
         $classId = $this->intOrNull($mod['classId'] ?? null);

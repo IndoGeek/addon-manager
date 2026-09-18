@@ -260,8 +260,7 @@ if ($multiRequest === null) {
     throw new RuntimeException('No multi-value HTTP request was made.');
 }
 
-// "Client"/"Server" are Modrinth side facets: each selected environment
-// becomes its own group, replacing the default server-side group.
+// "Client"/"Server" are Modrinth side facets: each selected environment becomes its own group, replacing the de...
 if (($multiRequest['query']['facets'] ?? null) !== json_encode([
     ['project_type:modpack'],
     ['client_side:required', 'client_side:optional'],
@@ -277,8 +276,7 @@ if (($multiRequest['query']['facets'] ?? null) !== json_encode([
 
 pass('multi-value filters map to separate ANDed facet groups');
 
-// Client-only content types (resource packs, shaders) must not restrict to
-// server-side projects, or the catalog would come back nearly empty.
+// Client-only content types (resource packs, shaders) must not restrict to server-side projects, or the catalog...
 $http = new FakeProviderHttpClient([
     new ProviderHttpResponse(200, [
         'hits' => [],
@@ -347,8 +345,7 @@ foreach ($contentTypeFacets as $contentType => $upstream) {
 
 pass('every content type maps to its upstream project_type facet');
 
-// Facet option lists differ per content type, and the loader lists match
-// the loaders the provider actually reports for that type.
+// Facet option lists differ per content type, and the loader lists match the loaders the provider actually repo...
 $facetProvider = new ModrinthCatalogProvider(
     new FakeProviderHttpClient([]),
 );
@@ -387,8 +384,7 @@ if (!in_array('paper', $pluginFacets['loaders'], true)
 
 pass('facet options are content-type specific');
 
-// A plain tag must never become a loader: Modrinth mixes both into
-// `display_categories`, which used to surface "library" as a loader pill.
+// A plain tag must never become a loader: Modrinth mixes both into `display_categories`, which used to surface ...
 $http = new FakeProviderHttpClient([
     new ProviderHttpResponse(200, [
         'hits' => [
@@ -483,9 +479,7 @@ if ($serverOnly->items[0]->environment !== 'server') {
     throw new RuntimeException('Server-only hit environment label mismatch.');
 }
 
-// The upstream total_hits stays authoritative even when client-only hits
-// are filtered out — collapsing the total used to shrink the catalog to a
-// single page whenever one hit was removed.
+// The upstream total_hits stays authoritative even when client-only hits are filtered out — collapsing the tota...
 if ($serverOnly->pagination->total !== 500) {
     throw new RuntimeException(
         'Upstream total_hits must stay authoritative after filtering.',

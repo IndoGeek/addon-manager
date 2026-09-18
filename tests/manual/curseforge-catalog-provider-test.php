@@ -582,8 +582,7 @@ $http = new FakeProviderHttpClient([
             sampleFile(705, 'non-public', ['fileStatus' => 3]),
         ],
     ]),
-    // Bulk server-pack resolution: one POST /mods/files for every
-    // referenced server pack id instead of per-file GETs.
+    // Bulk server-pack resolution: one POST /mods/files for every referenced server pack id instead of per-file GET...
     new ProviderHttpResponse(200, [
         'data' => [
             sampleFile(702, 'dedicated server pack', [
@@ -796,14 +795,11 @@ try {
     pass('non-numeric CurseForge project id rejected');
 }
 
-// ── Mods tab ────────────────────────────────────────────────────────────
-// CurseForge serves mods as the Mods class (6): single-file jars that
-// install into mods/ exactly like Modrinth mods.
+// ── Mods tab ──────────────────────────────────────────────────────────── CurseForge serves mods as the Mods c...
 
 $modCapabilities = $configured->capabilities();
 
-// Every type CurseForge has a class for, and nothing it does not (there is
-// no Sponge class on CurseForge at all).
+// Every type CurseForge has a class for, and nothing it does not (there is no Sponge class on CurseForge at all...
 if (
     ($modCapabilities['content_types'] ?? []) !== [
         'modpack',
@@ -849,9 +845,7 @@ function sampleModEntry(int $id, string $slug, int $loaderValue = 4): array
     ];
 }
 
-// The mods tab's category list follows the class: live Mods-class categories
-// are preferred, the curated fallback is used when the lookup fails, and
-// class entries ("Mods") are never offered as a filterable category.
+// The mods tab's category list follows the class: live Mods-class categories are preferred, the curated fallbac...
 $facetHttp = new FakeProviderHttpClient([
     new ProviderHttpResponse(200, [
         'data' => [
@@ -880,9 +874,7 @@ if ((int) ($facetRequest['query']['classId'] ?? 0) !== 6) {
     );
 }
 
-// Every class gets its own lookup: the second call below asks for the
-// modpacks categories, and the fake has no handler left, which must degrade
-// to the curated fallback rather than break the toolbar.
+// Every class gets its own lookup: the second call below asks for the modpacks categories, and the fake has no ...
 if (count($facetHttp->requests) !== 2) {
     throw new RuntimeException(
         'Each facet lookup must be one category request per class: '
@@ -920,9 +912,7 @@ if (in_array('technology', $modFacets['loaders'], true)) {
 
 pass('mods facets come from the Mods class with the curated fallback');
 
-// When the live list cannot be loaded the curated Mods-class slugs are used
-// instead of an empty toolbar (a slug CurseForge does not know would filter
-// every mod out).
+// When the live list cannot be loaded the curated Mods-class slugs are used instead of an empty toolbar (a slug...
 $offlineFacets = (new CurseForgeCatalogProvider(
     new FakeProviderHttpClient([new ProviderHttpException('nope', 503)]),
     'secret-key',
@@ -939,8 +929,7 @@ if (
 
 pass('a failed mods category lookup falls back to the curated list');
 
-// A mods search: the upstream request is pinned to the Mods class and
-// paginates directly, and only mod-class rows are mapped.
+// A mods search: the upstream request is pinned to the Mods class and paginates directly, and only mod-class ro...
 $modsHttp = new FakeProviderHttpClient([
     // Category slug -> id resolution for the Mods class.
     new ProviderHttpResponse(200, [
@@ -970,8 +959,7 @@ $mods = $modsProvider->search(new CatalogSearchQuery(
     limit: 20,
 ));
 
-// The category filter resolves to a numeric id first (Mods class), then the
-// search itself is issued.
+// The category filter resolves to a numeric id first (Mods class), then the search itself is issued.
 $categoryRequest = $modsHttp->requests[0] ?? null;
 $modsRequest = $modsHttp->requests[1] ?? null;
 
@@ -1057,8 +1045,7 @@ if ($mods->pagination->total !== 894) {
 
 pass('mods search queries the Mods class and maps mod rows');
 
-// Client-only content has no environment facet on CurseForge, so the mods
-// tab answers that filter honestly instead of inventing one.
+// Client-only content has no environment facet on CurseForge, so the mods tab answers that filter honestly inst...
 $envHttp = new FakeProviderHttpClient([]);
 $envMods = (new CurseForgeCatalogProvider($envHttp, 'secret-key'))->search(
     new CatalogSearchQuery(
@@ -1076,11 +1063,7 @@ if ($envMods->items !== [] || $envHttp->requests !== []) {
 
 pass('mods honour the unsupported environment filter without an API call');
 
-// ── Every class the provider serves ─────────────────────────────────────
-// CurseForge splits content into classes (Bukkit Plugins 5, Mods 6,
-// Resource Packs 12, Modpacks 4471, Shaders 6552, Data Packs 6945) with
-// their own categories. A search must query the class of the active tab and
-// map rows to that class's project URL.
+// ── Every class the provider serves ───────────────────────────────────── CurseForge splits content into class...
 
 function sampleClassEntry(
     int $id,
@@ -1165,8 +1148,7 @@ foreach ($classExpectations as $type => [$classId, $urlBase]) {
         throw new RuntimeException("{$type} must map game versions.");
     }
 
-    // No loader metadata exists for these classes, so the upstream loader
-    // filter must not be sent (it would narrow the search to nothing).
+    // No loader metadata exists for these classes, so the upstream loader filter must not be sent (it would narrow ...
     if (array_key_exists('modLoaderType', $query)) {
         throw new RuntimeException(
             "{$type} search must not send a loader filter it cannot match: "
@@ -1218,8 +1200,7 @@ if (in_array('quests', $facetProvider->facets('plugin')['categories'], true)) {
 
 pass('loaders are offered only for the classes that record them');
 
-// A type CurseForge has no class for (Worlds, Customization, Addons, and
-// anything Sponge) reports no facets at all instead of inventing some.
+// A type CurseForge has no class for (Worlds, Customization, Addons, and anything Sponge) reports no facets at ...
 $unsupportedHttp = new FakeProviderHttpClient([]);
 $unsupported = (new CurseForgeCatalogProvider(
     $unsupportedHttp,

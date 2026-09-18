@@ -26,27 +26,19 @@ final class DownloadManager implements ConcurrentDownloader, StageReporter
     // @var null|callable(int|null $downloadedBytes, int|null $totalBytes): void
     private $progressCallback = null;
 
-    // Per-file progress of downloadBatch(), so concurrent runs can render
-    // one live row per file instead of only the aggregate bar.
-    // @var null|callable(array<int|string, array{downloaded_bytes: int, total_bytes: int, done: bool, failed: bool}>): void
+    // Per-file progress of downloadBatch(), so concurrent runs can render one live row per file instead of only the...
     private $batchProgressCallback = null;
 
     // @var null|callable(): bool
     private $cancelChecker = null;
 
     // Consumer of stage announcements (see StageReporter).
-    // @var null|callable(string, int|null, int|null): void
     private $stageCallback = null;
 
-    // The stage last announced, so a repeated announcement of the same stage
-    // is only forwarded when it carries fresh counts.
+    // The stage last announced, so a repeated announcement of the same stage is only forwarded when it carries fres...
     private ?string $announcedStage = null;
 
-    // Stages are throttled on their own clock. Sharing the byte-progress clock
-    // would starve every counted update: the batch engine writes byte progress
-    // immediately before it hands the per-file states to the provider, so a
-    // "12 / 300" update would always land inside the 0.4s byte window and be
-    // dropped, leaving the card stuck on "0 / 300" while the bar moved.
+    // Stages are throttled on their own clock.
     private float $lastStageReport = 0.0;
 
     // Bytes already accounted for by earlier downloads in the same logical operation, plus the operation-wide total when one...
@@ -106,10 +98,7 @@ final class DownloadManager implements ConcurrentDownloader, StageReporter
         $this->lastStageReport = 0.0;
     }
 
-    // Announces the step an operation is on. Throttled on its own clock, but
-    // never for the first announcement of a stage: the consumer needs the
-    // transition immediately to swap its label, and a counted update must never
-    // be swallowed by a byte-progress write.
+    // Announces the step an operation is on.
     public function stage(string $key, ?int $current = null, ?int $total = null): void
     {
         $callback = $this->stageCallback;
@@ -122,9 +111,7 @@ final class DownloadManager implements ConcurrentDownloader, StageReporter
 
         $isTransition = $this->announcedStage !== $key;
 
-        // The closing update of a counted stage ("300 / 300") is never
-        // throttled: dropping it would leave the card reading "297 / 300" for
-        // the rest of the install even though every file arrived.
+        // The closing update of a counted stage ("300 / 300") is never throttled: dropping it would leave the card read...
         $isCompletion = $current !== null
             && $total !== null
             && $total > 0
@@ -183,9 +170,7 @@ final class DownloadManager implements ConcurrentDownloader, StageReporter
 
         $windowComplete = $safeTotal > 0 && $downloadedBytes >= $safeTotal;
 
-        // The throttle must never swallow the tick that closes a window: the
-        // final 100% is the signal the frontend needs to show the phase as
-        // finished before the next phase's label takes over.
+        // The throttle must never swallow the tick that closes a window: the final 100% is the signal the frontend need...
         $now = microtime(true);
 
         if (!$windowComplete && ($now - $this->lastProgressReport) < 0.4) {
@@ -235,8 +220,7 @@ final class DownloadManager implements ConcurrentDownloader, StageReporter
             while (true) {
                 $this->ensureNotCancelled();
 
-                // Give every hop its own freshly truncated slot so a single
-                // hop body is exactly what ends up in the destination file.
+                // Give every hop its own freshly truncated slot so a single hop body is exactly what ends up in the destination...
                 rewind($handle);
                 ftruncate($handle, 0);
 
@@ -252,9 +236,7 @@ final class DownloadManager implements ConcurrentDownloader, StageReporter
 
                     $attemptsLeft--;
 
-                    // Consult the cancel flag before sleeping so a cancel
-                    // requested during the backoff aborts promptly instead of
-                    // after the pause.
+                    // Consult the cancel flag before sleeping so a cancel requested during the backoff aborts promptly instead of a...
                     $this->ensureNotCancelled();
 
                     usleep(1_000_000);
@@ -288,8 +270,7 @@ final class DownloadManager implements ConcurrentDownloader, StageReporter
 
                 $location = self::locationFromHeaders($headers);
 
-                // The resolved URL is re-validated and its address re-checked
-                // on the next loop iteration, before any connection is made.
+                // The resolved URL is re-validated and its address re-checked on the next loop iteration, before any connection...
                 $current = RedirectResolver::resolve($current, $location);
                 $this->validateUrl($current);
 
@@ -468,17 +449,9 @@ final class DownloadManager implements ConcurrentDownloader, StageReporter
                 }
             } while ($running > 0);
 
-            // NOTE: the store keeps receiving ticks from this callback only
-            // while bytes flow (transfers update state['active']); a batch
-            // where every task is stuck connecting produces no new values but
-            // the aggregate still fires — the frontend's stale watchdog keys
-            // on snapshot CONTENT, so consumers see an honest frozen value
-            // only when this engine genuinely cannot make progress.
+            // NOTE: the store keeps receiving ticks from this callback only while bytes flow (transfers update state['activ...
 
-            // Closing report: the last throttled aggregate tick can sit a few
-            // percent short of the window's end, which the frontend renders as
-            // a stall just before the deploy phase takes over. Force one final
-            // unthrottled report so the download phase always lands on 100%.
+            // Closing report: the last throttled aggregate tick can sit a few percent short of the window's end, which the ...
             $peak = $this->aggregateBatchProgress($pending, $peak, true);
 
             foreach ($pending as $id => $state) {
@@ -535,8 +508,7 @@ final class DownloadManager implements ConcurrentDownloader, StageReporter
                 return;
             }
 
-            // A retried or redirected task keeps its last-used URL; a task
-            // that has not started yet takes the first candidate in its list.
+            // A retried or redirected task keeps its last-used URL; a task that has not started yet takes the first candida...
             $url = $state['url'] !== null
                 ? (string) $state['url']
                 : (string) $state['urls'][$state['index']];
@@ -845,10 +817,7 @@ final class DownloadManager implements ConcurrentDownloader, StageReporter
             $sum += $state['transferred'] + (int) floor($state['active']);
         }
 
-        // Tasks that failed every candidate drop out of the running sum above
-        // (their bytes never arrived). Deflate the denominator by their
-        // declared sizes too, so the bar still reaches 100% for the mods that
-        // DID arrive instead of stalling just short of the end.
+        // Tasks that failed every candidate drop out of the running sum above (their bytes never arrived).
         $declaredFailedBytes = 0;
 
         foreach ($pending as $state) {
@@ -868,8 +837,7 @@ final class DownloadManager implements ConcurrentDownloader, StageReporter
 
         $safeTotal = max(1, $safeTotal - $declaredFailedBytes);
 
-        // Per-file report first: the aggregate consumer reads the latest
-        // per-file snapshot when it writes its own state.
+        // Per-file report first: the aggregate consumer reads the latest per-file snapshot when it writes its own state.
         if ($batchCallback !== null) {
             $files = [];
 

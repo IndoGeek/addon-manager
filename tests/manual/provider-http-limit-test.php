@@ -8,9 +8,7 @@ require __DIR__ . '/../../app/Services/Provider/CurlProviderHttpClient.php';
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Provider\CurlProviderHttpClient;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Provider\ProviderHttpException;
 
-// A tiny PHP built-in server lets the HTTP client be exercised hermeticly on
-// the loopback interface (the provider client performs no SSRF filtering, so
-// loopback addresses are reachable here by design).
+// A tiny PHP built-in server lets the HTTP client be exercised hermeticly on the loopback interface (the provid...
 $router = sys_get_temp_dir()
     . '/modpack-provider-router-'
     . bin2hex(random_bytes(8))
@@ -111,11 +109,7 @@ try {
 
     echo "PASS: oversized response rejected\n";
 
-    // Header shapes. curl takes raw "Name: value" lines and uses the array's
-    // VALUES, so a name => value map would be transmitted as a bare value and
-    // the header would silently never arrive. That is exactly how a
-    // CurseForge API key can go missing from a request, so both shapes must
-    // end up as a real header on the wire.
+    // Header shapes.
     $associative = $client->get(
         $base . '/echo-headers',
         [],

@@ -69,9 +69,7 @@ final class ModrinthCatalogProvider implements CatalogProvider
         'misc',
     ];
 
-    // Modrinth categories for mods — the exact slugs Modrinth's API uses for
-    // project_type "mod" (GET /v2/tag/category). Plugins and datapacks reuse
-    // this set upstream. Do not hand-edit without re-checking the live list.
+    // Modrinth categories for mods — the exact slugs Modrinth's API uses for project_type "mod" (GET /v2/tag/catego...
     private const MOD_CATEGORIES = [
         'adventure',
         'cursed',
@@ -94,8 +92,7 @@ final class ModrinthCatalogProvider implements CatalogProvider
         'worldgen',
     ];
 
-    // Resource pack categories (GET /v2/tag/category, project_type
-    // "resourcepack").
+    // Resource pack categories (GET /v2/tag/category, project_type "resourcepack").
     private const RESOURCEPACK_CATEGORIES = [
         '8x-',
         '16x',
@@ -171,10 +168,7 @@ final class ModrinthCatalogProvider implements CatalogProvider
         'shader' => self::SHADER_CATEGORIES,
     ];
 
-    // Loader slugs offered per content type. Modrinth does not return a
-    // `loaders` array for plugin/datapack/resourcepack/shader search hits —
-    // the loader is a category there — so this list and KNOWN_LOADERS below
-    // must stay in sync.
+    // Loader slugs offered per content type.
     private const LOADERS_BY_CONTENT_TYPE = [
         'modpack' => ['fabric', 'forge', 'quilt', 'neoforge', 'liteloader', 'rift'],
         'mod' => ['fabric', 'forge', 'quilt', 'neoforge', 'liteloader', 'rift'],
@@ -209,17 +203,13 @@ final class ModrinthCatalogProvider implements CatalogProvider
         'shader' => 'shader',
     ];
 
-    // Content types that only exist on the client. Their search must not
-    // restrict to server-side projects, and client-only hits must not be
-    // dropped, or the catalog would come back nearly empty.
+    // Content types that only exist on the client.
     private const CLIENT_ONLY_CONTENT_TYPES = [
         'resourcepack' => true,
         'shader' => true,
     ];
 
-    // Every loader slug this provider understands, used to split loader tags
-    // out of a project's category list.
-    // @var array<string, true>
+    // Every loader slug this provider understands, used to split loader tags out of a project's category list.
     private const KNOWN_LOADERS = [
         'fabric' => true,
         'forge' => true,
@@ -380,9 +370,7 @@ final class ModrinthCatalogProvider implements CatalogProvider
                 );
             }
 
-            // Modrinth serves the body as Markdown; the rendered HTML endpoint
-            // (/project/:slug/body) would be a second request, so convert the
-            // common Markdown constructs here after escaping, then sanitize.
+            // Modrinth serves the body as Markdown; the rendered HTML endpoint (/project/:slug/body) would be a second requ...
             $body = is_string($response->body['body'] ?? null)
                 ? $response->body['body']
                 : '';
@@ -418,10 +406,7 @@ final class ModrinthCatalogProvider implements CatalogProvider
         $listOpen = false;
 
         $inline = static function (string $text) use ($escape): string {
-            // Inline HTML (e.g. <summary>…</summary> or <b>…</b> between
-            // words) must survive as real tags, exactly like on Modrinth.
-            // Split the line into tag / non-tag segments and escape only the
-            // non-tag parts, so injected markup never slips through either.
+            // Inline HTML (e.g.
             $segments = preg_split(
                 '/(<[^<>]+>)/',
                 $text,
@@ -441,8 +426,7 @@ final class ModrinthCatalogProvider implements CatalogProvider
                 $text .= $escape($segment);
             }
 
-            // Images then links; URL already escaped by $escape, so quotes
-            // inside cannot break out of the attribute.
+            // Images then links; URL already escaped by $escape, so quotes inside cannot break out of the attribute.
             $text = preg_replace(
                 '/!\[([^\]]*)\]\(([^)\s]+)\)/',
                 '<img src="$2" alt="$1">',
@@ -486,11 +470,7 @@ final class ModrinthCatalogProvider implements CatalogProvider
                 continue;
             }
 
-            // Modrinth bodies legitimately embed raw HTML blocks (details/
-            // summary disclosures, images, divs, multi-tag lines like
-            // '<h3 align="center">title</h3>'). Any line that is delimited
-            // as one or more tags passes through untouched; the sanitizer
-            // downstream enforces the safety rules.
+            // Modrinth bodies legitimately embed raw HTML blocks (details/ summary disclosures, images, divs, multi-tag lin...
             if ($trimmed !== ''
                 && str_starts_with($trimmed, '<')
                 && str_ends_with($trimmed, '>')
@@ -753,9 +733,6 @@ final class ModrinthCatalogProvider implements CatalogProvider
         ];
 
         // Server-installable content defaults to server-side projects.
-        // Client-only content types have no server-side representation, so
-        // the group is skipped there (and replaced by the user's own
-        // environment selection below).
         if (!$clientOnly && $query->environments === []) {
             $facets[] = [
                 'server_side:required',
@@ -763,8 +740,7 @@ final class ModrinthCatalogProvider implements CatalogProvider
             ];
         }
 
-        // "Client"/"Server" are Modrinth side facets, not categories; each
-        // selection expands to the side groups it means.
+        // "Client"/"Server" are Modrinth side facets, not categories; each selection expands to the side groups it mean...
         foreach ($query->environments as $environment) {
             foreach (self::environmentFacets($environment) as $group) {
                 $facets[] = $group;
@@ -799,7 +775,6 @@ final class ModrinthCatalogProvider implements CatalogProvider
     }
 
     // Modrinth facet groups for one environment selection.
-    // @return array<int, array<int, string>>
     private static function environmentFacets(string $environment): array
     {
         $client = ['client_side:required', 'client_side:optional'];
@@ -828,9 +803,7 @@ final class ModrinthCatalogProvider implements CatalogProvider
 
         $total = $this->totalHits($payload['total_hits'] ?? null);
 
-        // Client-only content types legitimately return client-only hits;
-        // for everything else they are filtered out (and the upstream total
-        // stays authoritative, so pagination is unaffected).
+        // Client-only content types legitimately return client-only hits; for everything else they are filtered out (an...
         $skipClientOnly = !isset(
             self::CLIENT_ONLY_CONTENT_TYPES[$query->contentType],
         );
@@ -851,11 +824,7 @@ final class ModrinthCatalogProvider implements CatalogProvider
             $items[] = $this->mapHit($hit, $query->contentType);
         }
 
-        // The upstream total_hits stays authoritative even when this page
-        // contains fewer mapped items than raw hits (client-only entries are
-        // filtered above). Collapsing the total to offset+count here used to
-        // shrink the whole catalog to a single page whenever one hit was
-        // filtered out.
+        // The upstream total_hits stays authoritative even when this page contains fewer mapped items than raw hits (cl...
 
         return new CatalogResult(
             items: $items,
@@ -885,11 +854,7 @@ final class ModrinthCatalogProvider implements CatalogProvider
 
         $categories = $this->stringList($hit['categories'] ?? []);
 
-        // Search hits carry no `loaders` array for any project type:
-        // Modrinth mixes the loader slugs into `categories`, and
-        // `display_categories` is a curated subset of those (it holds plain
-        // tags too, e.g. "library", which must not become a loader). Split
-        // the real loader slugs out of the category list instead.
+        // Search hits carry no `loaders` array for any project type: Modrinth mixes the loader slugs into `categories`,...
         $loaders = array_values(array_filter(
             $categories,
             static fn (string $category): bool =>
@@ -959,8 +924,7 @@ final class ModrinthCatalogProvider implements CatalogProvider
 
         $sourceId = $slug ?? ($this->validSlug($projectId) ?? '');
 
-        // The project endpoint reports its canonical type; use it for the
-        // public link so a mod no longer points at a /modpack/ URL.
+        // The project endpoint reports its canonical type; use it for the public link so a mod no longer points at a /m...
         $projectType = $this->stringOrNull($project['project_type'] ?? null);
 
         return new CatalogItem(

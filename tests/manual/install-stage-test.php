@@ -1,11 +1,6 @@
 <?php
 
-// Tests for the install-stage protocol a modpack download reports:
-// - DownloadManager announces named stages (archive, extract, manifest, mods)
-//   to its stage callback, immediately on a transition and throttled for
-//   repeats so a counted stage cannot flood the progress store.
-// - The CurseForge client-pack flow announces every step it walks, and each
-//   step owns its own progress window instead of re-anchoring a shared one.
+// Tests for the install-stage protocol a modpack download reports: - DownloadManager announces named stages (ar...
 
 require __DIR__ . '/../../app/Services/Download/Downloader.php';
 require __DIR__ . '/../../app/Services/Download/StageReporter.php';
@@ -97,8 +92,7 @@ if ($events[2] !== ['mods', 0, 3]) {
 
 pass('stage transitions reach the callback immediately and in order');
 
-// A counted stage refreshes on every fetched file; those repeats are throttled
-// so the progress store is not rewritten on every single tick.
+// A counted stage refreshes on every fetched file; those repeats are throttled so the progress store is not rew...
 $manager->stage('mods', 1, 3);
 
 if (count($events) !== 3) {
@@ -115,11 +109,7 @@ if (count($events) !== 4 || $events[3] !== ['mods', 2, 3]) {
 
 pass('repeat stage updates are throttled but never lost');
 
-// Model one tick of the batch engine: it writes byte progress and hands the
-// per-file states over immediately afterwards. The counted update that follows
-// must still get through, or the card sits on "0 / 300" for the whole download
-// while its bar fills. Byte progress runs on its own throttle so the stage
-// clock here is the one that decides.
+// Model one tick of the batch engine: it writes byte progress and hands the per-file states over immediately af...
 usleep(450000);
 
 $manager->reportProgress(100, 100);
@@ -181,8 +171,7 @@ final class StageFakeHttpClient implements ProviderHttpClient
     }
 }
 
-// Records every stage announcement, every progress window and every batch run,
-// which together are what the downloading card renders.
+// Records every stage announcement, every progress window and every batch run, which together are what the down...
 final class StageRecordingDownloader implements ConcurrentDownloader, StageReporter
 {
     /** @var array<int, string> */
@@ -377,9 +366,7 @@ $provider = new CurseForgeProvider(
 
 $package = $provider->getPackage('curseforge://314768');
 
-// The whole point of the stepped display: an install names each phase it
-// really walks, in the order it walks it. The counts refresh on the last step
-// is the same step reported again, which the card keeps as one row.
+// The whole point of the stepped display: an install names each phase it really walks, in the order it walks it.
 if (
     $downloader->stages
     !== ['archive', 'manifest', 'extract', 'mods', 'mods', 'mods']
@@ -401,8 +388,7 @@ if ($steps !== ['archive', 'manifest', 'extract', 'mods']) {
 
 pass('client-pack install announces archive, manifest, extract and mods');
 
-// Each step owns its own window: the overrides footprint for extraction, then
-// the manifest mods footprint for the downloads that follow.
+// Each step owns its own window: the overrides footprint for extraction, then the manifest mods footprint for t...
 $overrideTotals = array_column($downloader->offsets, 'total');
 
 if (!in_array(strlen('server-config'), $overrideTotals, true)) {
@@ -421,14 +407,12 @@ if (!in_array(512, $overrideTotals, true)) {
 
 pass('every stage anchors its own progress window');
 
-// The mods step reports how many of the manifest's files it has resolved, so
-// the card can read "1 / 1" while that step runs.
+// The mods step reports how many of the manifest's files it has resolved, so the card can read "1 / 1" while th...
 if ($downloader->batchCalls !== 1) {
     throw new RuntimeException('Manifest mods were not fetched as one batch.');
 }
 
-// The step opens at zero and closes on the full total, whatever the engine's
-// last progress tick happened to see.
+// The step opens at zero and closes on the full total, whatever the engine's last progress tick happened to see.
 $counts = $downloader->modCounts;
 
 if (($counts[0] ?? null) !== [0, 1]) {
@@ -530,8 +514,7 @@ if (
 
 pass('mrpack install announces archive, index and mods');
 
-// The archive step's window is the mrpack's own size, not a virtual anchor
-// reserved for the files that come later.
+// The archive step's window is the mrpack's own size, not a virtual anchor reserved for the files that come lat...
 if (($downloader->offsets[0]['total'] ?? null) !== 4096) {
     throw new RuntimeException(
         'Archive stage did not anchor on the archive footprint: '

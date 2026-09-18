@@ -307,8 +307,7 @@ $snapshots = $downloader->offsetSnapshots;
 if (($snapshots[0]['bytes'] ?? null) !== 0) {
     throw new RuntimeException('Download did not start at offset zero.');
 }
-// The archive phase owns its own window: the mrpack's real size, so its bar
-// fills across exactly the bytes that transfer before the pack is unpacked.
+// The archive phase owns its own window: the mrpack's real size, so its bar fills across exactly the bytes that...
 $expectedInitialTotal = max(1, 5000);
 if (($snapshots[0]['total'] ?? null) !== $expectedInitialTotal) {
     throw new RuntimeException(
@@ -316,8 +315,7 @@ if (($snapshots[0]['total'] ?? null) !== $expectedInitialTotal) {
     );
 }
 
-// Next step's window: the files phase restarts at zero with the file
-// footprint (embedded entries plus external index mods).
+// Next step's window: the files phase restarts at zero with the file footprint (embedded entries plus external ...
 if (($snapshots[1]['bytes'] ?? null) !== 0
     || ($snapshots[1]['total'] ?? null) !== $indexTotal
 ) {
@@ -372,8 +370,7 @@ if (in_array('mods/gamma.jar', $entries, true)) {
 
 echo 'PASS: two-phase progress windows anchor archive and index phases separately' . "\n";
 
-// The provider deletes the source mrpack after normalizing it, so the fixture
-// must be rebuilt before the next provider run.
+// The provider deletes the source mrpack after normalizing it, so the fixture must be rebuilt before the next p...
 buildFixtureMrpack($mrpackPath);
 
 $downloader = new RecordingDownloader(

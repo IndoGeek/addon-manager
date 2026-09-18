@@ -23,9 +23,7 @@ final class InstallationWorkspace
             );
         }
 
-        // Providers that materialize a ready-to-deploy directory (client-pack
-        // normalizers) pass a folder instead of an archive. Return it in place
-        // as the workspace so nothing is re-copied or re-extracted.
+        // Providers that materialize a ready-to-deploy directory (client-pack normalizers) pass a folder instead of an ...
         if (is_dir($archivePath)) {
             return $this->prepareDirectory($archivePath, $cancelChecker);
         }
@@ -129,8 +127,7 @@ final class InstallationWorkspace
 
             @rmdir($workspace);
         } catch (\Throwable) {
-            // Cleanup is best-effort and must never mask the installation
-            // outcome, even when a workspace file is unreadable.
+            // Cleanup is best-effort and must never mask the installation outcome, even when a workspace file is unreadable.
         }
     }
 }

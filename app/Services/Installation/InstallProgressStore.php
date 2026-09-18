@@ -24,9 +24,7 @@ final class InstallProgressStore
 
         $payload = json_encode([
             'expires_at' => time() + max(1, $ttlSeconds),
-            // Server-side heartbeat so consumers can tell an actively
-            // updating install from one whose PHP request died mid-flight
-            // (the last snapshot would otherwise look frozen forever).
+            // Server-side heartbeat so consumers can tell an actively updating install from one whose PHP request died mid-...
             'updated_at' => time(),
             'state' => $state,
         ], JSON_UNESCAPED_SLASHES);

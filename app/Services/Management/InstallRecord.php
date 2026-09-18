@@ -13,8 +13,7 @@ final class InstallRecord
 
     public const TYPE_MODPACK = 'modpack';
 
-    /** Single-file content (mods, future plugins etc.) — uninstall must
-     * never touch the containing directory, only the recorded files. */
+    /** Single-file content (mods, future plugins etc.) — uninstall must never touch the containing directory, only t... */
     public const TYPE_CONTENT = 'content';
 
     public function __construct(
@@ -37,8 +36,7 @@ final class InstallRecord
         /** @var list<string> */
         public readonly array $overwrittenFiles,
         public readonly string $contentType = self::TYPE_MODPACK,
-        /** Which catalog kind this is: modpack, mod, plugin, datapack,
-         * resourcepack, or shader. */
+        /** Which catalog kind this is: modpack, mod, plugin, datapack, resourcepack, or shader. */
         public readonly string $contentKind = ContentInstallTarget::KIND_MODPACK,
     ) {
         if ($id === '') {
@@ -141,10 +139,7 @@ final class InstallRecord
         );
     }
 
-    // The stored kind when it is one we know; otherwise inferred from where
-    // the record's files were placed, so records written before the kind was
-    // stored still label themselves correctly.
-    // @param list<string> $createdFiles
+    // The stored kind when it is one we know; otherwise inferred from where the record's files were placed, so reco...
     private static function contentKindFrom(
         mixed $value,
         array $createdFiles,
@@ -166,14 +161,11 @@ final class InstallRecord
             }
         }
 
-        // A content record whose file we cannot place: a mod is the only
-        // single-file kind that existed before the others.
+        // A content record whose file we cannot place: a mod is the only single-file kind that existed before the other...
         return ContentInstallTarget::DEFAULT_TYPE;
     }
 
-    // Records created before content installs existed have no content_type;
-    // anything unrecognized stays a modpack so uninstall keeps its old,
-    // more aggressive semantics unless the record explicitly says otherwise.
+    // Records created before content installs existed have no content_type; anything unrecognized stays a modpack s...
     private static function contentTypeOrDefault(mixed $value): string
     {
         if ($value === self::TYPE_CONTENT) {

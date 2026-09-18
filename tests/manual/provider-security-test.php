@@ -173,8 +173,7 @@ assertRejected('modrinth rejects malformed version list', function () use (
     $provider->getMetadata('modrinth://prominence-2-rpg');
 });
 
-// Modrinth: a missing project_type is reported as a controlled error rather
-// than a crash.
+// Modrinth: a missing project_type is reported as a controlled error rather than a crash.
 $http = new FakeProviderHttpClient([
     new ProviderHttpResponse(200, ['id' => 'AANobbMI']),
 ]);
@@ -215,8 +214,7 @@ assertRejected('curseforge rejects malformed project payload', function () use (
     $provider->getMetadata('curseforge://314768');
 });
 
-// CurseForge: the API key is sent on requests but never appears in URLs or
-// error messages.
+// CurseForge: the API key is sent on requests but never appears in URLs or error messages.
 $http = new FakeProviderHttpClient([
     new ProviderHttpException('The provider returned an HTTP 500 response.', 500),
 ]);

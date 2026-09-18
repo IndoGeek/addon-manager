@@ -15,13 +15,7 @@ final class OwnershipRemover
     ) {
     }
 
-    // @param list<string> $relativePaths
-    // @param bool $pruneEmptyDirs When true, parent directories that become
-    //        empty after a removal are deleted too (modpack semantics). Must
-    //        be false for single-file content (mods): the user may keep
-    //        other mods in the same directory — removing mods/fabric-api.jar
-    //        must never delete the mods directory itself.
-    // @return array{deleted: list<string>, missing: list<string>, errors: list<string>}
+    // @param list<string> $relativePaths @param bool $pruneEmptyDirs When true, parent directories that become empt...
     public function remove(array $relativePaths, bool $pruneEmptyDirs = true): array
     {
         $deleted = [];

@@ -1,12 +1,6 @@
 <?php
 
-// Tests for the mod (single-file content) version window:
-//   - ModVersionCatalog version mapping, dependency recommendations
-//   - install/mod filename encoding (contentFilename logic exercised
-//     through the controller contract in a follow-up; here we cover the
-//     catalog piece directly)
-//
-// Run: php tests/manual/mod-version-catalog-test.php
+// Tests for the mod (single-file content) version window: - ModVersionCatalog version mapping, dependency recom...
 
 $projectRoot = dirname(__DIR__, 2);
 

@@ -43,8 +43,7 @@ final class ModrinthProvider implements ModpackProvider, PartialPackageProvider
         return $this->parseSource($source) !== null;
     }
 
-    // Names the install step now in progress, when the downloader can report
-    // stages (see StageReporter).
+    // Names the install step now in progress, when the downloader can report stages (see StageReporter).
     private function announceStage(
         string $key,
         ?int $current = null,
@@ -67,9 +66,7 @@ final class ModrinthProvider implements ModpackProvider, PartialPackageProvider
 
         $project = $this->fetchProject($parsed['project']);
 
-        // Metadata resolution is display-only (version picking, details),
-        // so mods are allowed through here; only the modpack package
-        // pipeline enforces the modpack project type.
+        // Metadata resolution is display-only (version picking, details), so mods are allowed through here; only the mo...
         $this->assertSupportedProject($project);
 
         $version = $this->selectedVersion(
@@ -143,10 +140,7 @@ final class ModrinthProvider implements ModpackProvider, PartialPackageProvider
             );
         }
 
-        // The archive owns its own progress window. Its index files are a
-        // separate step with a separate window once the pack is unpacked, so
-        // the bar fills across the archive's own bytes and then starts over on
-        // the files that step fetches.
+        // The archive owns its own progress window.
         $archiveSize = max(0, (int) ($file['size'] ?? 0));
 
         $this->announceStage('archive');
@@ -264,8 +258,7 @@ final class ModrinthProvider implements ModpackProvider, PartialPackageProvider
             );
         }
 
-        // Same staging as getPackage(): the archive gets its own window, and
-        // the unpacked file set gets the next one.
+        // Same staging as getPackage(): the archive gets its own window, and the unpacked file set gets the next one.
         $archiveSize = max(0, (int) ($file['size'] ?? 0));
 
         $this->announceStage('archive');
@@ -491,8 +484,7 @@ final class ModrinthProvider implements ModpackProvider, PartialPackageProvider
         }
     }
 
-    // Metadata-level gate: anything the catalog can browse (modpacks, mods)
-    // may be resolved for display and version picking.
+    // Metadata-level gate: anything the catalog can browse (modpacks, mods) may be resolved for display and version...
     private function assertSupportedProject(array $project): void
     {
         if (
@@ -577,9 +569,7 @@ final class ModrinthProvider implements ModpackProvider, PartialPackageProvider
                 );
             }
 
-            // Mods step: embedded entries are streamed out of the archive and
-            // every external index file is fetched, both against this step's
-            // own byte footprint.
+            // Mods step: embedded entries are streamed out of the archive and every external index file is fetched, both ag...
             $this->announceStage('mods');
 
             $archiveBytes = 0;
@@ -597,9 +587,7 @@ final class ModrinthProvider implements ModpackProvider, PartialPackageProvider
 
             $outputPath = $this->createPackageDirectory();
 
-            // Materialize every embedded entry (overrides, server-overrides
-            // and any mods shipped inside the mrpack) straight into the
-            // package directory.
+            // Materialize every embedded entry (overrides, server-overrides and any mods shipped inside the mrpack) straigh...
             $overridesWritten = 0;
 
             try {
@@ -679,9 +667,7 @@ final class ModrinthProvider implements ModpackProvider, PartialPackageProvider
         }
 
         if ($this->downloader instanceof ConcurrentDownloader) {
-            // Anchor the batch on the bytes already streamed (mrpack plus its
-            // embedded entries) so the bar never steps backwards between the
-            // packaging and download phases.
+            // Anchor the batch on the bytes already streamed (mrpack plus its embedded entries) so the bar never steps back...
             $batchOffset = $networkBytesDone + $overridesWritten;
 
             $this->downloader->setProgressOffset(
@@ -906,14 +892,11 @@ final class ModrinthProvider implements ModpackProvider, PartialPackageProvider
                 continue;
             }
 
-            // server-overrides must win over overrides for the same path, so
-            // candidates are compared by their precedence instead of taken on
-            // first-come.
+            // server-overrides must win over overrides for the same path, so candidates are compared by their precedence in...
             if (
                 $this->shouldReplace($content[$payload['relative']] ?? null, $payload['priority'])
             ) {
-                // Restore flow: embedded entries outside the wanted set are
-                // skipped before streaming.
+                // Restore flow: embedded entries outside the wanted set are skipped before streaming.
                 if ($wanted !== null && !isset($wanted[$payload['relative']])) {
                     continue;
                 }
@@ -988,8 +971,7 @@ final class ModrinthProvider implements ModpackProvider, PartialPackageProvider
                 );
             }
 
-            // Index files carry the lowest precedence, so an embedded copy of
-            // the same path (overrides/mods) always wins.
+            // Index files carry the lowest precedence, so an embedded copy of the same path (overrides/mods) always wins.
             if (
                 $this->shouldReplace($content[$relative] ?? null, 'index')
             ) {

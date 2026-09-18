@@ -5,8 +5,7 @@ namespace Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Ca
 // Application-level catalog facade used by the HTTP layer.
 final class CatalogService
 {
-    // Content type used for the providers()/facets() listing; set per request
-    // by the controller so the category lists match the active tab.
+    // Content type used for the providers()/facets() listing; set per request by the controller so the category lis...
     private ?string $facetsContentType = null;
 
     public function __construct(

@@ -1,10 +1,6 @@
 <?php
 
-// Tests for the simple content (mods) install path:
-//   - SimpleContentInstaller filename sanitization and target validation
-//   - CatalogVersionFileResolver primary-file selection and URL trust
-//
-// Run: php tests/manual/simple-content-installer-test.php
+// Tests for the simple content (mods) install path: - SimpleContentInstaller filename sanitization and target v...
 
 $projectRoot = dirname(__DIR__, 2);
 
@@ -42,8 +38,7 @@ final class FakeSimpleDownloader implements Downloader
 
     public function download(string $url): string
     {
-        // Mirror the real DownloadManager: every call materializes its own
-        // temporary file which the caller owns afterwards.
+        // Mirror the real DownloadManager: every call materializes its own temporary file which the caller owns afterwa...
         $copy = $this->path . '.' . bin2hex(random_bytes(4)) . '.tmp';
 
         copy($this->path, $copy);

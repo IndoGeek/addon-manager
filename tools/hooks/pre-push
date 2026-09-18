@@ -1,15 +1,5 @@
 #!/usr/bin/env bash
-#
-# Pre-push gate for the Addon Manager extension: runs the same checks CI does
-# (PHP syntax lint, the static dead-catch audit, every test suite) so a broken
-# push never leaves the machine.
-#
-# Install:  mi install-hooks
-# Remove:   mi install-hooks --remove
-# Bypass once (emergencies only):
-#           MI_SKIP_CHECKS=1 git push
-#
-# The hook is symlinked into .git/hooks, so editing this file is enough.
+# Pre-push gate for the Addon Manager extension: runs the same checks CI does (PHP syntax lint, the static...
 set -uo pipefail
 
 if [ "${MI_SKIP_CHECKS:-0}" = "1" ]; then
@@ -17,8 +7,7 @@ if [ "${MI_SKIP_CHECKS:-0}" = "1" ]; then
   exit 0
 fi
 
-# .git/hooks/pre-push -> <repo>/tools/hooks/pre-push, so the repo root is two
-# levels up from the symlink's directory in both layouts.
+# .git/hooks/pre-push -> <repo>/tools/hooks/pre-push, so the repo root is two levels up from the symlink's...
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 if [ ! -d "$root/tests/manual" ]; then

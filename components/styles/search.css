@@ -1,14 +1,12 @@
 /* search.css — browser toolbar, search box, controls row, pagination. */
 
-/* Content-type segment bar — one connected strip between the search row
-   and the dropdown row. The selected segment turns green. */
+/* Content-type segment bar — one connected strip between the search row and the dropdown row. */
 .modpackinstaller-content-type-bar {
   display: flex;
   flex-wrap: nowrap;
   align-items: stretch;
   width: 100%;
-  /* No margin: the toolbar's flex gap (14px) spaces the bar evenly on
-     both sides — search row above and dropdown row below. */
+  /* No margin: the toolbar's flex gap (14px) spaces the bar evenly on both sides — search row above and dropdown... */
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 8px;
   background: rgba(0, 0, 0, 0.25);
@@ -18,8 +16,7 @@
 .modpackinstaller-content-type {
   flex: 1 1 0;
   min-width: 0;
-  /* 38px + 1px bar border top/bottom = 40px — matches the dropdown
-     triggers in the row below. */
+  /* 38px + 1px bar border top/bottom = 40px — matches the dropdown triggers in the row below. */
   height: 38px;
   padding: 0 6px;
   border: 0;
@@ -50,8 +47,7 @@
   opacity: 0.4;
 }
 
-/* Unavailable tabs: same dimming as busy-state, plus a not-allowed cursor
-   and strikethrough-free grey so they read as intentionally disabled. */
+/* Unavailable tabs: same dimming as busy-state, plus a not-allowed cursor and strikethrough-free grey so they... */
 .modpackinstaller-content-type--disabled {
   cursor: not-allowed;
   color: #9ca3af;
@@ -70,9 +66,7 @@
   z-index: 1;
 }
 
-/* Narrow screens: let the bar wrap into two balanced rows instead of
-   squashing six labels onto one line. Dividers stay consistent because
-   every segment keeps its right border until the end of its row. */
+/* Narrow screens: let the bar wrap into two balanced rows instead of squashing six labels onto one line. */
 @media (max-width: 700px) {
   .modpackinstaller-content-type-bar {
     flex-wrap: wrap;

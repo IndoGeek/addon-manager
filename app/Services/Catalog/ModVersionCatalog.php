@@ -6,12 +6,7 @@ use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Provider
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Provider\ProviderHttpException;
 use RuntimeException;
 
-// Version catalog for single-file content (mods, plugins, datapacks,
-// resource packs, shaders).
-//
-// Unlike the modpack version list, these installs need per-version loader
-// and Minecraft-version options plus the dependency graph, so the UI can
-// offer two dropdowns (loader, game version) and recommend dependencies.
+// Version catalog for single-file content (mods, plugins, datapacks, resource packs, shaders).
 final class ModVersionCatalog
 {
     private const API_BASE = 'https://api.modrinth.com/v2';
@@ -22,12 +17,7 @@ final class ModVersionCatalog
         private readonly ProviderHttpClient $http,
     ) {}
 
-    /**
-     * Every public version of a project, enriched with loader/game-version
-     * options and resolvable dependency titles.
-     *
-     * @return array{provider: string, project: string, versions: array<int, array<string, mixed>>}
-     */
+    /** Every public version of a project, enriched with loader/game-version options and resolvable dependency titles. */
     public function versions(string $project): array
     {
         if (preg_match(self::PROJECT_PATTERN, $project) !== 1) {
@@ -122,11 +112,7 @@ final class ModVersionCatalog
         return $recommended;
     }
 
-    // Dependency entries only carry project ids; batch-resolve the human
-    // title, slug, and icon so the UI can render the recommendations as
-    // proper cards and build install sources from the slug.
-    // @param array<int, string> $ids
-    // @return array<string, array{title: string, slug: ?string, icon_url: ?string}>
+    // Dependency entries only carry project ids; batch-resolve the human title, slug, and icon so the UI can render...
     private function resolveProjects(array $ids): array
     {
         if ($ids === []) {
@@ -139,8 +125,7 @@ final class ModVersionCatalog
                 ['ids' => json_encode(array_values($ids))],
             );
         } catch (CatalogProviderException) {
-            // Titles are cosmetic recommendations; a failed lookup must
-            // never break the version list itself.
+            // Titles are cosmetic recommendations; a failed lookup must never break the version list itself.
             return [];
         }
 

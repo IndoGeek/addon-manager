@@ -1,39 +1,5 @@
 #!/usr/bin/env bash
-#
-# Addon Manager — one-command installer for the Pterodactyl Blueprint
-# extension.
-#
-# Run from a checkout of this repository (recommended location):
-#
-#   cd /var/www/pterodactyl
-#   sudo git clone https://github.com/indogeek/addon-manager.git
-#   cd /var/www/pterodactyl/addon-manager
-#   sudo mi install
-#
-# What it does, in order:
-#   1. Checks for root/sudo and installable package manager support.
-#   2. Locates your Pterodactyl panel directory.
-#   3. Installs missing system tools (curl, wget, unzip, zip, git).
-#   4. Installs the PHP cURL and Zip extensions for every installed PHP
-#      version (ZipArchive and cURL are required by the extension).
-#   5. Raises PHP-FPM pool limits (memory_limit, max_execution_time,
-#      upload_max_filesize, post_max_size) and the CLI memory limit so large
-#      modpacks (~400 MB+) can be downloaded without being killed by the
-#      panel's PHP defaults. Restarts PHP-FPM.
-#   6. Checks that the panel's web user can reach /var/lib/pterodactyl (and
-#      the server data under volumes/) and grants ACL access when it cannot,
-#      installing the acl package only if setfacl is missing. Required for
-#      "local" target mode installs.
-#   7. Installs the Blueprint extension framework if it is not present.
-#   8. Installs this Addon Manager extension with `blueprint -install`
-#      and publishes the panel assets.
-#   9. Fixes file ownership so the panel's web user can read everything.
-#
-# The script is idempotent: running it again is safe. Install a fresh copy
-# over an existing install by running:  MI_FORCE=1 sudo mi install
-#
-# Author: IndoGeek
-# License: MIT
+# Addon Manager — one-command installer for the Pterodactyl Blueprint extension.
 
 set -euo pipefail
 
@@ -42,34 +8,21 @@ GITHUB_URL="https://github.com/indogeek/addon-manager"
 DEFAULT_PANEL="/var/www/pterodactyl"
 WEB_USER=""
 WEB_GROUP=""
-# Detected in detect_web_user() (after detect_panel) — never assume www-data:
-# RHEL-family nginx runs as "nginx", RHEL Apache as "apache", and custom FPM
-# pools can use anything. Override with MI_WEB_USER / MI_WEB_GROUP.
+# Detected in detect_web_user() (after detect_panel) — never assume www-data: RHEL-family nginx runs as...
 
 # Root that contains per-version PHP config directories (e.g. "/etc/php/8.3").
-# Overridable so non-Debian layouts and tests can point elsewhere.
 PHP_ETC_DIR="${PHP_ETC_DIR:-/etc/php}"
 
-# Root Pterodactyl data directory whose server folders the panel web user needs
-# to reach in "local" target mode. Overridable for testing/custom layouts.
+# Root Pterodactyl data directory whose server folders the panel web user needs to reach in "local" target mode.
 PTERODACTYL_DATA_DIR="${PTERODACTYL_DATA_DIR:-/var/lib/pterodactyl}"
 
-# ---------------------------------------------------------------------------
-# Output helpers
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------- Output helpers...
 info()  { printf '\033[0;34m[..]\033[0m %s\n' "$*"; }
 ok()    { printf '\033[0;32m[ok]\033[0m %s\n' "$*"; }
 warn()  { printf '\033[0;33m[!!]\033[0m %s\n' "$*"; }
 die()   { printf '\033[0;31m[!!]\033[0m %s\n' "$*" >&2; exit 1; }
 
-# ---------------------------------------------------------------------------
-# Web user detection
-# ---------------------------------------------------------------------------
-# The panel web user is whoever PHP-FPM actually runs as. We must NOT assume
-# www-data: guessing wrong makes the installer chown panel files away from
-# the real web user (breaking the panel) or grant ACLs to a user that will
-# never touch them (installs fail with "Server file target root does not
-# exist").
+# --------------------------------------------------------------------------- Web user detection...
 detect_web_user() {
   # 1. Explicit override wins.
   if [ -n "${MI_WEB_USER:-}" ]; then
@@ -79,8 +32,7 @@ detect_web_user() {
     return 0
   fi
 
-  # 2. Ask the panel: whoever owns the panel's storage dir demonstrably
-  #    serves it — the most reliable source on every distro and pool layout.
+  # 2.
   local ug
   ug="$(stat -c '%U:%G' "$PANEL/storage" 2>/dev/null || true)"
   if [ -n "$ug" ] && [ "${ug%%:*}" != "root" ]; then
@@ -111,9 +63,7 @@ detect_web_user() {
   warn "If PHP-FPM runs as another user, re-run with:  sudo MI_WEB_USER=<user> mi install"
 }
 
-# ---------------------------------------------------------------------------
-# Package manager detection
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------- Package manager detection...
 PKG_MANAGER=""
 APT=0
 
@@ -150,9 +100,7 @@ install_packages() {
   esac
 }
 
-# ---------------------------------------------------------------------------
-# Panel directory detection
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------- Panel directory detection...
 PANEL=""
 
 detect_panel() {
@@ -177,9 +125,7 @@ detect_panel() {
   die "Could not find your Pterodactyl panel. Set it explicitly with:  PANEL_DIR=/path/to/panel sudo mi install"
 }
 
-# ---------------------------------------------------------------------------
-# Installed PHP versions
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------- Installed PHP versions...
 php_versions() {
   if [ -d "$PHP_ETC_DIR" ]; then
     find "$PHP_ETC_DIR" -maxdepth 1 -mindepth 1 -type d -printf '%f\n' \
@@ -207,9 +153,7 @@ php_has_extension() {
   "$binary" -c "$ini" -m 2>/dev/null | grep -qix "$extension"
 }
 
-# ---------------------------------------------------------------------------
-# System tools + PHP extensions
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------- System tools + PHP extensions...
 ensure_system_tools() {
   local missing=()
   for tool in curl wget unzip zip git; do
@@ -258,9 +202,7 @@ ensure_php_extensions() {
   done
 }
 
-# ---------------------------------------------------------------------------
-# PHP-FPM + CLI limits (fixes large-download timeouts on big modpacks)
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------- PHP-FPM + CLI limits (fixes...
 add_pool_setting() {
   local file="$1" key="$2" value="$3"
 
@@ -304,8 +246,7 @@ apply_php_limits() {
       done
     fi
 
-    # CLI runs (blueprint, artisan, composer) rarely need limits and benefit
-    # from headroom when the panel builds its frontend.
+    # CLI runs (blueprint, artisan, composer) rarely need limits and benefit from headroom when the panel builds...
     set_php_ini_value "$fpm_dir/php.ini" "max_execution_time" "3600"
     set_php_ini_value "$PHP_ETC_DIR/$version/cli/php.ini" "memory_limit" "512M"
     set_php_ini_value "$PHP_ETC_DIR/$version/cli/php.ini" "max_execution_time" "0"
@@ -322,18 +263,7 @@ apply_php_limits() {
   done
 }
 
-# ---------------------------------------------------------------------------
-# Server directory access (local target mode)
-# ---------------------------------------------------------------------------
-# In "local" target mode the extension writes modpack files straight into the
-# server's directory under /var/lib/pterodactyl/volumes. The panel's web user
-# therefore needs to traverse /var/lib/pterodactyl (and its volumes tree) and
-# read/write the per-server directories. Some panels lock these paths down via
-# ACLs ("other::---"), which makes every install/list fail with "Server file
-# target root does not exist or is not a directory." This step detects that
-# and grants access with POSIX ACLs, installing the acl package only when
-# setfacl is missing. If /var/lib/pterodactyl is absent (e.g. a pure Wings
-# panel with remote nodes) this is a no-op.
+# --------------------------------------------------------------------------- Server directory access (local...
 ensure_volume_access() {
   [ -d "$PTERODACTYL_DATA_DIR" ] || return 0
 
@@ -388,9 +318,7 @@ web_user_can_traverse() {
   runuser -u "$WEB_USER" -- test -x "$1" 2>/dev/null
 }
 
-# ---------------------------------------------------------------------------
-# Blueprint framework
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------- Blueprint framework...
 ensure_blueprint() {
   if command -v blueprint >/dev/null 2>&1 && [ -d "$PANEL/.blueprint" ]; then
     ok "Blueprint framework already installed"
@@ -420,9 +348,7 @@ EOF
   ok "Blueprint framework installed"
 }
 
-# ---------------------------------------------------------------------------
-# Extension install + publish
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------- Extension install + publish...
 install_extension() {
   if [ -d "$PANEL/.blueprint/extensions/modpackinstaller" ] && [ "${MI_FORCE:-0}" != "1" ]; then
     ok "Addon Manager extension is already installed (MI_FORCE=1 to reinstall)"
@@ -463,9 +389,7 @@ publish_extension() {
   ok "Panel assets published"
 }
 
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------- Main...
 main() {
   info "=== Addon Manager: Pterodactyl extension installer ==="
 

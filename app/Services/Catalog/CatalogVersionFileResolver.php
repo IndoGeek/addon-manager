@@ -6,12 +6,6 @@ use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Provider
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Provider\ProviderHttpException;
 
 // Resolves the downloadable primary file for a catalog version.
-//
-// The catalog layer only returns a source string
-// ("modrinth://slug@versionId", "curseforge://modId@fileId") — the concrete
-// download URL and filename live in the upstream version payload, which this
-// helper fetches. Both providers normalize into the same shape so the install
-// path stays provider-agnostic.
 final class CatalogVersionFileResolver
 {
     private const MODRINTH_API_BASE = 'https://api.modrinth.com/v2';
@@ -20,8 +14,7 @@ final class CatalogVersionFileResolver
 
     private const CURSEFORGE_API_KEY_HEADER = 'X-Api-Key';
 
-    // Hosts CurseForge serves its own file downloads from. The API returns
-    // a URL; only these may be fetched.
+    // Hosts CurseForge serves its own file downloads from.
     private const CURSEFORGE_CDN_HOSTS = [
         'edge.forgecdn.net',
         'mediafilez.forgecdn.net',
@@ -107,10 +100,7 @@ final class CatalogVersionFileResolver
         ];
     }
 
-    // CurseForge exposes one file per version, and a project may forbid
-    // automated distribution entirely. Both are reported as clear errors
-    // instead of a broken download.
-    // @return array{url: string, filename: string, size: ?int, sha1: ?string}
+    // CurseForge exposes one file per version, and a project may forbid automated distribution entirely.
     private function resolveCurseForge(
         string $projectId,
         string $versionId,
@@ -137,9 +127,7 @@ final class CatalogVersionFileResolver
                     . $projectId
                     . '/files/'
                     . $versionId,
-                // Header LINE, not a map: see the note in the version
-                // catalog. A map sends the bare key and CurseForge refuses
-                // the request (403) without the key ever being transmitted.
+                // Header LINE, not a map: see the note in the version catalog.
                 headers: [
                     self::CURSEFORGE_API_KEY_HEADER
                         . ': '

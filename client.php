@@ -21,9 +21,7 @@ Route::get('/catalog/versions', [
     'catalogVersions',
 ]);
 
-// Per-version loader/Minecraft-version options + dependency
-// recommendations for single-file content (mods, plugins, datapacks,
-// resource packs, shaders).
+// Per-version loader/Minecraft-version options + dependency recommendations for single-file content (mods, plug...
 Route::get('/catalog/mod-versions', [
     ModpackController::class,
     'catalogModVersions',
@@ -62,9 +60,7 @@ Route::group([
         'install',
     ]);
 
-    // Single-file content: download one file and place it in the directory
-    // of its content type (mods, plugins, world/datapacks, resourcepacks,
-    // shaderpacks) without the modpack replace/extract pipeline.
+    // Single-file content: download one file and place it in the directory of its content type (mods, plugins, worl...
     Route::post('/install/mod', [
         ModpackController::class,
         'installContent',

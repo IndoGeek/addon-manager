@@ -87,8 +87,7 @@ final class DescriptionSanitizer
                 $html,
             ) ?? $html;
 
-            // Unclosed variants: drop the element and everything after its
-            // opening tag to the end — an unterminated <script> is hostile.
+            // Unclosed variants: drop the element and everything after its opening tag to the end — an unterminated <script...
             $html = preg_replace(
                 '/<' . $tag . '\b[^>]*>.*$/is',
                 '',
@@ -114,8 +113,7 @@ final class DescriptionSanitizer
                     $this->unwrap($child);
                     $next = $node->firstChild;
 
-                    // Re-scan from the start of the moved children; advance
-                    // past nothing — the loop re-reads firstChild.
+                    // Re-scan from the start of the moved children; advance past nothing — the loop re-reads firstChild.
                     if ($next === null) {
                         break;
                     }
@@ -174,10 +172,7 @@ final class DescriptionSanitizer
                     }
                     break;
                 case 'style':
-                    // CurseForge descriptions center text/images with inline
-                    // styles. Keep ONLY the presentational properties that
-                    // affect layout; every declaration is re-serialized, so
-                    // no url()/expression()/import injection can survive.
+                    // CurseForge descriptions center text/images with inline styles.
                     $cleanStyle = $this->cleanStyle($value);
 
                     if ($cleanStyle !== '') {
@@ -241,8 +236,7 @@ final class DescriptionSanitizer
                 continue;
             }
 
-            // url(), expression(), @import, backslash escapes, quotes: any
-            // of these mean the declaration is dropped wholesale.
+            // url(), expression(), @import, backslash escapes, quotes: any of these mean the declaration is dropped wholesa...
             if (preg_match(
                 '/url\s*\(|expression|@import|behavior|binding|\\|[\'"{}]/i',
                 $value,
@@ -272,9 +266,7 @@ final class DescriptionSanitizer
             return true;
         }
 
-        // Site-relative URLs (./x, /x, ../x, x.png) are fine; anything with a
-        // scheme-looking prefix that is not http(s) was already rejected by
-        // the preg above only for absolute forms, so check colon presence.
+        // Site-relative URLs (./x, /x, ../x, x.png) are fine; anything with a scheme-looking prefix that is not http(s)...
         if (preg_match('/^[a-zA-Z][a-zA-Z0-9+.-]*:/', $trimmed) === 1) {
             return false;
         }

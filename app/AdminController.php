@@ -10,14 +10,10 @@ use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Manageme
 use Pterodactyl\Http\Controllers\Controller;
 use Pterodactyl\Services\Helpers\SoftwareVersionService;
 
-// Blueprint copies this file to
-// app/Http/Controllers/Admin/Extensions/modpackinstaller/modpackinstallerExtensionController.php
-// and routes the extension's admin page plus PATCH/POST/PUT/DELETE requests on
-// /admin/extensions/modpackinstaller to it.
+// Blueprint copies this file to app/Http/Controllers/Admin/Extensions/modpackinstaller/modpackinstallerExtensio...
 class modpackinstallerExtensionController extends Controller
 {
-    // Settings keys persisted through Blueprint's extension library. Every
-    // value stays in the panel database; nothing here edits the .env file.
+    // Settings keys persisted through Blueprint's extension library.
     private const SETTING_PREFIX = 'modpackinstaller:setting_';
 
     private const SETTING_API_KEY = self::SETTING_PREFIX . 'curseforge_api_key';
@@ -64,10 +60,7 @@ class modpackinstallerExtensionController extends Controller
     // Persist the settings form (PATCH via the settings page form).
     public function update(): RedirectResponse
     {
-        // The API key field is intentionally write-only from the browser's
-        // perspective: empty means "keep the saved key" (so reloading and
-        // saving other settings never wipes the key), a value replaces it,
-        // and the explicit checkbox clears it.
+        // The API key field is intentionally write-only from the browser's perspective: empty means "keep the saved key...
         if (request()->boolean('clear_curseforge_api_key')) {
             $this->blueprint->dbSet('modpackinstaller', 'setting_curseforge_api_key', '');
         } else {
@@ -122,8 +115,7 @@ class modpackinstallerExtensionController extends Controller
             in_array($sort, $validSorts, true) ? $sort : '',
         );
 
-        // Default results per page: 10/20/30 match the dashboard's Stack
-        // options; empty falls back to the API default (20).
+        // Default results per page: 10/20/30 match the dashboard's Stack options; empty falls back to the API default (...
         $pageSize = (string) request()->input('page_size', '');
 
         $this->blueprint->dbSet(
@@ -132,8 +124,7 @@ class modpackinstallerExtensionController extends Controller
             in_array($pageSize, ['10', '20', '30'], true) ? $pageSize : '',
         );
 
-        // Disabling CurseForge hides the provider everywhere and rejects its
-        // installs; Modrinth keeps working.
+        // Disabling CurseForge hides the provider everywhere and rejects its installs; Modrinth keeps working.
         $this->blueprint->dbSet(
             'modpackinstaller',
             'setting_disable_curseforge',
@@ -217,8 +208,7 @@ class modpackinstallerExtensionController extends Controller
         }
 
         if (!ctype_digit($value) || (int) $value <= 0) {
-            // Ignore invalid input rather than storing it; the page simply
-            // keeps the previously saved value.
+            // Ignore invalid input rather than storing it; the page simply keeps the previously saved value.
             return '';
         }
 

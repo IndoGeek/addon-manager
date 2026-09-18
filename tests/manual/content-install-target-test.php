@@ -1,12 +1,6 @@
 <?php
 
-// Tests for the single-file content install targets:
-//   - every content type maps to its own server directory
-//     (datapacks inside the world folder)
-//   - on-server file naming per content type (jar for mods/plugins,
-//     zip for datapacks/resource packs/shaders)
-//
-// Run: php tests/manual/content-install-target-test.php
+// Tests for the single-file content install targets: - every content type maps to its own server directory (dat...
 
 $projectRoot = dirname(__DIR__, 2);
 
@@ -149,8 +143,7 @@ if ($shaderName !== 'complementary-shaders-iris-1-21-1.zip') {
 
 passTarget('shader filename keeps the zip extension');
 
-// An upstream extension outside the content type's allow-list falls back
-// to its primary one instead of leaking through.
+// An upstream extension outside the content type's allow-list falls back to its primary one instead of leaking ...
 $forced = ContentInstallTarget::filename(
     'pack.jar',
     'Some Pack',

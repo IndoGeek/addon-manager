@@ -26,11 +26,7 @@ export const isActiveRunning = (
     progress !== null
     && !TERMINAL_PHASES.includes(progress.phase);
 
-// Per-row state inside one install run. Downloads report every file's own
-// byte counters while they transfer together (progress.files) and every stage
-// reports its own state (progress.stages); when the engine streams one file at
-// a time it reports the in-flight index instead, and the states are derived
-// from that.
+// Per-row state inside one install run.
 type FileState = 'done' | 'active' | 'queued' | 'skipped';
 
 const STATE_LABELS: Record<FileState, string> = {
@@ -40,8 +36,7 @@ const STATE_LABELS: Record<FileState, string> = {
     skipped: 'Not completed',
 };
 
-// The state mark shared by every row: a tick once finished, a spinner while
-// running, a muted dot while waiting.
+// The state mark shared by every row: a tick once finished, a spinner while running, a muted dot while waiting.
 const RowMark = ({ state }: { state: FileState }) => (
     <div className="modpackinstaller-active-file-mark" aria-hidden="true">
         {state === 'done' ? (
@@ -158,10 +153,7 @@ const ActiveFileCard = ({
     );
 };
 
-// One labelled step of a modpack install (fetch the archive, extract it, read
-// the manifest, fetch the mods it lists, deploy). Modpacks walk several of
-// them, so the card shows the whole sequence with a bar per step rather than a
-// single percentage that rewinds whenever the progress window re-anchors.
+// One labelled step of a modpack install (fetch the archive, extract it, read the manifest, fetch the mods it...
 const StageCard = ({
     stage,
     index,
@@ -188,9 +180,7 @@ const StageCard = ({
             ? `${formatBytes(stage.downloaded_bytes)} / ${formatBytes(stage.total_bytes)}`
             : null;
 
-    // Counts ("142 / 300") ride in the title pill and the byte counters in the
-    // state line, so a counted step never prints the same numbers twice. A step
-    // without counts (the archive transfer) simply shows its bytes.
+    // Counts ("142 / 300") ride in the title pill and the byte counters in the state line, so a counted step never...
     const detail = bytes;
 
     const percent = state === 'done' ? 100 : stage.percent;
@@ -286,8 +276,7 @@ export const ActiveInstallCard = ({
             ? `${formatBytes(progress.downloaded_bytes)} / ${formatBytes(progress.total_bytes)}`
             : null;
 
-    // Multi-file runs (main content + selected dependencies) surface which
-    // file of the run is in flight; every file gets its own card below.
+    // Multi-file runs (main content + selected dependencies) surface which file of the run is in flight; every...
     const fileCountMeta =
         phase === 'download'
         && progress?.file_count !== undefined
@@ -302,8 +291,7 @@ export const ActiveInstallCard = ({
     const multiFile = files.length > 1;
     const activeIndex = progress?.file_index ?? null;
 
-    // Ordered steps the backend announced for this run (empty for content
-    // installs, which report one card per file instead).
+    // Ordered steps the backend announced for this run (empty for content installs, which report one card per file...
     const stages = (progress?.stages ?? []).filter(
         (stage) => stage !== null && stage !== undefined,
     );
@@ -323,8 +311,7 @@ export const ActiveInstallCard = ({
             return 'done';
         }
 
-        // The concurrent engine reports every file's own state, so a file
-        // is only "queued" when the engine has not started it yet.
+        // The concurrent engine reports every file's own state, so a file is only "queued" when the engine has not...
         if (hasReportedFiles) {
             const reported = reportedFiles[index];
 
@@ -339,8 +326,7 @@ export const ActiveInstallCard = ({
             return running || cancelling ? 'active' : 'skipped';
         }
 
-        // Sequentially streamed run: everything before the in-flight index
-        // is already on the server, everything after it is still queued.
+        // Sequentially streamed run: everything before the in-flight index is already on the server, everything after...
         if (activeIndex === null) {
             return phase === 'complete'
                 ? 'done'
@@ -434,12 +420,10 @@ export const ActiveInstallCard = ({
     // "file X of Y" only makes sense while a run streams one file at a time.
     const streamedMeta = hasReportedFiles ? null : fileCountMeta;
 
-    // The first file of a content run is the entry the user picked, so its
-    // kind labels the whole-run card (dependencies carry their own).
+    // The first file of a content run is the entry the user picked, so its kind labels the whole-run card...
     const mainKindLabel = contentKindLabel(files[0]?.kind ?? active.kind);
 
-    // The whole-run bar shows the step in flight, so its label and its value
-    // always describe the same thing.
+    // The whole-run bar shows the step in flight, so its label and its value always describe the same thing.
     const mainPercent = progress?.indeterminate
         ? null
         : (activeStage?.percent ?? percent);
