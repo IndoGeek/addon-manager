@@ -1,5 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 
+/**
+ * Window width family. `confirm` shrinks to the question it asks, `narrow`
+ * is the fixed narrower column used by the update picker; both centre their
+ * heading, since their titles are short enough to read better in the middle.
+ */
+export type ModalVariant = 'default' | 'confirm' | 'narrow';
+
 export const Modal = ({
     open,
     labelledBy,
@@ -8,6 +15,7 @@ export const Modal = ({
     headerActions,
     children,
     busy,
+    variant = 'default',
 }: {
     open: boolean;
     labelledBy: string;
@@ -16,6 +24,7 @@ export const Modal = ({
     headerActions?: React.ReactNode;
     children: React.ReactNode;
     busy?: boolean;
+    variant?: ModalVariant;
 }) => {
     const [shown, setShown] = useState(open);
 
@@ -93,6 +102,10 @@ export const Modal = ({
         return null;
     }
 
+    const variantClass = variant === 'default'
+        ? ''
+        : ` modpackinstaller-modal--${variant}`;
+
     return (
         <div
             className={`modpackinstaller-modal-overlay${
@@ -107,7 +120,7 @@ export const Modal = ({
             }}
         >
             <div
-                className={`modpackinstaller-modal${
+                className={`modpackinstaller-modal${variantClass}${
                     phase === 'out'
                         ? ' modpackinstaller-modal--out'
                         : ''

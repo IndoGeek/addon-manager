@@ -6,6 +6,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use InvalidArgumentException;
 use Pterodactyl\Http\Controllers\Controller;
+use Pterodactyl\Models\Permission;
 use Pterodactyl\Models\Server;
 use RuntimeException;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Providers\Catalog\CurseForgeCatalogProvider;
@@ -422,6 +423,16 @@ final class ModpackController extends Controller
         Request $request,
         Server $server,
     ): JsonResponse {
+        $denied = $this->filePermissionDenied(
+            $request,
+            $server,
+            Permission::ACTION_FILE_CREATE,
+        );
+
+        if ($denied !== null) {
+            return $denied;
+        }
+
         $provider = null;
         $package = null;
         $lock = null;
@@ -449,7 +460,7 @@ final class ModpackController extends Controller
 
             $progressToken = $this->progressToken($request);
 
-            $progress = $this->installProgressStore();
+            $progress = $this->installProgressStore($server);
 
             $progress->set($progressToken, [
                 'phase' => 'starting',
@@ -465,155 +476,25 @@ final class ModpackController extends Controller
                 ),
             );
 
-            $lastLockTouch = 0.0;
-
-            // Ordered steps of a modpack install.
-            $stages = [];
-
-            $stageIndex = -1;
-
-            $stageLabels = [
-                'archive' => 'Downloading pack archive',
-                'manifest' => 'Reading manifest.json',
-                'extract' => 'Extracting pack files',
-                'index' => 'Reading modpack index',
-                'mods' => 'Downloading mod files',
-                'prepare' => 'Preparing server files',
-                'deploy' => 'Deploying files',
-            ];
-
-            // Enters a step, closing whichever one was in flight.
-            $enterStage = static function (string $key) use (
-                &$stages,
-                &$stageIndex,
-                $stageLabels,
-            ): void {
-                foreach ($stages as $index => $stage) {
-                    if ($stage['key'] === $key) {
-                        return;
-                    }
-
-                    $stages[$index]['state'] = 'done';
-                }
-
-                $stages[] = [
-                    'key' => $key,
-                    'label' => $stageLabels[$key] ?? ucfirst($key),
-                    'state' => 'active',
-                    'percent' => null,
-                    'downloaded_bytes' => null,
-                    'total_bytes' => null,
-                    'current' => null,
-                    'total' => null,
-                ];
-
-                $stageIndex = count($stages) - 1;
-            };
-
-            // Single writer for every progress snapshot of this install, so the stage list travels with each one no matter ...
-            $publish = static function (array $state) use (
+            // Ordered steps of the run and the single writer every snapshot goes through.
+            $pipeline = $this->progressPipeline(
                 $progress,
                 $progressToken,
                 $lock,
-                &$lastLockTouch,
-                &$stages,
-            ): void {
-                $now = microtime(true);
-
-                if (($now - $lastLockTouch) >= 2.0) {
-                    $lastLockTouch = $now;
-
-                    // Keep the install lock alive so a long download is never reclaimed as stale while it is still running.
-                    @touch($lock);
-                }
-
-                $progress->set($progressToken, [
-                    ...$state,
-                    'stages' => $stages,
-                ]);
-            };
-
-            $downloader->setStageCallback(
-                static function (
-                    string $key,
-                    ?int $current = null,
-                    ?int $total = null,
-                ) use ($enterStage, &$stages, &$stageIndex, $publish): void {
-                    $alreadyActive = $stageIndex >= 0
-                        && ($stages[$stageIndex]['key'] ?? null) === $key;
-
-                    $enterStage($key);
-
-                    if (($stages[$stageIndex]['key'] ?? null) !== $key) {
-                        // A late announcement of a step this install has already left: ignore it rather than rewinding the bar of the s...
-                        return;
-                    }
-
-                    if ($current !== null || $total !== null) {
-                        $stages[$stageIndex]['current'] = $current;
-                        $stages[$stageIndex]['total'] = $total;
-                    }
-
-                    if ($alreadyActive) {
-                        // A counted update inside the step already in flight: keep its bar where it is and only refresh the counts.
-                        $publish([
-                            'phase' => 'download',
-                            'percent' => (int) ($stages[$stageIndex]['percent'] ?? 0),
-                            'indeterminate' => ($stages[$stageIndex]['percent'] ?? null) === null,
-                            'downloaded_bytes' => $stages[$stageIndex]['downloaded_bytes'],
-                            'total_bytes' => $stages[$stageIndex]['total_bytes'],
-                        ]);
-
-                        return;
-                    }
-
-                    // A stage transition carries no bytes of its own, so the bar restarts at zero (indeterminate) until the step it...
-                    $publish([
-                        'phase' => 'download',
-                        'percent' => 0,
-                        'indeterminate' => true,
-                    ]);
-                },
             );
 
-            $downloader->setProgressCallback(
-                static function (
-                    ?int $downloadedBytes,
-                    ?int $totalBytes,
-                ) use (&$stages, &$stageIndex, $publish): void {
-                    $determinate = $totalBytes !== null && $totalBytes > 0;
+            $downloader->setStageCallback($pipeline['onStage']);
 
-                    $percent = $determinate && $downloadedBytes !== null
-                        ? (int) floor(
-                            min(1.0, $downloadedBytes / $totalBytes) * 100,
-                        )
-                        : 0;
-
-                    // The byte window is per stage, so this percentage is the active step's own progress: the archive bar fills to ...
-                    if ($stageIndex >= 0) {
-                        $stages[$stageIndex]['percent'] = $percent;
-                        $stages[$stageIndex]['downloaded_bytes'] = $downloadedBytes;
-                        $stages[$stageIndex]['total_bytes'] = $totalBytes;
-                    }
-
-                    $publish([
-                        'phase' => 'download',
-                        'percent' => $percent,
-                        'indeterminate' => !$determinate,
-                        'downloaded_bytes' => $downloadedBytes,
-                        'total_bytes' => $totalBytes,
-                    ]);
-                },
-            );
+            $downloader->setProgressCallback($pipeline['onBytes']);
 
             $provider = $this->providerRegistry($downloader)->resolve($source);
 
             $package = $provider->getPackage($source);
 
             // Acquisition is done: the replace/unpack bookkeeping happens here, after the download has fully succeeded and ...
-            $enterStage('prepare');
+            $pipeline['enterStage']('prepare');
 
-            $publish([
+            $pipeline['publish']([
                 'phase' => 'deploy',
                 'percent' => 0,
                 'indeterminate' => true,
@@ -651,26 +532,26 @@ final class ModpackController extends Controller
                 }
             }
 
-            $enterStage('deploy');
+            $pipeline['enterStage']('deploy');
 
             $orchestrator = $this->orchestrator(
                 $target,
                 static function (
                     int $deployedFiles,
                     int $totalFiles,
-                ) use (&$stages, &$stageIndex, $publish): void {
+                ) use ($pipeline): void {
                     $percent = (int) floor(
                         ($totalFiles > 0 ? $deployedFiles / $totalFiles : 0)
                             * 100,
                     );
 
-                    if ($stageIndex >= 0) {
-                        $stages[$stageIndex]['percent'] = $percent;
-                        $stages[$stageIndex]['current'] = $deployedFiles;
-                        $stages[$stageIndex]['total'] = $totalFiles;
-                    }
+                    $pipeline['updateStage']([
+                        'percent' => $percent,
+                        'current' => $deployedFiles,
+                        'total' => $totalFiles,
+                    ]);
 
-                    $publish([
+                    $pipeline['publish']([
                         'phase' => 'deploy',
                         'percent' => $percent,
                         'indeterminate' => false,
@@ -687,16 +568,7 @@ final class ModpackController extends Controller
                 archivePath: $package->archivePath,
             );
 
-            // Every announced step is finished once deployment returns.
-            foreach ($stages as $index => $stage) {
-                $stages[$index]['state'] = 'done';
-            }
-
-            $publish([
-                'phase' => 'complete',
-                'percent' => 100,
-                'indeterminate' => false,
-            ]);
+            $pipeline['finish']();
 
             try {
                 $metadata = $this->installMetadata(
@@ -738,8 +610,8 @@ final class ModpackController extends Controller
             ]);
         } catch (InstallationCancelledException $exception) {
             if ($progressToken !== '') {
-                $this->installProgressStore()->set($progressToken, [
-                    ...($this->installProgressStore()
+                $this->installProgressStore($server)->set($progressToken, [
+                    ...($this->installProgressStore($server)
                         ->get($progressToken) ?? []),
                     'phase' => 'cancelled',
                     'indeterminate' => false,
@@ -764,8 +636,8 @@ final class ModpackController extends Controller
             ], 422);
         } catch (WingsConnectionException $exception) {
             if ($progressToken !== '') {
-                $this->installProgressStore()->set($progressToken, [
-                    ...($this->installProgressStore()
+                $this->installProgressStore($server)->set($progressToken, [
+                    ...($this->installProgressStore($server)
                         ->get($progressToken) ?? []),
                     'phase' => 'failed',
                     'indeterminate' => false,
@@ -778,8 +650,8 @@ final class ModpackController extends Controller
             ], 503);
         } catch (WingsHttpException $exception) {
             if ($progressToken !== '') {
-                $this->installProgressStore()->set($progressToken, [
-                    ...($this->installProgressStore()
+                $this->installProgressStore($server)->set($progressToken, [
+                    ...($this->installProgressStore($server)
                         ->get($progressToken) ?? []),
                     'phase' => 'failed',
                     'indeterminate' => false,
@@ -794,10 +666,10 @@ final class ModpackController extends Controller
             report($exception);
 
             if ($progressToken !== '') {
-                $lastState = $this->installProgressStore()
+                $lastState = $this->installProgressStore($server)
                     ->get($progressToken);
 
-                $this->installProgressStore()->set($progressToken, [
+                $this->installProgressStore($server)->set($progressToken, [
                     ...($lastState ?? []),
                     'phase' => 'failed',
                     'indeterminate' => false,
@@ -830,10 +702,21 @@ final class ModpackController extends Controller
         Request $request,
         Server $server,
     ): JsonResponse {
+        $denied = $this->filePermissionDenied(
+            $request,
+            $server,
+            Permission::ACTION_FILE_CREATE,
+        );
+
+        if ($denied !== null) {
+            return $denied;
+        }
+
         $lock = null;
         $token = bin2hex(random_bytes(16));
         $progressToken = '';
         $target = null;
+        $noun = 'content';
 
         @set_time_limit(0);
 
@@ -849,6 +732,9 @@ final class ModpackController extends Controller
                 $this->contentTypeInput($request),
             );
 
+            // Every message this run publishes names the kind of content it installs, never a generic "modpack".
+            $noun = $target['label'];
+
             [$source, $displayName, $iconUrl, $mcVersion, $loader]
                 = $this->contentInstallInput($request, $target['label']);
 
@@ -859,7 +745,7 @@ final class ModpackController extends Controller
 
             $progressToken = $this->progressToken($request);
 
-            $progress = $this->installProgressStore();
+            $progress = $this->installProgressStore($server);
 
             $progress->set($progressToken, [
                 'phase' => 'starting',
@@ -1127,8 +1013,8 @@ final class ModpackController extends Controller
             ]);
         } catch (InstallationCancelledException $exception) {
             if ($progressToken !== '') {
-                $this->installProgressStore()->set($progressToken, [
-                    ...($this->installProgressStore()
+                $this->installProgressStore($server)->set($progressToken, [
+                    ...($this->installProgressStore($server)
                         ->get($progressToken) ?? []),
                     'phase' => 'cancelled',
                     'indeterminate' => false,
@@ -1152,29 +1038,23 @@ final class ModpackController extends Controller
                 'error' => $exception->getMessage(),
             ], 422);
         } catch (WingsConnectionException $exception) {
-            if ($progressToken !== '') {
-                $this->installProgressStore()->set($progressToken, [
-                    ...($this->installProgressStore()
-                        ->get($progressToken) ?? []),
-                    'phase' => 'failed',
-                    'indeterminate' => false,
-                    'message' => 'Unable to reach the server node. The installation failed.',
-                ]);
-            }
+            $this->failProgress(
+                $server,
+                $progressToken,
+                'failed',
+                "Unable to reach the server node. The {$noun} installation failed.",
+            );
 
             return response()->json([
                 'error' => 'Unable to reach the server node. Please try again later.',
             ], 503);
         } catch (WingsHttpException $exception) {
-            if ($progressToken !== '') {
-                $this->installProgressStore()->set($progressToken, [
-                    ...($this->installProgressStore()
-                        ->get($progressToken) ?? []),
-                    'phase' => 'failed',
-                    'indeterminate' => false,
-                    'message' => 'The server node could not complete the operation. The installation failed.',
-                ]);
-            }
+            $this->failProgress(
+                $server,
+                $progressToken,
+                'failed',
+                "The server node could not complete the operation. The {$noun} installation failed.",
+            );
 
             return response()->json([
                 'error' => 'The server node could not complete the operation. Please try again later.',
@@ -1182,21 +1062,15 @@ final class ModpackController extends Controller
         } catch (Throwable $exception) {
             report($exception);
 
-            if ($progressToken !== '') {
-                $lastState = $this->installProgressStore()
-                    ->get($progressToken);
-
-                $this->installProgressStore()->set($progressToken, [
-                    ...($lastState ?? []),
-                    'phase' => 'failed',
-                    'indeterminate' => false,
-                    'message' => 'The installation failed.',
-                ]);
-            }
+            $this->failProgress(
+                $server,
+                $progressToken,
+                'failed',
+                "The {$noun} installation failed.",
+            );
 
             return response()->json([
-                'error' => 'Unable to install the '
-                    . ($target['label'] ?? 'content') . '.',
+                'error' => "Unable to install the {$noun}.",
             ], 500);
         } finally {
             if ($lock !== null) {
@@ -1385,7 +1259,8 @@ final class ModpackController extends Controller
         return $value;
     }
 
-    // Best-effort human version label for a content install: the Modrinth version number when it can be fetched, ot...
+    // Human version label for a single-file install: Modrinth exposes a version number, CurseForge only the file's own
+    // display name, so each provider is asked for what it has and the raw id stays the fallback.
     private function contentVersionNumber(
         string $provider,
         string $projectId,
@@ -1393,6 +1268,10 @@ final class ModpackController extends Controller
     ): string {
         if ($versionId === null || $versionId === '') {
             return '';
+        }
+
+        if ($provider === 'curseforge') {
+            return $this->curseForgeVersionNumber($projectId, $versionId);
         }
 
         try {
@@ -1415,11 +1294,63 @@ final class ModpackController extends Controller
         return $versionId;
     }
 
+    private function curseForgeVersionNumber(
+        string $projectId,
+        string $versionId,
+    ): string {
+        $apiKey = $this->curseForgeApiKey();
+
+        if ($apiKey === null || $apiKey === '') {
+            return $versionId;
+        }
+
+        try {
+            $response = $this->providerHttp()->get(
+                'https://api.curseforge.com/v1/mods/'
+                    . $projectId
+                    . '/files/'
+                    . $versionId,
+                headers: ['X-Api-Key: ' . $apiKey],
+            );
+
+            $file = is_array($response->body)
+                ? ($response->body['data'] ?? null)
+                : null;
+
+            if (!is_array($file)) {
+                return $versionId;
+            }
+
+            foreach (['displayName', 'fileName'] as $key) {
+                $value = $file[$key] ?? null;
+
+                if (is_string($value) && trim($value) !== '') {
+                    return trim($value);
+                }
+            }
+        } catch (Throwable) {
+            // Fall through to the raw version id.
+        }
+
+        return $versionId;
+    }
+
     public function installProgress(
         Request $request,
+        Server $server,
     ): JsonResponse {
+        $denied = $this->filePermissionDenied(
+            $request,
+            $server,
+            Permission::ACTION_FILE_READ,
+        );
+
+        if ($denied !== null) {
+            return $denied;
+        }
+
         try {
-            $state = $this->installProgressStore()->get(
+            $state = $this->installProgressStore($server)->get(
                 $this->progressToken($request),
             );
 
@@ -1447,6 +1378,16 @@ final class ModpackController extends Controller
         Request $request,
         Server $server,
     ): JsonResponse {
+        $denied = $this->filePermissionDenied(
+            $request,
+            $server,
+            Permission::ACTION_FILE_CREATE,
+        );
+
+        if ($denied !== null) {
+            return $denied;
+        }
+
         try {
             $serverId = $this->lockKey($server);
 
@@ -1455,7 +1396,7 @@ final class ModpackController extends Controller
             $progressToken = $this->optionalProgressToken($request);
 
             if ($progressToken !== null) {
-                $progress = $this->installProgressStore();
+                $progress = $this->installProgressStore($server);
 
                 $progress->set($progressToken, [
                     ...($progress->get($progressToken) ?? []),
@@ -1483,6 +1424,16 @@ final class ModpackController extends Controller
         Request $request,
         Server $server,
     ): JsonResponse {
+        $denied = $this->filePermissionDenied(
+            $request,
+            $server,
+            Permission::ACTION_FILE_READ,
+        );
+
+        if ($denied !== null) {
+            return $denied;
+        }
+
         try {
             $records = $this->store()->all((string) $server->uuid);
 
@@ -1524,7 +1475,7 @@ final class ModpackController extends Controller
             report($exception);
 
             return response()->json([
-                'error' => 'Unable to load the installed modpacks.',
+                'error' => 'Unable to load the installed addons.',
             ], 500);
         }
     }
@@ -1534,6 +1485,16 @@ final class ModpackController extends Controller
         Server $server,
         string $id,
     ): JsonResponse {
+        $denied = $this->filePermissionDenied(
+            $request,
+            $server,
+            Permission::ACTION_FILE_READ,
+        );
+
+        if ($denied !== null) {
+            return $denied;
+        }
+
         try {
             $record = $this->store()->find(
                 (string) $server->uuid,
@@ -1542,7 +1503,7 @@ final class ModpackController extends Controller
 
             if ($record === null) {
                 return response()->json([
-                    'error' => 'The installed modpack was not found.',
+                    'error' => 'The installed addon was not found.',
                 ], 404);
             }
 
@@ -1557,7 +1518,7 @@ final class ModpackController extends Controller
             report($exception);
 
             return response()->json([
-                'error' => 'Unable to load the installed modpack.',
+                'error' => 'Unable to load the installed addon.',
             ], 500);
         }
     }
@@ -1567,8 +1528,19 @@ final class ModpackController extends Controller
         Server $server,
         string $id,
     ): JsonResponse {
+        $denied = $this->filePermissionDenied(
+            $request,
+            $server,
+            Permission::ACTION_FILE_DELETE,
+        );
+
+        if ($denied !== null) {
+            return $denied;
+        }
+
         $lock = null;
         $token = bin2hex(random_bytes(16));
+        $label = 'addon';
 
         try {
             $id = $this->validateRecordId($id);
@@ -1585,15 +1557,17 @@ final class ModpackController extends Controller
 
             if ($record === null) {
                 return response()->json([
-                    'error' => 'The installed modpack was not found.',
+                    'error' => 'The installed addon was not found.',
                 ], 404);
             }
 
             if ($record->status !== InstallRecord::STATUS_INSTALLED) {
                 return response()->json([
-                    'error' => 'The installed modpack is not in an active state.',
+                    'error' => 'The installed addon is not in an active state.',
                 ], 409);
             }
+
+            $label = $this->recordLabel($record);
 
             $target = $this->serverTarget($server);
 
@@ -1610,7 +1584,7 @@ final class ModpackController extends Controller
                 ));
 
                 return response()->json([
-                    'error' => 'Unable to fully uninstall the modpack. No files were partially removed from the record.',
+                    'error' => "Unable to fully uninstall the {$label}. No files were partially removed from the record.",
                 ], 500);
             }
 
@@ -1653,7 +1627,7 @@ final class ModpackController extends Controller
             report($exception);
 
             return response()->json([
-                'error' => 'Unable to uninstall the modpack.',
+                'error' => "Unable to uninstall the {$label}.",
             ], 500);
         } finally {
             if ($lock !== null) {
@@ -1671,10 +1645,27 @@ final class ModpackController extends Controller
         Server $server,
         string $id,
     ): JsonResponse {
+        $denied = $this->filePermissionDenied(
+            $request,
+            $server,
+            Permission::ACTION_FILE_UPDATE,
+        );
+
+        if ($denied !== null) {
+            return $denied;
+        }
+
         $lock = null;
         $provider = null;
         $package = null;
+        $record = null;
+        $result = null;
         $token = bin2hex(random_bytes(16));
+        $progressToken = '';
+        $label = 'addon';
+
+        // An update downloads an archive or a file and deploys it, so the request can outlive any sane PHP-FPM timeout.
+        @set_time_limit(0);
 
         try {
             $id = $this->validateRecordId($id);
@@ -1684,6 +1675,8 @@ final class ModpackController extends Controller
                 $token,
             );
 
+            $this->clearCancelFlag($this->lockKey($server));
+
             $record = $this->store()->find(
                 (string) $server->uuid,
                 $id,
@@ -1691,50 +1684,157 @@ final class ModpackController extends Controller
 
             if ($record === null) {
                 return response()->json([
-                    'error' => 'The installed modpack was not found.',
+                    'error' => 'The installed addon was not found.',
                 ], 404);
             }
 
             if ($record->status !== InstallRecord::STATUS_INSTALLED) {
                 return response()->json([
-                    'error' => 'The installed modpack is not in an active state.',
+                    'error' => 'The installed addon is not in an active state.',
                 ], 409);
             }
 
-            $provider = $this->providerRegistry()->resolve($record->source);
+            $label = $this->recordLabel($record);
 
-            $latestBase = $this->latestBaseSource($record->source);
+            $progressToken = $this->optionalProgressToken($request) ?? '';
 
-            $package = $provider->getPackage($latestBase);
+            $progress = $this->installProgressStore($server);
 
-            $metadata = $this->installMetadata(
-                $provider,
-                $package->source,
+            if ($progressToken !== '') {
+                $progress->set($progressToken, [
+                    'phase' => 'starting',
+                    'percent' => 1,
+                    'indeterminate' => false,
+                ]);
+            }
+
+            $pipeline = $this->progressPipeline(
+                $progress,
+                $progressToken,
+                $lock,
             );
 
-            if ($metadata !== null && $metadata->version !== ''
-                && $metadata->version === $record->version
+            // An explicit version from the picker wins; without one the project's latest is resolved, which is what the
+            // older caller does.
+            $requested = $this->requestedUpdateSource($request);
+
+            $source = $requested ?? $this->latestBaseSource($record->source);
+
+            [$sourceProvider, $sourceProject] = $this->sourceParts($source);
+
+            // An update may only move an addon through its own project: another project would silently swap content.
+            if (
+                $sourceProvider !== $record->provider
+                || $sourceProject !== $record->projectId
             ) {
-                return response()->json([
-                    'error' => 'The modpack is already up to date.',
-                ], 409);
+                throw new InvalidArgumentException(
+                    "An update must install a version of the same {$label}.",
+                );
             }
 
-            $target = $this->serverTarget($server);
+            if ($record->contentType === InstallRecord::TYPE_CONTENT) {
+                $updated = $this->updateContentRecord(
+                    $server,
+                    $record,
+                    $source,
+                    $request,
+                    $pipeline,
+                );
+            } else {
+                $downloader = $this->downloader();
 
-            $orchestrator = $this->orchestrator($target);
+                $downloader->setCancelChecker(
+                    fn (): bool => $this->wasCancelled(
+                        $this->lockKey($server),
+                    ),
+                );
 
-            $result = $orchestrator->install(
-                archivePath: $package->archivePath,
-            );
+                $downloader->setStageCallback($pipeline['onStage']);
 
-            $updated = $this->buildInstallRecord(
-                server: $server,
-                installedSource: $package->source,
-                metadata: $metadata,
-                result: $result,
-                existingRecord: $record,
-            );
+                $downloader->setProgressCallback($pipeline['onBytes']);
+
+                $provider = $this->providerRegistry($downloader)
+                    ->resolve($source);
+
+                $package = $provider->getPackage($source);
+
+                $metadata = $this->installMetadata(
+                    $provider,
+                    $package->source,
+                );
+
+                // Nothing was picked and the resolved version is the installed one: there is nothing to deploy.
+                if (
+                    $requested === null
+                    && $metadata !== null
+                    && $metadata->version !== ''
+                    && $metadata->version === $record->version
+                ) {
+                    return response()->json([
+                        'error' => "This {$label} is already up to date.",
+                    ], 409);
+                }
+
+                $pipeline['enterStage']('prepare');
+
+                $pipeline['publish']([
+                    'phase' => 'deploy',
+                    'percent' => 0,
+                    'indeterminate' => true,
+                ]);
+
+                $orchestrator = $this->orchestrator(
+                    $this->serverTarget($server),
+                    static function (
+                        int $deployedFiles,
+                        int $totalFiles,
+                    ) use ($pipeline): void {
+                        $percent = (int) floor(
+                            ($totalFiles > 0
+                                ? $deployedFiles / $totalFiles
+                                : 0) * 100,
+                        );
+
+                        $pipeline['updateStage']([
+                            'percent' => $percent,
+                            'current' => $deployedFiles,
+                            'total' => $totalFiles,
+                        ]);
+
+                        $pipeline['publish']([
+                            'phase' => 'deploy',
+                            'percent' => $percent,
+                            'indeterminate' => false,
+                            'deployed_files' => $deployedFiles,
+                            'total_files' => $totalFiles,
+                        ]);
+                    },
+                    fn (): bool => $this->wasCancelled(
+                        $this->lockKey($server),
+                    ),
+                );
+
+                $result = $orchestrator->install(
+                    archivePath: $package->archivePath,
+                );
+
+                $pipeline['finish']();
+
+                $updated = $this->buildInstallRecord(
+                    server: $server,
+                    installedSource: $package->source,
+                    metadata: $metadata,
+                    result: $result,
+                    existingRecord: $record,
+                );
+
+                // Files the previous version owned but the new one does not ship would otherwise linger on the server.
+                $this->removeStaleOwnedFiles(
+                    $server,
+                    $record,
+                    $updated->ownedFiles(),
+                );
+            }
 
             $this->store()->save($updated);
 
@@ -1743,7 +1843,9 @@ final class ModpackController extends Controller
                 server: $server,
                 modpack: $updated->displayName,
                 version: $record->version . ' → ' . $updated->version,
-                detail: $result->totalFiles() . ' files deployed',
+                detail: $result !== null
+                    ? $result->totalFiles() . ' files deployed'
+                    : count($updated->ownedFiles()) . ' file replaced',
             );
 
             return response()->json([
@@ -1752,17 +1854,41 @@ final class ModpackController extends Controller
                     'display_name' => $updated->displayName,
                     'previous_version' => $record->version,
                     'version' => $updated->version,
-                    'total_files' => $result->totalFiles(),
-                    'created' => $result->createdCount(),
-                    'overwritten' => $result->overwrittenCount(),
-                    'backed_up' => $result->backupCount(),
+                    'content_kind' => $updated->contentKind,
+                    'total_files' => $result?->totalFiles()
+                        ?? count($updated->ownedFiles()),
+                    // Single-file content has no orchestrator result: its counts come from the record, so an update
+                    // reports the one file it replaced instead of an empty set.
+                    'created' => $result?->createdCount()
+                        ?? count($updated->createdFiles),
+                    'overwritten' => $result?->overwrittenCount()
+                        ?? count($updated->overwrittenFiles),
+                    'backed_up' => $result?->backupCount() ?? 0,
                 ],
             ]);
+        } catch (InstallationCancelledException $exception) {
+            $this->failProgress(
+                $server,
+                $progressToken,
+                'cancelled',
+                $exception->getMessage(),
+            );
+
+            return response()->json([
+                'error' => 'Update cancelled.',
+            ], 409);
         } catch (InstallationLockedException $exception) {
             return response()->json([
                 'error' => 'Another installation operation is already running for this server. Please wait and try again.',
             ], 503);
         } catch (InvalidArgumentException $exception) {
+            $this->failProgress(
+                $server,
+                $progressToken,
+                'failed',
+                $exception->getMessage(),
+            );
+
             if (
                 $provider instanceof ManualDownloadProvider
                 && $record !== null
@@ -1786,19 +1912,62 @@ final class ModpackController extends Controller
             return response()->json([
                 'error' => $exception->getMessage(),
             ], 422);
+        } catch (CatalogProviderException $exception) {
+            $this->failProgress(
+                $server,
+                $progressToken,
+                'failed',
+                $exception->getMessage(),
+            );
+
+            return response()->json([
+                'error' => $exception->getMessage(),
+            ], 422);
+        } catch (UnsupportedModpackPackageException $exception) {
+            $this->failProgress(
+                $server,
+                $progressToken,
+                'failed',
+                $exception->getMessage(),
+            );
+
+            return response()->json([
+                'error' => $exception->getMessage(),
+            ], 422);
         } catch (WingsConnectionException $exception) {
+            $this->failProgress(
+                $server,
+                $progressToken,
+                'failed',
+                "Unable to reach the server node. The {$label} update failed.",
+            );
+
             return response()->json([
                 'error' => 'Unable to reach the server node. Please try again later.',
             ], 503);
         } catch (WingsHttpException $exception) {
+            $this->failProgress(
+                $server,
+                $progressToken,
+                'failed',
+                "The server node could not complete the operation. The {$label} update failed.",
+            );
+
             return response()->json([
                 'error' => 'The server node could not complete the operation. Please try again later.',
             ], 503);
         } catch (Throwable $exception) {
             report($exception);
 
+            $this->failProgress(
+                $server,
+                $progressToken,
+                'failed',
+                "The {$label} update failed.",
+            );
+
             return response()->json([
-                'error' => 'Unable to update the modpack.',
+                'error' => "Unable to update the {$label}.",
             ], 500);
         } finally {
             if ($lock !== null) {
@@ -1812,6 +1981,187 @@ final class ModpackController extends Controller
             if ($provider !== null && $package !== null) {
                 $provider->cleanup($package);
             }
+
+            $this->clearCancelFlag($this->lockKey($server));
+        }
+    }
+
+    // The version an update should move to, when the request names one. Without it the caller wants whatever the
+    // project's latest version is.
+    private function requestedUpdateSource(Request $request): ?string
+    {
+        $value = $request->input('source');
+
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        if (!is_string($value)) {
+            throw new InvalidArgumentException(
+                'The selected version is invalid.',
+            );
+        }
+
+        $source = trim($value);
+
+        if (
+            preg_match(
+                '#^(modrinth://[A-Za-z0-9_-]{1,64}|curseforge://\d{1,12})@[A-Za-z0-9]{1,64}$#',
+                $source,
+            ) !== 1
+        ) {
+            throw new InvalidArgumentException(
+                'The selected version is invalid.',
+            );
+        }
+
+        return $source;
+    }
+
+    // Replaces one recorded single-file addon with a newly chosen version: resolve that version's file, download it,
+    // drop the file the previous version owned, and rewrite the record so uninstall still removes exactly what this run
+    // left behind.
+    private function updateContentRecord(
+        Server $server,
+        InstallRecord $record,
+        string $source,
+        Request $request,
+        array $pipeline,
+    ): InstallRecord {
+        $target = ContentInstallTarget::for($record->contentKind);
+
+        [$provider, $projectId, $versionId] = $this->sourceParts($source);
+
+        $pipeline['enterStage']('prepare');
+
+        $file = (new CatalogVersionFileResolver(
+            $this->providerHttp(),
+            $this->curseForgeApiKey(),
+        ))->resolve(
+            $provider,
+            $projectId,
+            $versionId ?? '',
+        );
+
+        // A picked version may carry a new pair (a shader moving between Iris and OptiFine, say); both land in the file
+        // name exactly as they do for a fresh install, and the record keeps the previous pair when nothing is sent.
+        $mcVersion =
+            $request->input('mc_version') === null
+                ? $record->minecraftVersion
+                : $this->contentSlug(
+                    $request->input('mc_version'),
+                    'Minecraft version',
+                );
+
+        $loader = $request->input('loader') === null
+            ? $record->loader
+            : $this->optionalContentSlug(
+                $request->input('loader'),
+                'Loader',
+            );
+
+        $cancelChecker = fn (): bool => $this->wasCancelled(
+            $this->lockKey($server),
+        );
+
+        $downloader = $this->downloader();
+
+        $downloader->setCancelChecker($cancelChecker);
+
+        $pipeline['enterStage']('download');
+
+        $installer = new SimpleContentInstaller($downloader);
+
+        $result = $installer->install(
+            sourceUrl: $file['url'],
+            filename: ContentInstallTarget::filename(
+                basename($file['filename']),
+                $record->displayName,
+                $mcVersion,
+                $loader,
+                $target['extensions'],
+            ),
+            targetDirectory: $target['directory'],
+            target: $this->serverTarget($server),
+            cancelChecker: $cancelChecker,
+            onProgress: $pipeline['onBytes'],
+        );
+
+        $pipeline['enterStage']('deploy');
+
+        // The new file replaces the old one in place; any other path the record owned (an older file name) is removed so
+        // the addon is never installed twice.
+        $stale = array_values(
+            array_diff($record->ownedFiles(), [$result['path']]),
+        );
+
+        if ($stale !== []) {
+            $outcome = (new OwnershipRemover($this->serverTarget($server)))
+                ->remove($stale, pruneEmptyDirs: false);
+
+            if ($outcome['errors'] !== []) {
+                report(new RuntimeException(
+                    'Replacing a content file failed to remove the previous version: '
+                        . implode('; ', $outcome['errors']),
+                ));
+            }
+        }
+
+        $pipeline['finish']();
+
+        // Single-file content reuses the same file name for a version change, so the write either lands on a path the
+        // record already owned (a replacement — the result window should say so) or on a new one.
+        $replaced = in_array($result['path'], $record->ownedFiles(), true);
+
+        return new InstallRecord(
+            id: $record->id,
+            serverUuid: (string) $server->uuid,
+            provider: $provider,
+            projectId: $projectId,
+            versionId: $versionId ?? '',
+            source: $source,
+            displayName: $record->displayName,
+            version: $this->contentVersionNumber(
+                $provider,
+                $projectId,
+                $versionId,
+            ),
+            minecraftVersion: $mcVersion,
+            loader: $loader,
+            iconUrl: $record->iconUrl,
+            installedAt: $record->installedAt,
+            updatedAt: gmdate('c'),
+            status: InstallRecord::STATUS_INSTALLED,
+            createdFiles: $replaced ? [] : [$result['path']],
+            overwrittenFiles: $replaced ? [$result['path']] : [],
+            contentType: InstallRecord::TYPE_CONTENT,
+            contentKind: $record->contentKind,
+        );
+    }
+
+    // Files the previous version owned that the new one does not ship would linger on the server; only the record's own
+    // paths are touched, never anything else in the volume.
+    private function removeStaleOwnedFiles(
+        Server $server,
+        InstallRecord $previous,
+        array $newPaths,
+    ): void {
+        $stale = array_values(
+            array_diff($previous->ownedFiles(), $newPaths),
+        );
+
+        if ($stale === []) {
+            return;
+        }
+
+        $outcome = (new OwnershipRemover($this->serverTarget($server)))
+            ->remove($stale);
+
+        if ($outcome['errors'] !== []) {
+            report(new RuntimeException(
+                'An update could not remove files the previous version owned: '
+                    . implode('; ', $outcome['errors']),
+            ));
         }
     }
 
@@ -1820,11 +2170,22 @@ final class ModpackController extends Controller
         Server $server,
         string $id,
     ): JsonResponse {
+        $denied = $this->filePermissionDenied(
+            $request,
+            $server,
+            Permission::ACTION_FILE_CREATE,
+        );
+
+        if ($denied !== null) {
+            return $denied;
+        }
+
         $provider = null;
         $package = null;
         $lock = null;
         $record = null;
         $token = bin2hex(random_bytes(16));
+        $label = 'addon';
 
         // A restore still downloads the pack archive (the manifest inside it identifies the files), which can take minu...
         @set_time_limit(0);
@@ -1846,15 +2207,17 @@ final class ModpackController extends Controller
 
             if ($record === null) {
                 return response()->json([
-                    'error' => 'The installed modpack was not found.',
+                    'error' => 'The installed addon was not found.',
                 ], 404);
             }
 
             if ($record->status !== InstallRecord::STATUS_INSTALLED) {
                 return response()->json([
-                    'error' => 'The installed modpack is not in an active state.',
+                    'error' => 'The installed addon is not in an active state.',
                 ], 409);
             }
+
+            $label = $this->recordLabel($record);
 
             $target = $this->serverTarget($server);
 
@@ -1865,7 +2228,7 @@ final class ModpackController extends Controller
 
             if ($missing === []) {
                 return response()->json([
-                    'error' => 'The modpack files are intact. Nothing to restore.',
+                    'error' => "The {$label} files are intact. Nothing to restore.",
                 ], 409);
             }
 
@@ -1967,7 +2330,7 @@ final class ModpackController extends Controller
             report($exception);
 
             return response()->json([
-                'error' => 'Unable to restore the missing modpack files.',
+                'error' => "Unable to restore the missing {$label} files.",
             ], 500);
         } finally {
             if ($lock !== null) {
@@ -2408,10 +2771,28 @@ final class ModpackController extends Controller
         return new DownloadManager(self::TEMPORARY_ROOT);
     }
 
-    private function installProgressStore(): InstallProgressStore
+    // The client API middleware only proves the caller can reach the server, leaving finer-grained permissions to the controller, so every route pins itself to the same file permission the panel's own file API would demand.
+    private function filePermissionDenied(
+        Request $request,
+        Server $server,
+        string $permission,
+    ): ?JsonResponse {
+        $user = $request->user();
+
+        if ($user !== null && $user->can($permission, $server)) {
+            return null;
+        }
+
+        return response()->json([
+            'error' => 'You do not have permission to manage files on this server.',
+        ], 403);
+    }
+
+    // Scoped per server so a progress token is only ever resolvable through the server that owns it.
+    private function installProgressStore(Server $server): InstallProgressStore
     {
         return new InstallProgressStore(
-            self::TEMPORARY_ROOT . '/progress',
+            self::TEMPORARY_ROOT . '/progress/' . $this->lockKey($server),
         );
     }
 
@@ -2714,6 +3095,226 @@ final class ModpackController extends Controller
         } catch (Throwable) {
             return null;
         }
+    }
+
+    // Ordered steps of a progress-tracked run. Every snapshot carries the whole stage list, the install lock is kept
+    // alive while a long download is in flight, and an install and an update report through this same pipeline so both
+    // windows show the same stages.
+    // @return array{publish: callable, enterStage: callable, updateStage: callable, onStage: callable, onBytes: callable, finish: callable}
+    private function progressPipeline(
+        InstallProgressStore $progress,
+        string $progressToken,
+        ?string $lock,
+    ): array {
+        $stages = [];
+        $stageIndex = -1;
+        $lastLockTouch = 0.0;
+
+        $stageLabels = [
+            'archive' => 'Downloading pack archive',
+            'manifest' => 'Reading manifest.json',
+            'extract' => 'Extracting pack files',
+            'index' => 'Reading modpack index',
+            'mods' => 'Downloading mod files',
+            'prepare' => 'Preparing server files',
+            'deploy' => 'Deploying files',
+            'download' => 'Downloading file',
+        ];
+
+        // Enters a step, closing whichever one was in flight.
+        $enterStage = static function (string $key) use (
+            &$stages,
+            &$stageIndex,
+            $stageLabels,
+        ): void {
+            foreach ($stages as $index => $stage) {
+                if ($stage['key'] === $key) {
+                    return;
+                }
+
+                $stages[$index]['state'] = 'done';
+            }
+
+            $stages[] = [
+                'key' => $key,
+                'label' => $stageLabels[$key] ?? ucfirst($key),
+                'state' => 'active',
+                'percent' => null,
+                'downloaded_bytes' => null,
+                'total_bytes' => null,
+                'current' => null,
+                'total' => null,
+            ];
+
+            $stageIndex = count($stages) - 1;
+        };
+
+        $publish = static function (array $state) use (
+            $progress,
+            $progressToken,
+            $lock,
+            &$lastLockTouch,
+            &$stages,
+        ): void {
+            $now = microtime(true);
+
+            if (($now - $lastLockTouch) >= 2.0) {
+                $lastLockTouch = $now;
+
+                // Keep the lock alive so a long download is never reclaimed as stale while it is still running.
+                if ($lock !== null) {
+                    @touch($lock);
+                }
+            }
+
+            // A call without a progress token (an older API client) still runs; it just has nowhere to report.
+            if ($progressToken === '') {
+                return;
+            }
+
+            $progress->set($progressToken, [
+                ...$state,
+                'stages' => $stages,
+            ]);
+        };
+
+        // Patches the step in flight, for callers outside the downloader (deployment reports per file).
+        $updateStage = static function (array $patch) use (
+            &$stages,
+            &$stageIndex,
+        ): void {
+            if ($stageIndex < 0) {
+                return;
+            }
+
+            $stages[$stageIndex] = [...$stages[$stageIndex], ...$patch];
+        };
+
+        $onStage = static function (
+            string $key,
+            ?int $current = null,
+            ?int $total = null,
+        ) use ($enterStage, &$stages, &$stageIndex, $publish): void {
+            $alreadyActive = $stageIndex >= 0
+                && ($stages[$stageIndex]['key'] ?? null) === $key;
+
+            $enterStage($key);
+
+            if (($stages[$stageIndex]['key'] ?? null) !== $key) {
+                // A late announcement of a step this run has already left: ignoring it beats rewinding the bar.
+                return;
+            }
+
+            if ($current !== null || $total !== null) {
+                $stages[$stageIndex]['current'] = $current;
+                $stages[$stageIndex]['total'] = $total;
+            }
+
+            if ($alreadyActive) {
+                // A counted update inside the step already in flight: keep its bar and only refresh the counts.
+                $publish([
+                    'phase' => 'download',
+                    'percent' => (int) ($stages[$stageIndex]['percent'] ?? 0),
+                    'indeterminate' => ($stages[$stageIndex]['percent'] ?? null) === null,
+                    'downloaded_bytes' => $stages[$stageIndex]['downloaded_bytes'],
+                    'total_bytes' => $stages[$stageIndex]['total_bytes'],
+                ]);
+
+                return;
+            }
+
+            // A stage transition owns no bytes, so the bar restarts indeterminate until the step reports some.
+            $publish([
+                'phase' => 'download',
+                'percent' => 0,
+                'indeterminate' => true,
+            ]);
+        };
+
+        $onBytes = static function (
+            ?int $downloadedBytes,
+            ?int $totalBytes,
+        ) use (&$stages, &$stageIndex, $publish): void {
+            $determinate = $totalBytes !== null && $totalBytes > 0;
+
+            $percent = $determinate && $downloadedBytes !== null
+                ? (int) floor(
+                    min(1.0, $downloadedBytes / $totalBytes) * 100,
+                )
+                : 0;
+
+            // The byte window is per stage, so this percentage is the active step's own progress.
+            if ($stageIndex >= 0) {
+                $stages[$stageIndex]['percent'] = $percent;
+                $stages[$stageIndex]['downloaded_bytes'] = $downloadedBytes;
+                $stages[$stageIndex]['total_bytes'] = $totalBytes;
+            }
+
+            $publish([
+                'phase' => 'download',
+                'percent' => $percent,
+                'indeterminate' => !$determinate,
+                'downloaded_bytes' => $downloadedBytes,
+                'total_bytes' => $totalBytes,
+            ]);
+        };
+
+        // Every announced step is finished once the run returns, and the whole run reads 100%.
+        $finish = static function () use (&$stages, $publish): void {
+            foreach ($stages as $index => $stage) {
+                $stages[$index]['state'] = 'done';
+            }
+
+            $publish([
+                'phase' => 'complete',
+                'percent' => 100,
+                'indeterminate' => false,
+            ]);
+        };
+
+        return [
+            'publish' => $publish,
+            'enterStage' => $enterStage,
+            'updateStage' => $updateStage,
+            'onStage' => $onStage,
+            'onBytes' => $onBytes,
+            'finish' => $finish,
+        ];
+    }
+
+    // Writes a terminal progress state so a window never keeps spinning after the request has already failed.
+    private function failProgress(
+        Server $server,
+        string $progressToken,
+        string $phase,
+        string $message,
+    ): void {
+        if ($progressToken === '') {
+            return;
+        }
+
+        $progress = $this->installProgressStore($server);
+
+        $progress->set($progressToken, [
+            ...($progress->get($progressToken) ?? []),
+            'phase' => $phase,
+            'indeterminate' => false,
+            'message' => $message,
+        ]);
+    }
+
+    // The human noun for a record's kind, used in messages so a mod failure never reads as a modpack failure.
+    private function recordLabel(InstallRecord $record): string
+    {
+        if ($record->contentKind === ContentInstallTarget::KIND_MODPACK) {
+            return 'modpack';
+        }
+
+        if (!ContentInstallTarget::supports($record->contentKind)) {
+            return 'addon';
+        }
+
+        return ContentInstallTarget::for($record->contentKind)['label'];
     }
 
     // Returns the unpinned base of an installed source so that an update can resolve the latest available version: the scheme...

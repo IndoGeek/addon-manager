@@ -5,7 +5,7 @@ namespace Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Ca
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Provider\ProviderHttpClient;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Provider\ProviderHttpException;
 
-// Version catalog for CurseForge single-file content (mods).
+// Version catalog for CurseForge single-file content (mods and shaders).
 final class CurseForgeModVersionCatalog
 {
     private const API_BASE = 'https://api.curseforge.com/v1';
@@ -24,7 +24,8 @@ final class CurseForgeModVersionCatalog
     // File statuses visible to the public (Approved, Released).
     private const PUBLIC_FILE_STATUSES = [4, 10];
 
-    // Loader display names that appear inside a file's gameVersions array.
+    // Loader display names that appear inside a file's gameVersions array. Shaders carry a shader loader
+    // (Iris/OptiFine) rather than a mod loader, which is the only loader CurseForge records outside mods/modpacks.
     private const LOADER_DISPLAY_NAMES = [
         'Forge' => 'forge',
         'Fabric' => 'fabric',
@@ -32,6 +33,8 @@ final class CurseForgeModVersionCatalog
         'NeoForge' => 'neoforge',
         'LiteLoader' => 'liteloader',
         'Cauldron' => 'cauldron',
+        'Iris' => 'iris',
+        'OptiFine' => 'optifine',
     ];
 
     // Dependency relation types that are worth recommending; everything else (embedded libraries, tools, incompatib...

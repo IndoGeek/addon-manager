@@ -183,7 +183,13 @@ $miStyleVersion = is_file($miStylePath) ? filemtime($miStylePath) : '1';
         <div class="panel-heading">
           <h3 class="panel-title" style="font-weight:600;">
             <i class="bi bi-clock-history" style="margin-right:6px;"></i>Install history
-            <span class="text-muted small" style="font-weight:400;margin-left:8px;">(latest {{ count($history) }})</span>
+            <span class="text-muted small" style="font-weight:400;margin-left:8px;">
+              ({{ (int) $historyTotal }} entries
+              @if((int) $historyLastPage > 1)
+                · page {{ (int) $historyPage }} of {{ (int) $historyLastPage }}
+              @endif
+              )
+            </span>
           </h3>
         </div>
         <div class="panel-body" style="padding-top:6px;">
@@ -241,6 +247,27 @@ $miStyleVersion = is_file($miStylePath) ? filemtime($miStylePath) : '1';
                 </tbody>
               </table>
             </div>
+
+            @if((int) $historyLastPage > 1)
+              <div class="mi-history-footer">
+                <span class="text-muted small">
+                  Showing {{ (int) ($historyPage - 1) * (int) $historyPerPage + 1 }}–{{ (int) ($historyPage - 1) * (int) $historyPerPage + count($history) }} of {{ (int) $historyTotal }}
+                </span>
+                <ul class="pagination pagination-sm" style="margin:0;">
+                  <li class="{{ (int) $historyPage <= 1 ? 'disabled' : '' }}">
+                    <a href="{{ $root }}?history_page={{ max(1, (int) $historyPage - 1) }}" aria-label="Newer entries">&laquo;</a>
+                  </li>
+                  @for($historyLink = 1; $historyLink <= (int) $historyLastPage; $historyLink++)
+                    <li class="{{ $historyLink === (int) $historyPage ? 'active' : '' }}">
+                      <a href="{{ $root }}?history_page={{ $historyLink }}">{{ $historyLink }}</a>
+                    </li>
+                  @endfor
+                  <li class="{{ (int) $historyPage >= (int) $historyLastPage ? 'disabled' : '' }}">
+                    <a href="{{ $root }}?history_page={{ min((int) $historyLastPage, (int) $historyPage + 1) }}" aria-label="Older entries">&raquo;</a>
+                  </li>
+                </ul>
+              </div>
+            @endif
           @endif
         </div>
       </div>

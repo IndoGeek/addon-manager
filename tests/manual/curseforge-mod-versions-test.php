@@ -288,6 +288,42 @@ if ($latest['file_size'] !== 307200) {
 
 pass('loaders and game versions are separated and the source is built');
 
+// CurseForge shaders carry a shader loader (Iris/OptiFine) in gameVersions instead of a mod loader, so the same
+// split has to surface it or the shader window offers no loader to pick.
+$shaderFiles = new ProviderHttpResponse(200, [
+    'data' => [
+        [
+            'id' => 7001,
+            'displayName' => 'Shader 1.0',
+            'fileName' => 'shader-1.0.zip',
+            'fileDate' => '2024-09-01T00:00:00Z',
+            'fileLength' => 2048,
+            'fileStatus' => 4,
+            'isAvailable' => true,
+            'downloadUrl' => 'https://edge.forgecdn.net/files/7/1/shader.zip',
+            'gameVersions' => ['1.21.1', 'Iris', 'OptiFine'],
+            'dependencies' => [],
+        ],
+    ],
+]);
+
+$shader = (new CurseForgeModVersionCatalog(
+    new QueueHttpClient([$shaderFiles]),
+    'secret-key',
+))->versions('627557');
+
+if (
+    ($shader['versions'][0]['loaders'] ?? null) !== ['iris', 'optifine']
+    || ($shader['versions'][0]['game_versions'] ?? null) !== ['1.21.1']
+) {
+    throw new RuntimeException(
+        'Shader loaders were not exposed: '
+            . json_encode($shader['versions'][0] ?? null),
+    );
+}
+
+pass('shader files expose the Iris and OptiFine shader loaders');
+
 $dependencies = $latest['dependencies'];
 
 if (count($dependencies) !== 2) {

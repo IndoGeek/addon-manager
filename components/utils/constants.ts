@@ -83,6 +83,36 @@ export const providerSupportedContentTypes = (
         : ['modpack'];
 
 /**
+ * Lower-case noun used inside user-facing messages, e.g. "Unable to update
+ * the modpack." An unknown kind reads as a generic addon so a message never
+ * names the wrong content type.
+ */
+export const contentNoun = (kind: string | null | undefined): string => {
+    switch (kind) {
+        case 'modpack':
+            return 'modpack';
+        case 'mod':
+            return 'mod';
+        case 'plugin':
+            return 'plugin';
+        case 'datapack':
+            return 'datapack';
+        case 'resourcepack':
+            return 'resource pack';
+        case 'shader':
+            return 'shader';
+        default:
+            return 'addon';
+    }
+};
+
+/** Accessible label for a per-addon action, e.g. "Update resource pack". */
+export const contentActionLabel = (
+    action: string,
+    kind: string | null | undefined,
+): string => `${action} ${contentNoun(kind)}`;
+
+/**
  * Human label for the kind of content an install record or downloaded file
  * is: a datapack can be installed next to a mod, and the card should say
  * which one it is. Unknown kinds render no pill rather than a wrong one.
@@ -119,7 +149,7 @@ export const SORT_OPTIONS: Array<{ value: string; label: string }> = [
     { value: 'updated', label: 'Recently updated' },
 ];
 
-export const EXTENSION_VERSION = "0.46.22";
+export const EXTENSION_VERSION = "0.47.0";
 
 /** Page-size options for the catalog "Stack" dropdown. */
 export const STACK_OPTIONS: Array<{ value: string; label: string }> = [

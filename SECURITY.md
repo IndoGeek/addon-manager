@@ -38,3 +38,9 @@ report those upstream.
   `provider-security-test.php` for the enforced invariants.
 - The extension never elevates privileges beyond what the installer grants;
   volume writes go through the `pterodactyl` group, not root.
+- Every server-scoped route enforces the panel's own file permissions
+  (`file.read`, `file.create`, `file.update`, `file.delete`), so a subuser can
+  only browse, install, update or uninstall through the permissions their
+  subuser account actually grants.
+- Install progress is stored per server, so a progress token is only ever
+  resolvable through the server that minted it.

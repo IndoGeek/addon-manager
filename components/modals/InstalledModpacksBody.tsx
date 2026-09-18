@@ -3,7 +3,6 @@ import {
     ActiveInstallRecord,
     InstallProgressData,
     InstallRecordData,
-    StatusMessage,
 } from '../types';
 import { InstalledModpackImage } from '../cards/InstalledModpackImage';
 import { ActiveInstallCard } from './ActiveInstallCard';
@@ -14,17 +13,20 @@ import {
     UploadIcon,
     WarningIcon,
 } from '../icons';
-import { contentKindLabel, formatDate } from '../utils/constants';
+import {
+    contentActionLabel,
+    contentKindLabel,
+    formatDate,
+} from '../utils/constants';
 
 interface InstalledModpacksBodyProps {
     installed: InstallRecordData[] | null;
     installedLoading: boolean;
-    installedError: string | null;
-    installedStatus: StatusMessage | null;
+    /** A load has failed; the failure is reported as a notification popup, so only a placeholder belongs here. */
+    installedUnavailable: boolean;
     lifecycleRecordId: string | null;
     activeInstall: ActiveInstallRecord | null;
     activeProgress: InstallProgressData | null;
-    outcomeBanner: StatusMessage | null;
     providerLabels: Record<string, string>;
     onCancelActive: () => void;
     onDismissOutcome: () => void;
@@ -37,12 +39,10 @@ interface InstalledModpacksBodyProps {
 export const InstalledModpacksBody = ({
     installed,
     installedLoading,
-    installedError,
-    installedStatus,
+    installedUnavailable,
     lifecycleRecordId,
     activeInstall,
     activeProgress,
-    outcomeBanner,
     providerLabels,
     onCancelActive,
     onDismissOutcome,
@@ -53,41 +53,6 @@ export const InstalledModpacksBody = ({
 }: InstalledModpacksBodyProps) => {
     return (
         <>
-            {outcomeBanner && (
-                <div
-                    className={`modpackinstaller-status modpackinstaller-status--${outcomeBanner.kind} modpackinstaller-status--dismissible`}
-                    role={
-                        outcomeBanner.kind === 'error'
-                            ? 'alert'
-                            : 'status'
-                    }
-                >
-                    <span>{outcomeBanner.message}</span>
-
-                    <button
-                        type="button"
-                        className="modpackinstaller-status-dismiss"
-                        onClick={onDismissOutcome}
-                        aria-label="Dismiss"
-                    >
-                        &times;
-                    </button>
-                </div>
-            )}
-
-            {installedStatus && (
-                <div
-                    className={`modpackinstaller-status modpackinstaller-status--${installedStatus.kind}`}
-                    role={
-                        installedStatus.kind === 'error'
-                            ? 'alert'
-                            : 'status'
-                    }
-                >
-                    {installedStatus.message}
-                </div>
-            )}
-
             {activeInstall && (
                 <ActiveInstallCard
                     active={activeInstall}
@@ -107,32 +72,31 @@ export const InstalledModpacksBody = ({
                 </div>
             )}
 
-            {installed !== null && installedError && (
-                <div className="modpackinstaller-catalog-state modpackinstaller-catalog-state--error">
-                    <p role="alert">{installedError}</p>
+            {installed === null
+                && installedUnavailable
+                && !installedLoading && (
+                    <div className="modpackinstaller-catalog-state">
+                        <p>Couldn&apos;t load the installed addons.</p>
 
-                    <button
-                        type="button"
-                        onClick={onRefresh}
-                    >
-                        Retry
-                    </button>
-                </div>
-            )}
-
-            {installed !== null
-                && !installedError
-                && installed.length === 0
-                && !installedLoading
-                && activeInstall === null && (
-                    <div className="modpackinstaller-catalog-state modpackinstaller-catalog-state--empty">
-                        <p>No modpacks installed</p>
+                        <button
+                            type="button"
+                            onClick={onRefresh}
+                        >
+                            Try again
+                        </button>
                     </div>
                 )}
 
             {installed !== null
-                && !installedError
-                && installed.length > 0 && (
+                && installed.length === 0
+                && !installedLoading
+                && activeInstall === null && (
+                    <div className="modpackinstaller-catalog-state modpackinstaller-catalog-state--empty">
+                        <p>No addons installed yet</p>
+                    </div>
+                )}
+
+            {installed !== null && installed.length > 0 && (
                     <div className="modpackinstaller-installed-list">
                         {installed.map((record) => {
                             const missingCount =
@@ -234,7 +198,7 @@ export const InstalledModpacksBody = ({
                                                     lifecycleRecordId
                                                         !== null
                                                 }
-                                                aria-label="Restore missing modpack files"
+                                                aria-label="Restore missing files"
                                                 title="Restore"
                                             >
                                                 {busy
@@ -250,12 +214,13 @@ export const InstalledModpacksBody = ({
                                             disabled={
                                                 lifecycleRecordId !== null
                                             }
-                                            aria-label="Update modpack"
+                                            aria-label={contentActionLabel(
+                                                'Update',
+                                                record.content_kind,
+                                            )}
                                             title="Update"
                                         >
-                                            {busy
-                                                ? <SpinnerIcon />
-                                                : <UploadIcon />}
+                                            <UploadIcon />
                                         </button>
 
                                         <button
@@ -267,7 +232,10 @@ export const InstalledModpacksBody = ({
                                             disabled={
                                                 lifecycleRecordId !== null
                                             }
-                                            aria-label="Uninstall modpack"
+                                            aria-label={contentActionLabel(
+                                                'Uninstall',
+                                                record.content_kind,
+                                            )}
                                             title="Uninstall"
                                         >
                                             <TrashIcon />

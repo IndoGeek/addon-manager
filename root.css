@@ -1846,9 +1846,15 @@
   opacity: 0.9;
 }
 
+/* The update window's installed-version summary needs room before the picker list it introduces. */
+.modpackinstaller-confirm .modpackinstaller-update-current {
+  margin-bottom: 14px;
+}
+
 .modpackinstaller-confirm-actions {
   display: flex;
   justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 10px;
   margin-top: 18px;
 }
@@ -1973,6 +1979,86 @@
 
 .modpackinstaller-status-dismiss:hover {
   border-color: rgba(255, 255, 255, 0.25);
+  background: rgba(0, 0, 0, 0.42);
+}
+
+/* Page-level notification popups: pinned to the top of the dashboard and above every modal, so an install outcome is... */
+.modpackinstaller-toasts {
+  position: fixed;
+  top: 18px;
+  left: 50%;
+  z-index: 1100;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(520px, calc(100vw - 32px));
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.modpackinstaller-toast {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  background: rgba(32, 36, 44, 0.96);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.45);
+  pointer-events: auto;
+  animation: modpackinstaller-slide-up 0.2s ease-out;
+}
+
+.modpackinstaller-toast--error {
+  background: rgba(126, 38, 38, 0.96);
+}
+
+.modpackinstaller-toast--success {
+  background: rgba(24, 100, 53, 0.96);
+}
+
+.modpackinstaller-toast--info {
+  background: rgba(38, 71, 132, 0.96);
+}
+
+.modpackinstaller-toast-message {
+  flex: 1 1 auto;
+  line-height: 1.4;
+}
+
+/* Retry-style action carried by a notification, e.g. reloading the list that just failed. */
+.modpackinstaller-toast-action {
+  flex: 0 0 auto;
+  padding: 4px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.14);
+  color: inherit;
+}
+
+.modpackinstaller-toast-action:hover {
+  border-color: rgba(255, 255, 255, 0.42);
+  background: rgba(255, 255, 255, 0.24);
+}
+
+.modpackinstaller-toast-dismiss {
+  flex: 0 0 auto;
+  padding: 1px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+  font-size: 1rem;
+  line-height: 1.2;
+  cursor: pointer;
+  background: rgba(0, 0, 0, 0.28);
+  color: inherit;
+}
+
+.modpackinstaller-toast-dismiss:hover {
+  border-color: rgba(255, 255, 255, 0.3);
   background: rgba(0, 0, 0, 0.42);
 }
 
@@ -2416,17 +2502,7 @@
   color: #ffffff;
 }
 
-/* Version picker popup: the selected option reads green, and the install button keeps its normal green here (the warning... */
-.modpackinstaller-version-picker .modpackinstaller-version-option--selected {
-  border-color: #16a34a;
-  background: #16a34a;
-  color: #ffffff;
-}
-
-.modpackinstaller-version-picker .modpackinstaller-version-option--selected .modpackinstaller-version-option-meta {
-  color: rgba(255, 255, 255, 0.85);
-}
-
+/* The version picker's install button keeps its normal green (the warning variant overrides it below). */
 .modpackinstaller-version-picker
   .modpackinstaller-install-button:not(.modpackinstaller-install-button--warning):not(.modpackinstaller-modal-actions-button--locked):not(.modpackinstaller-modal-actions-button--success) {
   background: #16a34a;
@@ -2873,6 +2949,42 @@
   opacity: 0.6;
 }
 
+/* Confirmation windows shrink to the question they ask, so a one-line prompt does not open a full-width sheet. */
+.modpackinstaller-modal--confirm {
+  width: auto;
+  min-width: min(100%, 340px);
+  max-width: 520px;
+}
+
+/* The update window is a fixed narrower column: a version list stretched over a wide sheet is hard to scan. */
+.modpackinstaller-modal--narrow {
+  max-width: 460px;
+}
+
+/* Heading centred over the window and the close button pinned to the corner, so short titles stay in the middle... */
+.modpackinstaller-modal--confirm .modpackinstaller-modal-header,
+.modpackinstaller-modal--narrow .modpackinstaller-modal-header,
+.modpackinstaller-version-picker-header {
+  position: relative;
+  justify-content: center;
+  padding: 0 40px;
+  text-align: center;
+}
+
+.modpackinstaller-modal--confirm .modpackinstaller-modal-header h3,
+.modpackinstaller-modal--narrow .modpackinstaller-modal-header h3,
+.modpackinstaller-version-picker-header h5 {
+  text-align: center;
+}
+
+.modpackinstaller-modal--confirm .modpackinstaller-modal-header-actions,
+.modpackinstaller-modal--narrow .modpackinstaller-modal-header-actions,
+.modpackinstaller-version-picker-header .modpackinstaller-modal-close {
+  position: absolute;
+  top: 0;
+  right: 0;
+}
+
 .modpackinstaller-modal-header {
   display: flex;
   align-items: flex-start;
@@ -3077,9 +3189,24 @@
   border-color: rgba(127, 127, 127, 0.35);
 }
 
+/* The chosen version reads green wherever a version is picked: border, fill and a fully readable meta line. */
 .modpackinstaller-version-option--selected {
-  border-color: rgba(108, 182, 255, 0.6);
-  background: rgba(108, 182, 255, 0.12);
+  border-color: #16a34a;
+  background: #16a34a;
+  color: #ffffff;
+}
+
+.modpackinstaller-version-option--selected .modpackinstaller-version-option-meta {
+  opacity: 1;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+/* Pills ride on the green fill, so they take a white-on-green treatment instead of the page's translucent one. */
+.modpackinstaller-version-option--selected .modpackinstaller-pill,
+.modpackinstaller-version-option--selected .modpackinstaller-pill--loader {
+  border-color: rgba(255, 255, 255, 0.45);
+  background: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
 }
 
 .modpackinstaller-version-option-name {

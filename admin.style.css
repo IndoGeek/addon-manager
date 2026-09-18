@@ -261,6 +261,48 @@
 }
 
 /* ------------------------------------------------------------------ */
+/* Install history pagination footer                                    */
+/* ------------------------------------------------------------------ */
+
+.mi-settings .mi-history-footer {
+  align-items: center;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  justify-content: space-between;
+  padding-top: 12px;
+}
+
+.mi-settings .mi-history-footer .pagination > li > a {
+  background-color: #1f2833;
+  border-color: rgba(255, 255, 255, 0.08);
+  color: #aebac5;
+}
+
+.mi-settings .mi-history-footer .pagination > li > a:hover,
+.mi-settings .mi-history-footer .pagination > li > a:focus {
+  background-color: #26313e;
+  border-color: rgba(255, 255, 255, 0.14);
+  color: #e8ecef;
+}
+
+.mi-settings .mi-history-footer .pagination > .active > a,
+.mi-settings .mi-history-footer .pagination > .active > a:hover,
+.mi-settings .mi-history-footer .pagination > .active > a:focus {
+  background-color: #6e56cf;
+  border-color: #6e56cf;
+  color: #fff;
+}
+
+.mi-settings .mi-history-footer .pagination > .disabled > a,
+.mi-settings .mi-history-footer .pagination > .disabled > a:hover {
+  background-color: #1a222d;
+  border-color: rgba(255, 255, 255, 0.05);
+  color: #5b6875;
+}
+
+/* ------------------------------------------------------------------ */
 /* Environment variables reference table                               */
 /* ------------------------------------------------------------------ */
 

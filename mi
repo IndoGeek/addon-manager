@@ -320,10 +320,17 @@ cmd_lint() {
   if stage_wanted blade; then
   if [ -f "$panel/vendor/autoload.php" ] && [ -f "$SRC/view.blade.php" ]; then
     local tmpc="/tmp/mi_blade_lint.php"
+    # The installed copy is Blueprint's header with our view appended; a rebuild can invalidate it in ways the repo source cannot show.
+    local tmpi="/tmp/mi_blade_lint_installed.php"
+    local installed_view="$panel/resources/views/admin/extensions/modpackinstaller/index.blade.php"
     if sudo -n php -r '
 require "'"$panel"'/vendor/autoload.php";
 $blade = new Illuminate\View\Compilers\BladeCompiler(new Illuminate\Filesystem\Filesystem, sys_get_temp_dir()."/mi-compiled");
 file_put_contents("'"$tmpc"'", $blade->compileString(file_get_contents("'"$SRC"'/view.blade.php")));
+$installed = "'"$installed_view"'";
+if (is_file($installed)) {
+    file_put_contents("'"$tmpi"'", $blade->compileString(file_get_contents($installed)));
+}
 ' >/dev/null 2>&1 && php -l "$tmpc" >/dev/null 2>&1; then
       ok "blade: view.blade.php compiles"
       sudo -n rm -f "$tmpc" 2>/dev/null || rm -f "$tmpc" 2>/dev/null || true
@@ -332,6 +339,19 @@ file_put_contents("'"$tmpc"'", $blade->compileString(file_get_contents("'"$SRC"'
       warn "blade: view.blade.php does not compile"
       php -l "$tmpc" 2>&1 | tail -2 | sed 's/^/    /'
     fi
+
+    # What the panel actually renders, so a broken rebuild is caught here instead of on the settings page.
+    if [ -f "$installed_view" ]; then
+      if php -l "$tmpi" >/dev/null 2>&1; then
+        ok "blade: installed admin view compiles"
+      else
+        failed=$(( failed + 1 ))
+        warn "blade: the installed admin view is broken — run 'mi build' to regenerate it"
+        php -l "$tmpi" 2>&1 | tail -2 | sed 's/^/    /'
+      fi
+    fi
+
+    sudo -n rm -f "$tmpi" 2>/dev/null || rm -f "$tmpi" 2>/dev/null || true
   else
     warn "blade check skipped (panel vendor dir not found)"
   fi
@@ -492,6 +512,46 @@ in_panel_dev_tree() {
   esac
 }
 
+# The identifier conf.yml registers the extension under.
+conf_identifier() {
+  sed -n 's/^[[:space:]]*identifier:[[:space:]]*"\([^"]*\)".*/\1/p' "$SRC/conf.yml" | head -1
+}
+
+# Is the extension in the panel's Blueprint install list? `mi remove` takes it back out, so every command that
+# writes into the installed tree needs to know the answer.
+extension_installed() { # $1 = panel
+  local identifier
+  identifier="$(conf_identifier)"
+  [ -n "$identifier" ] || return 1
+  sudo -n grep -qF "|$identifier," \
+    "$1/.blueprint/extensions/blueprint/private/db/installed_extensions" 2>/dev/null
+}
+
+# A build interrupted right after it started (Ctrl+C, a killed terminal, a timeout) leaves Blueprint's lock file
+# behind, and the next blueprint command then waits on it forever. Warn instead of hanging silently; never delete the
+# lock ourselves, since a concurrent build may genuinely hold it.
+warn_stale_blueprint_lock() { # $1 = panel
+  local lock="$1/.blueprint/lock" reply=""
+  [ -f "$lock" ] || return 0
+  [ -n "$(sudo -n find "$lock" -mmin +2 -print 2>/dev/null)" ] || return 0
+
+  warn "stale Blueprint lock from an interrupted build: $lock"
+  warn "Blueprint waits on that file forever, so nothing would build."
+
+  if [ "$TTY" = 1 ] && [ -r /dev/tty ]; then
+    printf '%s[??]%s Clear it now? (y/N) ' "$C_YELLOW" "$C_RESET"
+    read -r reply < /dev/tty
+    case "$reply" in
+      y|Y|yes|YES)
+        ( cd "$1" && sudo -n blueprint -unlock ) && ok "lock cleared"
+        ;;
+      *) warn "left it in place — clear it with: sudo blueprint -unlock" ;;
+    esac
+  else
+    warn "clear it with: sudo blueprint -unlock"
+  fi
+}
+
 # `mi build [-n|--dry-run] [--css-only]` -n show which layout/target would be used, then stop --css-only...
 cmd_build() {
   local panel dry=0
@@ -520,6 +580,8 @@ cmd_build() {
 
     sync_admin_files "$panel"
 
+    warn_stale_blueprint_lock "$panel"
+
     cd "$panel" || die "Panel directory disappeared."
     sudo -n blueprint -build || die "blueprint -build failed."
 
@@ -533,8 +595,21 @@ cmd_build() {
       info "source:   $SRC"
       info "panel:    $panel"
       info "steps:    tools/build.sh rsync pipeline → blueprint -build"
+      extension_installed "$panel" \
+        || info "note:     not installed in this panel yet — the installer would run first"
       return 0
     fi
+
+    warn_stale_blueprint_lock "$panel"
+
+    # The rsync pipeline writes into the installed extension tree, which does not exist (and has no component wiring)
+    # on a panel that never installed the extension or had it removed — install it first, then sync on top.
+    if ! extension_installed "$panel"; then
+      info "extension is not installed in $panel — installing it first"
+      # MI_SKIP_SYNC: the installer's own post-install sync would duplicate the build this command runs next.
+      env PANEL_DIR="$panel" MI_SKIP_SYNC=1 bash "$SRC/tools/installer.sh" || die "install failed."
+    fi
+
     info "Deploying from repo checkout to panel at $panel"
     # pass the detected panel explicitly — tools/build.sh defaults to /var/www/pterodactyl otherwise, which is...
     exec env PANEL_DIR="$panel" bash "$SRC/tools/build.sh"
@@ -566,16 +641,22 @@ sync_admin_files() {
   icon_url="/assets/extensions/$identifier/icon.$icon_ext"
 
   local installed_view="$panel/resources/views/admin/extensions/$identifier/index.blade.php"
-  local installed_ctl="$panel/app/Http/Controllers/Admin/Extensions/$identifier/${identifier}ExtensionController.php"
+  # Concatenated rather than brace-expanded: a literal {identifier} token anywhere in a packaged file is rewritten by
+  # Blueprint's installer placeholder pass, and that would mangle this path inside the installed copy.
+  local installed_ctl="$panel/app/Http/Controllers/Admin/Extensions/$identifier/$identifier""ExtensionController.php"
   local installed_conf="$panel/.blueprint/extensions/$identifier/private/.store/conf.yml"
   local installed_css="$panel/.blueprint/extensions/$identifier/assets/admin.style.css"
   local installed_icon="$panel/.blueprint/extensions/$identifier/assets/icon.$icon_ext"
 
   local tmpv="$(mktemp)"
   {
+    # Trim the header's last line back to its yield: Blueprint glues the body's opening `<?php` onto it, so re-appending
+    # the view without trimming would open PHP twice on the second sync and break the page.
     sed -n '1,/extension\.description/p' "$installed_view" 2>/dev/null \
-      | sed -E -e 's~\$EXTENSION_VERSION = ".*";~\$EXTENSION_VERSION = "'"${version:-unknown}"'";~' \
+      | sed -E -e 's~^(.*@yield\(.extension\.description.\)).*$~\1~' \
+               -e 's~\$EXTENSION_VERSION = ".*";~\$EXTENSION_VERSION = "'"${version:-unknown}"'";~' \
                -e 's~\$EXTENSION_ICON = ".*";~\$EXTENSION_ICON = "'"$icon_url"'";~'
+    printf '\n'
     cat "$SRC/view.blade.php"
     printf '\n@endsection\n'
   } > "$tmpv"
@@ -909,6 +990,7 @@ cmd_smoke() {
   local base="${app_url%/}"
   local panel_code="" admin_code="" api_code="" css_code=""
   local datadir="" datadir_state="unchecked"
+  local bundle_count=0 bundle_state="unchecked"
 
   if [ "$QUIET" = 0 ] && [ "$JSON" = 0 ]; then
     printf '%s▲%s %smi smoke%s — %s\n\n' \
@@ -973,10 +1055,22 @@ echo $d["data_dir"] ?? "/var/lib/pterodactyl/modpack-installer";
     info "data dir not created yet ($datadir) — ok until first install"
   fi
 
+  # 6. Panel frontend bundle. The page can answer 200 and still render blank, because the panel's build deletes every
+  # JS asset before compiling — a failed compile leaves the whole UI empty.
+  bundle_count="$(find "$panel/public/assets" -maxdepth 1 -type f -name '*.js' 2>/dev/null | wc -l | tr -d ' ')"
+  if [ "${bundle_count:-0}" -gt 0 ]; then
+    bundle_state="present"
+    okq "frontend bundle present ($bundle_count file(s))"
+  else
+    bundle_state="missing"
+    warn "no public/assets/*.js — the panel UI would render blank; run: cd $panel && yarn run build:production"
+    fails=$(( fails + 1 ))
+  fi
+
   if [ "$JSON" = 1 ]; then
-    printf '{"base":"%s","failures":%d,"panel":"%s","admin":"%s","api":"%s","css":"%s","data_dir":{"path":"%s","state":"%s"}}\n' \
+    printf '{"base":"%s","failures":%d,"panel":"%s","admin":"%s","api":"%s","css":"%s","data_dir":{"path":"%s","state":"%s"},"frontend":{"bundles":%d,"state":"%s"}}\n' \
       "$base" "$fails" "$panel_code" "$admin_code" "$api_code" "$css_code" \
-      "$datadir" "$datadir_state"
+      "$datadir" "$datadir_state" "${bundle_count:-0}" "$bundle_state"
   fi
 
   if [ "$fails" -gt 0 ]; then
@@ -1231,6 +1325,11 @@ cmd_watch() {
 cmd_install() {
   [ -f "$SRC/tools/installer.sh" ] || die "tools/installer.sh not found."
 
+  local install_panel
+  install_panel="$(arg_val --panel-dir "$@" || true)"
+  [ -n "$install_panel" ] || install_panel="$(panel_dir || true)"
+  [ -n "$install_panel" ] && warn_stale_blueprint_lock "$install_panel"
+
   local env_args=() pd wu
   if arg_has --force "$@" || arg_has -f "$@"; then env_args+=(MI_FORCE=1); fi
   pd="$(arg_val --panel-dir "$@" || true)"
@@ -1242,6 +1341,135 @@ cmd_install() {
     exec env ${env_args[@]+"${env_args[@]}"} bash "$SRC/tools/installer.sh"
   fi
   exec bash "$SRC/tools/installer.sh"
+}
+
+# ───────────────────────────── mi remove ───────────────────── Uninstalls the extension from the panel and deletes
+# what `mi install` / `mi build` published there, so the next build starts from a clean panel. Dependencies are left
+# alone on purpose: system packages, PHP extensions, Blueprint, this checkout and the `mi` symlink all survive —
+# only the extension's own files go.
+cmd_remove() {
+  local panel="" identifier pd dry=0 yes=0 devtree=0 reply="" rel removed=0 registered=0
+  local inst_dir inst_conf inst_assets inst_views inst_ctl inst_css dev_tree
+
+  pd="$(arg_val --panel-dir "$@" || true)"
+  if arg_has --dry-run "$@" || arg_has -n "$@"; then dry=1; fi
+  if arg_has --yes "$@" || arg_has -y "$@"; then yes=1; fi
+  if arg_has --dev-tree "$@"; then devtree=1; fi
+
+  identifier="$(conf_identifier)"
+  [ -n "$identifier" ] || die "conf.yml: missing identifier."
+
+  if [ -n "$pd" ]; then
+    panel="$pd"
+  elif ! panel="$(panel_dir)"; then
+    die "No Pterodactyl panel found — pass --panel-dir <path>."
+  fi
+  [ -d "$panel" ] || die "Panel directory '$panel' does not exist."
+  command -v blueprint >/dev/null 2>&1 \
+    || die "Blueprint is not on this host — there is nothing this extension built to remove."
+
+  inst_dir="$panel/.blueprint/extensions/$identifier"
+  inst_conf="$panel/config/$identifier.php"
+  inst_assets="$panel/public/assets/extensions/$identifier"
+  inst_views="$panel/resources/views/admin/extensions/$identifier"
+  inst_ctl="$panel/app/Http/Controllers/Admin/Extensions/$identifier"
+  inst_css="$panel/resources/scripts/blueprint/css/imported/$identifier.css"
+  dev_tree="$panel/.blueprint/dev"
+
+  if extension_installed "$panel"; then registered=1; fi
+
+  printf '%s▲%s %smi remove%s — %s\n\n' "$C_CYAN" "$C_RESET" "$C_BOLD" "$C_RESET" "$panel"
+
+  if [ "$registered" = 0 ] && [ ! -d "$inst_dir" ]; then
+    ok "nothing to remove — '$identifier' is not installed here"
+    return 0
+  fi
+
+  info "keeps: system packages, PHP extensions, Blueprint, this checkout"
+
+  if [ "$dry" = 1 ]; then
+    info "dry run — would run: blueprint -remove $identifier  (files, routes, css, panel rebuild)"
+    [ -f "$inst_conf" ]   && info "dry run — would delete: config/$identifier.php"
+    [ -d "$inst_assets" ] && info "dry run — would delete: public/assets/extensions/$identifier"
+    [ -d "$inst_views" ]  && info "dry run — would delete: resources/views/admin/extensions/$identifier"
+    [ -d "$inst_ctl" ]    && info "dry run — would delete: app/Http/Controllers/Admin/Extensions/$identifier"
+    [ -f "$inst_css" ]    && info "dry run — would delete: resources/scripts/blueprint/css/imported/$identifier.css"
+    [ -d "$inst_dir" ]    && info "dry run — would delete: .blueprint/extensions/$identifier"
+    if [ "$devtree" = 1 ] && [ -d "$dev_tree" ]; then
+      info "dry run — would delete: .blueprint/dev"
+    fi
+    return 0
+  fi
+
+  if [ "$yes" = 0 ]; then
+    if [ "$TTY" != 1 ]; then
+      die "non-interactive shell — re-run with --yes to confirm the removal."
+    fi
+
+    printf '%s[??]%s Remove the extension from %s? (y/N) ' "$C_YELLOW" "$C_RESET" "$panel"
+    read -r reply
+    case "$reply" in
+      y|Y|yes|YES) ;;
+      *) info "removal cancelled — nothing changed."; return 1 ;;
+    esac
+  fi
+
+  if [ "$registered" = 1 ]; then
+    info "uninstalling through Blueprint (extension files, routes, admin pages, panel rebuild)"
+    ( cd "$panel" && sudo -n env USER_CONFIRMED_REMOVAL=yes blueprint -remove "$identifier" ) \
+      || die "blueprint -remove failed — read its output above, then re-run."
+    ok "extension uninstalled"
+  fi
+
+  # Copies we publish outside the extension's own folder (install-time placements and build syncs) survive a
+  # Blueprint removal, so a later rebuild would mix new files with stale ones. Clear them here.
+  for rel in \
+    "config/$identifier.php" \
+    "public/assets/extensions/$identifier" \
+    "resources/views/admin/extensions/$identifier" \
+    "app/Http/Controllers/Admin/Extensions/$identifier" \
+    "resources/scripts/blueprint/css/imported/$identifier.css" \
+    ".blueprint/extensions/$identifier"; do
+    [ -e "$panel/$rel" ] || continue
+    sudo -n rm -rf "$panel/$rel" || die "failed to delete $rel."
+    removed=$(( removed + 1 ))
+  done
+
+  if [ "$removed" -gt 0 ]; then
+    ok "cleared $removed leftover path(s)"
+  else
+    ok "no leftovers to clear"
+  fi
+
+  if [ -d "$dev_tree" ]; then
+    case "$SRC/" in
+      "$dev_tree/"*) info "kept .blueprint/dev — that is this checkout" ;;
+      *)
+        if [ "$devtree" = 1 ]; then
+          sudo -n rm -rf "$dev_tree" && ok "removed .blueprint/dev"
+        else
+          # Left in place by design: a developer's clone can live there, and deleting a working tree unasked would be
+          # destructive. It is stale state after a removal, so say so rather than leaving it silent.
+          warn "kept .blueprint/dev — a full clone of this repo may live there"
+          info "drop it with:  mi remove --dev-tree     (then install again from your checkout)"
+        fi
+        ;;
+    esac
+  fi
+
+  # Removing an extension makes Blueprint rebuild the panel assets, and that build deletes every JS bundle before it
+  # compiles. A failure there is invisible from here, so check the panel can still render.
+  local bundle_count
+  bundle_count="$(find "$panel/public/assets" -maxdepth 1 -type f -name '*.js' 2>/dev/null | wc -l | tr -d ' ')"
+  if [ "${bundle_count:-0}" -gt 0 ]; then
+    ok "panel frontend intact ($bundle_count bundle file(s))"
+  else
+    warn "the panel has no frontend bundle (public/assets/*.js) — server pages would render blank"
+    info "rebuild it with:  cd $panel && yarn run build:production"
+  fi
+
+  ok "clean — '$identifier' is gone from the panel"
+  info "build it again with: mi install   (or mi build from a checkout of this repo)"
 }
 
 # ───────────────────────────── mi version ───────────────────────── The version the panel's extension card...
@@ -1277,6 +1505,7 @@ ${C_BOLD}Deploy${C_RESET}
   ${C_CYAN}mi build${C_RESET}             Deploy to the panel (auto-detects repo vs dev tree)
   ${C_CYAN}mi css${C_RESET}               Regenerate root.css from components/styles
   ${C_CYAN}mi install${C_RESET}           Install the extension into the panel (sudo)
+  ${C_CYAN}mi remove${C_RESET}            Uninstall it again, leaving dependencies in place (sudo)
   ${C_CYAN}mi smoke${C_RESET}             Post-deploy health check against the panel
   ${C_CYAN}mi watch${C_RESET}             Rebuild automatically on file changes
   ${C_CYAN}mi db:reset${C_RESET}          Wipe records/history/catalog cache
@@ -1405,6 +1634,20 @@ ${C_BOLD}mi install${C_RESET} [flags]   (needs sudo)
       --web-user <u>  PHP-FPM user when auto-detection fails
 EOF
       ;;
+    remove|uninstall) cat <<EOF
+${C_BOLD}mi remove${C_RESET} [flags]    (needs sudo)
+  Uninstalls the extension from the panel and deletes everything
+  'mi install' / 'mi build' published, so the next build starts clean.
+  Dependencies stay: system packages, PHP extensions, Blueprint, this
+  checkout and the 'mi' symlink are not touched.
+
+  -y, --yes           skip the confirmation prompt
+  -n, --dry-run       print what would be removed, change nothing
+      --dev-tree      also drop <panel>/.blueprint/dev (kept by default,
+                      since a dev clone may live there)
+      --panel-dir <p> panel path (default /var/www/pterodactyl)
+EOF
+      ;;
     watch) cat <<EOF
 ${C_BOLD}mi watch${C_RESET}
   Build once, then redeploy on every change. In the panel dev tree it hands
@@ -1447,6 +1690,7 @@ case "$cmd" in
   install-hooks|hooks) cmd_hooks "$@" ;;
   build) cmd_build "$@" ;;
   install) cmd_install "$@" ;;
+  remove|uninstall) cmd_remove "$@" ;;
   css)   cmd_css "$@" ;;
   release) cmd_release "$@" ;;
   update|bump) cmd_update "$@" ;;

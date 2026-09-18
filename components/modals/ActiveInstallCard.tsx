@@ -11,7 +11,7 @@ import { CheckIcon, CancelIcon, SpinnerIcon } from '../icons';
 import { contentKindLabel, formatBytes } from '../utils/constants';
 
 const RUNNING_LABELS: Record<string, string> = {
-    starting: 'Starting installation',
+    starting: 'Starting',
     download: 'Downloading',
     preparing: 'Preparing files',
     deploy: 'Deploying files',
@@ -258,13 +258,16 @@ export const ActiveInstallCard = ({
     const cancelling = phase === 'cancelling';
     const terminal = TERMINAL_PHASES.includes(phase);
 
+    // An update replaces installed content, so its card never claims a fresh install finished.
+    const modeNoun = active.mode === 'update' ? 'Update' : 'Installation';
+
     const outcomeLabel =
         phase === 'complete'
-            ? 'Installation complete'
+            ? `${modeNoun} complete`
             : phase === 'cancelled'
                 ? 'Download cancelled'
                 : phase === 'failed'
-                    ? 'Installation failed'
+                    ? `${modeNoun} failed`
                     : null;
 
     const downloadMeta =
@@ -430,7 +433,9 @@ export const ActiveInstallCard = ({
 
     const mainLabel = activeStage !== null
         ? activeStage.label
-        : (RUNNING_LABELS[phase] ?? 'Installing');
+        : phase === 'starting'
+            ? `${RUNNING_LABELS.starting} ${active.mode === 'update' ? 'update' : 'installation'}`
+            : (RUNNING_LABELS[phase] ?? 'Installing');
 
     const initial = active.name.trim().charAt(0).toUpperCase() || '?';
 
@@ -514,7 +519,11 @@ export const ActiveInstallCard = ({
                         <div className="modpackinstaller-active-bar-row">
                             <ProgressBar
                                 percent={mainPercent}
-                                ariaLabel={`${active.name} install progress`}
+                                ariaLabel={`${active.name} ${
+                                    active.mode === 'update'
+                                        ? 'update'
+                                        : 'install'
+                                } progress`}
                             />
 
                             {mainPercent !== null && (
@@ -563,8 +572,8 @@ export const ActiveInstallCard = ({
                 <div className="modpackinstaller-active-files">
                     <span className="modpackinstaller-active-files-title">
                         {stages.length}{' '}
-                        {stages.length === 1 ? 'stage' : 'stages'} in this
-                        install
+                        {stages.length === 1 ? 'stage' : 'stages'} in this{' '}
+                        {active.mode === 'update' ? 'update' : 'install'}
                     </span>
 
                     <div
@@ -586,7 +595,8 @@ export const ActiveInstallCard = ({
             {multiFile && (
                 <div className="modpackinstaller-active-files">
                     <span className="modpackinstaller-active-files-title">
-                        {files.length} files in this install
+                        {files.length} files in this{' '}
+                        {active.mode === 'update' ? 'update' : 'install'}
                     </span>
 
                     <div

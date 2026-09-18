@@ -120,6 +120,11 @@ export interface ActiveInstallRecord {
     /** Catalog kind of the entry: modpack, mod, plugin, datapack, ... */
     kind?: string | null;
     /**
+     * Whether this run installs new content or replaces an installed one, so
+     * its messages say "updated" instead of "installed".
+     */
+    mode?: 'install' | 'update';
+    /**
      * Every file this run installs, in download order. Single-file runs and
      * modpack installs leave this empty and render one card.
      */

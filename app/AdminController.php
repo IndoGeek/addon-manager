@@ -13,6 +13,9 @@ use Pterodactyl\Services\Helpers\SoftwareVersionService;
 // Blueprint copies this file to app/Http/Controllers/Admin/Extensions/modpackinstaller/modpackinstallerExtensio...
 class modpackinstallerExtensionController extends Controller
 {
+    // Install history rows shown per page on the settings page.
+    private const HISTORY_PER_PAGE = 10;
+
     // Settings keys persisted through Blueprint's extension library.
     private const SETTING_PREFIX = 'modpackinstaller:setting_';
 
@@ -42,12 +45,27 @@ class modpackinstallerExtensionController extends Controller
     // Render the settings page the extensions list card opens.
     public function index(): View
     {
+        $history = $this->installHistory();
+
+        $total = $history->count();
+
+        $lastPage = max(1, (int) ceil($total / self::HISTORY_PER_PAGE));
+
+        // A page number beyond the end (or a stale link after the newest entries landed) clamps to the last page that exists.
+        $page = (int) request()->query('history_page', 1);
+
+        $page = min($lastPage, max(1, $page));
+
         return $this->view->make('admin.extensions.modpackinstaller.index', [
             'blueprint' => $this->blueprint,
             'version' => $this->version,
             'root' => '/admin/extensions/modpackinstaller',
             'settings' => $this->currentSettings(),
-            'history' => $this->installHistory()->all(30),
+            'history' => $history->page($page, self::HISTORY_PER_PAGE),
+            'historyTotal' => $total,
+            'historyPage' => $page,
+            'historyLastPage' => $lastPage,
+            'historyPerPage' => self::HISTORY_PER_PAGE,
             'envValues' => [
                 'curseforge_api_key' => config('modpackinstaller.curseforge_api_key'),
                 'max_download_mb' => config('modpackinstaller.max_download_mb'),

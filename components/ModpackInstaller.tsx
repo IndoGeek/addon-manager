@@ -17,6 +17,8 @@ import {
     VIEW_STORAGE_KEY,
     activeInstallStorageKey,
     backendContentType,
+    contentActionLabel,
+    contentNoun,
     getServerIdentifier,
     isCatalogContentType,
     isSingleFileContentType,
@@ -60,7 +62,14 @@ import { InstalledModpacksBody } from './modals/InstalledModpacksBody';
 import { DetailsModalBody } from './modals/DetailsModalBody';
 import { UninstallConfirmBody } from './modals/UninstallConfirmBody';
 import { ReplaceConfirmBody } from './modals/ReplaceConfirmBody';
+import { UpdateVersionBody, UpdateVersionOption, toUpdateOptions } from './modals/UpdateVersionBody';
 import { isActiveRunning } from './modals/ActiveInstallCard';
+import {
+    TOAST_TIMEOUT_MS,
+    ToastAction,
+    ToastMessage,
+    ToastStack,
+} from './common/ToastStack';
 
 import { CatalogToolbar } from './toolbar/CatalogToolbar';
 import { FilterPanel } from './toolbar/FilterPanel';
@@ -134,17 +143,19 @@ export default () => {
                 window.clearInterval(activePollTimer.current);
             }
 
-            if (outcomeTimer.current !== null) {
-                window.clearTimeout(outcomeTimer.current);
-            }
+            toastRegistry.current.forEach((entry) => {
+                window.clearTimeout(entry.timer);
+            });
+
+            toastRegistry.current.clear();
         };
     }, []);
 
     const [providers, setProviders] =
         useState<CatalogProviderOption[] | null>(null);
 
-    const [providersError, setProvidersError] =
-        useState<string | null>(null);
+    // Bumped by the "Retry" action on a providers notification, which re-runs the facet fetch.
+    const [providersAttempt, setProvidersAttempt] = useState(0);
 
     const [filters, setFilters] = useState<CatalogFilters>({
         provider: DEFAULT_PROVIDER,
@@ -211,8 +222,9 @@ export default () => {
 
     const [searching, setSearching] = useState(false);
 
-    const [catalogError, setCatalogError] =
-        useState<string | null>(null);
+    // True once a catalog load has failed, so the results area can show a neutral placeholder; the failure itself is
+    // reported through a notification popup that carries the Retry action.
+    const [catalogUnavailable, setCatalogUnavailable] = useState(false);
 
     const [view, setView] = useState<'grid' | 'list'>(() => {
         return window.localStorage.getItem(VIEW_STORAGE_KEY) === 'list'
@@ -227,14 +239,38 @@ export default () => {
 
     const [installedLoading, setInstalledLoading] = useState(false);
 
-    const [installedError, setInstalledError] =
-        useState<string | null>(null);
-
-    const [installedStatus, setInstalledStatus] =
-        useState<StatusMessage | null>(null);
+    const [installedUnavailable, setInstalledUnavailable] = useState(false);
 
     const [lifecycleRecordId, setLifecycleRecordId] =
         useState<string | null>(null);
+
+    // ── Notifications ─────────────────────────────────────────────── Outcomes are page-level popups: they stay
+    // visible above every window and close themselves after TOAST_TIMEOUT_MS unless dismissed first.
+    const [toasts, setToasts] = useState<ToastMessage[]>([]);
+
+    const toastRegistry = useRef<
+        Map<string, { id: number; timer: number }>
+    >(new Map());
+
+    const toastId = useRef(0);
+
+    // ── Update window ─────────────────────────────────────────────── The record being updated, its version list and
+    const [updateRecord, setUpdateRecord] =
+        useState<InstallRecordData | null>(null);
+
+    const [updateVersions, setUpdateVersions] =
+        useState<UpdateVersionOption[] | null>(null);
+
+    const [updateLoading, setUpdateLoading] = useState(false);
+
+    const [updateError, setUpdateError] = useState<string | null>(null);
+
+    const [updateSelection, setUpdateSelection] =
+        useState<string | null>(null);
+
+    const [updateInstallLoading, setUpdateInstallLoading] = useState(false);
+
+    const updateVersionsRequestId = useRef(0);
 
     const [pendingUninstall, setPendingUninstall] =
         useState<InstallRecordData | null>(null);
@@ -336,15 +372,10 @@ export default () => {
     const [activeProgress, setActiveProgress] =
         useState<InstallProgressData | null>(null);
 
-    const [outcomeBanner, setOutcomeBanner] =
-        useState<StatusMessage | null>(null);
-
     const activeInstallRef =
         useRef<ActiveInstallRecord | null>(null);
 
     const activePollTimer = useRef<number | null>(null);
-
-    const outcomeTimer = useRef<number | null>(null);
 
     const versionsRequestId = useRef(0);
 
@@ -422,7 +453,7 @@ export default () => {
         )
             .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
 
-    // CurseForge records a loader only for mods and modpacks.
+    // CurseForge records a loader for mods, modpacks and shaders (Iris/OptiFine) but not for plugins or packs.
     const modHasLoaders = modLoaders.length > 0;
 
     const modVersionSource = (() => {
@@ -551,7 +582,7 @@ export default () => {
         const id = ++requestId.current;
 
         setSearching(true);
-        setCatalogError(null);
+        setCatalogUnavailable(false);
 
         const params: Record<string, string | number> = {
             provider: next.provider,
@@ -597,6 +628,7 @@ export default () => {
 
             setItems(response.data.data.items);
             setPagination(response.data.data.pagination);
+            clearToast('catalog-load');
         } catch (requestError: any) {
             if (!alive.current || id !== requestId.current) {
                 return;
@@ -604,9 +636,18 @@ export default () => {
 
             setItems(null);
             setPagination(null);
-            setCatalogError(
+            setCatalogUnavailable(true);
+            pushToast(
+                'error',
                 requestError.response?.data?.error ||
-                'Unable to load the modpack catalog.',
+                'Unable to load the catalog.',
+                {
+                    key: 'catalog-load',
+                    action: {
+                        label: 'Retry',
+                        onClick: () => runSearch(filtersRef.current),
+                    },
+                },
             );
         } finally {
             if (alive.current && id === requestId.current) {
@@ -698,6 +739,8 @@ export default () => {
 
                 const defaults = applyBackendDefaults(response.data.data);
 
+                clearToast('providers-load');
+
                 setFilters((current) => ({
                     ...current,
                     provider: chosenProvider,
@@ -709,9 +752,14 @@ export default () => {
                     return;
                 }
 
-                setProvidersError(
-                    'Unable to load catalog providers.',
-                );
+                pushToast('error', 'Unable to load catalog providers.', {
+                    key: 'providers-load',
+                    action: {
+                        label: 'Retry',
+                        onClick: () =>
+                            setProvidersAttempt((attempt) => attempt + 1),
+                    },
+                });
             }
 
             if (initial) {
@@ -733,17 +781,18 @@ export default () => {
             cancelled = true;
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [contentType]);
+    }, [contentType, providersAttempt]);
 
     const loadInstalled = async () => {
         if (!server) {
             setInstalled([]);
-            setInstalledError(null);
+            setInstalledUnavailable(false);
+            clearToast('installed-load');
             return;
         }
 
         setInstalledLoading(true);
-        setInstalledError(null);
+        setInstalledUnavailable(false);
 
         try {
             const response =
@@ -756,15 +805,22 @@ export default () => {
             }
 
             setInstalled(response.data.data);
+            clearToast('installed-load');
         } catch (requestError: any) {
             if (!alive.current) {
                 return;
             }
 
-            setInstalled([]);
-            setInstalledError(
+            // A refresh that fails keeps the list we already have; only a first load leaves the window empty.
+            setInstalledUnavailable(true);
+            pushToast(
+                'error',
                 requestError.response?.data?.error ||
                 'Unable to load the installed addons.',
+                {
+                    key: 'installed-load',
+                    action: { label: 'Retry', onClick: () => loadInstalled() },
+                },
             );
         } finally {
             if (alive.current) {
@@ -787,54 +843,188 @@ export default () => {
         loadInstalled();
     };
 
-    const updateInstalledModpack = async (
-        record: InstallRecordData,
-    ) => {
-        if (!server) {
-            setInstalledStatus({
-                kind: 'error',
-                message: 'Unable to determine the current server.',
-            });
+    // Loads the versions one installed addon can move to: modpacks use the modpack version list, single-file content
+    // uses the mod version list (loader/game-version aware).
+    const loadUpdateVersions = async (record: InstallRecordData) => {
+        const id = ++updateVersionsRequestId.current;
+
+        setUpdateLoading(true);
+        setUpdateError(null);
+
+        const isContent =
+            (record.content_type ?? 'modpack') === 'content';
+
+        try {
+            const response = await axios.get<
+                CatalogVersionsResponse | ModVersionsResponse
+            >(
+                isContent
+                    ? `${API_BASE}/catalog/mod-versions`
+                    : `${API_BASE}/catalog/versions`,
+                {
+                    params: {
+                        provider: record.provider,
+                        project: record.project_id,
+                    },
+                },
+            );
+
+            if (
+                !alive.current
+                || id !== updateVersionsRequestId.current
+            ) {
+                return;
+            }
+
+            const options = toUpdateOptions(
+                response.data.data.versions,
+            );
+
+            setUpdateVersions(options);
+            // Both lists arrive newest-first, so the first entry is the version an update moves to.
+            setUpdateSelection(options[0]?.source ?? null);
+            setUpdateLoading(false);
+        } catch (requestError: any) {
+            if (
+                !alive.current
+                || id !== updateVersionsRequestId.current
+            ) {
+                return;
+            }
+
+            setUpdateLoading(false);
+            setUpdateError(
+                requestError.response?.data?.error ||
+                `Unable to load the ${contentNoun(
+                    record.content_kind,
+                )} versions.`,
+            );
+        }
+    };
+
+    // Opens the update window: picking a version there is what starts the update, so an upgrade, a downgrade and a
+    // reinstall all run through the same progress card as an install.
+    const openUpdatePicker = (record: InstallRecordData) => {
+        if (!server || lifecycleRecordId !== null || activeRunning) {
             return;
         }
 
-        if (lifecycleRecordId !== null) {
+        updateVersionsRequestId.current++;
+
+        setUpdateRecord(record);
+        setUpdateVersions(null);
+        setUpdateError(null);
+        setUpdateSelection(null);
+        setUpdateInstallLoading(false);
+
+        loadUpdateVersions(record);
+    };
+
+    const closeUpdatePicker = () => {
+        updateVersionsRequestId.current++;
+
+        setUpdateRecord(null);
+        setUpdateVersions(null);
+        setUpdateError(null);
+        setUpdateSelection(null);
+    };
+
+    const confirmUpdate = async () => {
+        const record = updateRecord;
+
+        const option =
+            updateVersions?.find(
+                (version) => version.source === updateSelection,
+            ) ?? null;
+
+        if (!server || record === null || option === null) {
             return;
         }
 
-        setLifecycleRecordId(record.id);
-        setInstalledStatus(null);
+        // The run is tracked like an install, so the same window shows its stages and the same polling reports the
+        // outcome even if this request times out while the update keeps running on the server.
+        const token = beginActiveInstall({
+            source: option.source,
+            provider: record.provider,
+            name: record.display_name,
+            version: option.version_number,
+            iconUrl: record.icon_url,
+            mc_version: record.minecraft_version,
+            loader: record.loader,
+            kind: record.content_kind ?? null,
+            mode: 'update',
+        });
+
+        if (token === null) {
+            pushToast('error', 'Unable to determine the current server.');
+            return;
+        }
+
+        setUpdateInstallLoading(true);
+        closeUpdatePicker();
+        setInstalledOpen(true);
+        loadInstalled();
 
         try {
             await axios.post<UpdateResponse>(
                 `${API_BASE}/servers/${server}/installed/${record.id}/update`,
+                { source: option.source },
+                {
+                    params: {
+                        progress_token: token,
+                    },
+                },
             );
-
-            if (!alive.current) {
-                return;
-            }
-
-            setInstalledStatus(null);
-            refreshInstalled();
         } catch (requestError: any) {
             if (!alive.current) {
                 return;
             }
 
+            // Locked or rejected before it started: the progress card would only spin, so report it and stop.
+            if (
+                requestError.response?.status === 503
+                || requestError.response?.status === 409
+            ) {
+                clearActiveInstall();
+
+                pushToast(
+                    requestError.response?.status === 503
+                        ? 'error'
+                        : 'info',
+                    requestError.response?.data?.error ||
+                        `Unable to update the ${contentNoun(
+                            record.content_kind,
+                        )}.`,
+                );
+
+                return;
+            }
+
+            // Network errors (timeout, dropped connection) or 5xx from the reverse proxy / php-fpm: the update keeps
+            // running server-side and the progress token reports what happened.
+            if (
+                !requestError.response
+                || (requestError.response?.status ?? 0) >= 500
+            ) {
+                return;
+            }
+
             const message =
                 requestError.response?.data?.error ||
-                'Unable to update the modpack.';
+                `Unable to update the ${contentNoun(record.content_kind)}.`;
 
-            setInstalledStatus({
-                kind: 'error',
-                message:
-                    requestError.response?.data?.manual_download
-                        ? 'This modpack requires a manual download to update.'
-                        : message,
+            stopActivePolling();
+            clearActiveInstallStorage();
+            setActiveProgress({
+                phase: 'failed',
+                percent: 0,
+                indeterminate: false,
+                message,
             });
+            pushToast('error', message);
         } finally {
             if (alive.current) {
-                setLifecycleRecordId(null);
+                setUpdateInstallLoading(false);
             }
         }
     };
@@ -843,10 +1033,7 @@ export default () => {
         record: InstallRecordData,
     ) => {
         if (!server) {
-            setInstalledStatus({
-                kind: 'error',
-                message: 'Unable to determine the current server.',
-            });
+            pushToast('error', 'Unable to determine the current server.');
             return;
         }
 
@@ -855,7 +1042,6 @@ export default () => {
         }
 
         setLifecycleRecordId(record.id);
-        setInstalledStatus(null);
 
         try {
             await axios.post<UninstallResponse>(
@@ -873,17 +1059,23 @@ export default () => {
                         (item) => item.id !== record.id,
                     ),
             );
+
+            pushToast(
+                'success',
+                `${record.display_name} was uninstalled.`,
+            );
         } catch (requestError: any) {
             if (!alive.current) {
                 return;
             }
 
-            setInstalledStatus({
-                kind: 'error',
-                message:
-                    requestError.response?.data?.error ||
-                    'Unable to uninstall the modpack.',
-            });
+            pushToast(
+                'error',
+                requestError.response?.data?.error ||
+                    `Unable to uninstall the ${contentNoun(
+                        record.content_kind,
+                    )}.`,
+            );
         } finally {
             if (alive.current) {
                 setLifecycleRecordId(null);
@@ -895,10 +1087,7 @@ export default () => {
         record: InstallRecordData,
     ) => {
         if (!server) {
-            setInstalledStatus({
-                kind: 'error',
-                message: 'Unable to determine the current server.',
-            });
+            pushToast('error', 'Unable to determine the current server.');
             return;
         }
 
@@ -907,7 +1096,6 @@ export default () => {
         }
 
         setLifecycleRecordId(record.id);
-        setInstalledStatus(null);
 
         try {
             await axios.post<RestoreResponse>(
@@ -918,7 +1106,10 @@ export default () => {
                 return;
             }
 
-            setInstalledStatus(null);
+            pushToast(
+                'success',
+                `${record.display_name} files restored.`,
+            );
             refreshInstalled();
         } catch (requestError: any) {
             if (!alive.current) {
@@ -927,15 +1118,18 @@ export default () => {
 
             const message =
                 requestError.response?.data?.error ||
-                'Unable to restore the missing modpack files.';
+                `Unable to restore the missing ${contentNoun(
+                    record.content_kind,
+                )} files.`;
 
-            setInstalledStatus({
-                kind: 'error',
-                message:
-                    requestError.response?.data?.manual_download
-                        ? 'This modpack requires a manual download to restore.'
-                        : message,
-            });
+            pushToast(
+                'error',
+                requestError.response?.data?.manual_download
+                    ? `This ${contentNoun(
+                        record.content_kind,
+                    )} requires a manual download to restore.`
+                    : message,
+            );
         } finally {
             if (alive.current) {
                 setLifecycleRecordId(null);
@@ -1497,27 +1691,71 @@ export default () => {
         }
     };
 
-    const scheduleOutcomeClear = () => {
-        if (outcomeTimer.current !== null) {
-            window.clearTimeout(outcomeTimer.current);
-        }
+    // Notifications are page-level popups keyed by what they report: a repeat replaces its own popup instead of
+    // stacking, a successful retry clears it, and each closes itself after TOAST_TIMEOUT_MS unless dismissed first.
+    const dismissToast = (id: number) => {
+        toastRegistry.current.forEach((entry, key) => {
+            if (entry.id === id) {
+                window.clearTimeout(entry.timer);
+                toastRegistry.current.delete(key);
+            }
+        });
 
-        outcomeTimer.current = window.setTimeout(() => {
-            outcomeTimer.current = null;
-            setOutcomeBanner(null);
-            setActiveInstall(null);
-            setActiveProgress(null);
-        }, 15000);
+        setToasts((current) => current.filter((toast) => toast.id !== id));
     };
 
-    const dismissOutcome = () => {
-        if (outcomeTimer.current !== null) {
-            window.clearTimeout(outcomeTimer.current);
-            outcomeTimer.current = null;
+    const clearToast = (key: string) => {
+        const id = toastRegistry.current.get(key)?.id;
+
+        if (id !== undefined) {
+            dismissToast(id);
+        }
+    };
+
+    const pushToast = (
+        kind: StatusMessage['kind'],
+        message: string,
+        options: { key?: string; action?: ToastAction } = {},
+    ) => {
+        const key = options.key ?? `${kind}|${message}`;
+        const action = options.action;
+
+        const schedule = (id: number) => {
+            const timer = window.setTimeout(() => {
+                dismissToast(id);
+            }, TOAST_TIMEOUT_MS);
+
+            toastRegistry.current.set(key, { id, timer });
+        };
+
+        const existing = toastRegistry.current.get(key);
+
+        if (existing !== undefined) {
+            window.clearTimeout(existing.timer);
+            setToasts((current) =>
+                current.map((toast) =>
+                    toast.id === existing.id
+                        ? { ...toast, kind, message, action }
+                        : toast,
+                ),
+            );
+            schedule(existing.id);
+
+            return;
         }
 
+        const id = ++toastId.current;
+
+        setToasts((current) => [
+            ...current,
+            { id, key, kind, message, action },
+        ]);
+        schedule(id);
+    };
+
+    // Dismissing a finished run also stops its polling, so a failed card never keeps asking the backend for updates.
+    const dismissOutcome = () => {
         stopActivePolling();
-        setOutcomeBanner(null);
         setActiveInstall(null);
         setActiveProgress(null);
     };
@@ -1555,6 +1793,7 @@ export default () => {
         loader = null,
         kind = null,
         files = [],
+        mode = 'install',
     }: {
         source: string;
         provider: string;
@@ -1568,17 +1807,14 @@ export default () => {
         kind?: string | null;
         /** Every file this run installs (main content + dependencies). */
         files?: ActiveInstallFile[];
+        /** Whether this run installs new content or replaces an installed one. */
+        mode?: 'install' | 'update';
     }): string | null => {
         if (!server) {
             return null;
         }
 
         const token = newProgressToken();
-
-        if (outcomeTimer.current !== null) {
-            window.clearTimeout(outcomeTimer.current);
-            outcomeTimer.current = null;
-        }
 
         const record: ActiveInstallRecord = {
             server,
@@ -1593,6 +1829,7 @@ export default () => {
             loader,
             kind,
             files,
+            mode,
         };
 
         setActiveInstall(record);
@@ -1606,7 +1843,6 @@ export default () => {
             percent: 1,
             indeterminate: false,
         });
-        setOutcomeBanner(null);
 
         try {
             window.localStorage.setItem(
@@ -1628,6 +1864,10 @@ export default () => {
             ? `${record.name} + ${extra} more`
             : record.name;
     };
+
+    // An update replaces what is already installed, so its messages never claim a fresh install happened.
+    const runVerb = (record: ActiveInstallRecord): string =>
+        record.mode === 'update' ? 'update' : 'installation';
 
     const handleProgressState = (
         state: InstallProgressData,
@@ -1651,10 +1891,12 @@ export default () => {
             clearActiveInstallStorage();
             setActiveInstall(null);
             setActiveProgress(null);
-            setOutcomeBanner({
-                kind: 'success',
-                message: `${installLabel(record)} installed successfully.`,
-            });
+            pushToast(
+                'success',
+                record.mode === 'update'
+                    ? `${installLabel(record)} updated to ${record.version}.`
+                    : `${installLabel(record)} installed successfully.`,
+            );
             loadInstalled();
             return;
         }
@@ -1669,14 +1911,9 @@ export default () => {
                 state.message
                 || (state.phase === 'cancelled'
                     ? `${installLabel(record)} download was cancelled.`
-                    : `${installLabel(record)} installation failed.`);
+                    : `${installLabel(record)} ${runVerb(record)} failed.`);
 
-            setOutcomeBanner({
-                kind: state.phase === 'cancelled' ? 'info' : 'error',
-                message,
-            });
-
-            scheduleOutcomeClear();
+            pushToast(state.phase === 'cancelled' ? 'info' : 'error', message);
             return;
         }
 
@@ -1693,12 +1930,11 @@ export default () => {
                 cancellingSince.current = null;
                 setActiveProgress(state);
 
-                setOutcomeBanner({
-                    kind: 'info',
-                    message: `${installLabel(record)} download was cancelled.`,
-                });
+                pushToast(
+                    'info',
+                    `${installLabel(record)} download was cancelled.`,
+                );
 
-                scheduleOutcomeClear();
                 return;
             }
         } else {
@@ -1729,17 +1965,15 @@ export default () => {
                     phase: 'failed',
                     indeterminate: false,
                     message:
-                        `${installLabel(record)} installation stopped responding.`,
+                        `${installLabel(record)} ${runVerb(record)} stopped responding.`,
                 });
 
-                setOutcomeBanner({
-                    kind: 'error',
-                    message:
-                        `${installLabel(record)} installation stopped ` +
-                        'responding. Please try again.',
-                });
+                pushToast(
+                    'error',
+                    `${installLabel(record)} ${runVerb(record)} stopped ` +
+                    'responding. Please try again.',
+                );
 
-                scheduleOutcomeClear();
                 return;
             }
         } else {
@@ -1793,7 +2027,7 @@ export default () => {
     useEffect(() => {
         const record = activeInstall;
 
-        if (record === null) {
+        if (record === null || !server) {
             return;
         }
 
@@ -1807,7 +2041,7 @@ export default () => {
             try {
                 const response =
                     await axios.get<InstallProgressResponse>(
-                        `${API_BASE}/install/progress`,
+                        `${API_BASE}/servers/${server}/install/progress`,
                         {
                             params: {
                                 progress_token: record.token,
@@ -1838,7 +2072,7 @@ export default () => {
             }
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [activeInstall?.token]);
+    }, [activeInstall?.token, server]);
 
     useEffect(() => {
         if (!server) {
@@ -1964,10 +2198,11 @@ export default () => {
             return;
         }
 
+        // Single-file content installs through the content endpoint no matter which provider it came from: both
+        // Modrinth and CurseForge resolve to a version this window already pinned.
         const isContentInstall =
             detailsItem !== null &&
-            isSingleFileContentType(contentTypeRef.current) &&
-            detailsItem.provider === 'modrinth';
+            isSingleFileContentType(contentTypeRef.current);
 
         if (isContentInstall) {
             // Both dropdowns must be chosen; the resolved version follows from them.
@@ -2152,9 +2387,11 @@ export default () => {
             // Definitive pre-start rejection (4xx, e.g. 422 validation).
             const message =
                 requestError.response?.data?.error ||
-                (isContentInstall
-                    ? 'Unable to install the content.'
-                    : 'Unable to install the modpack.');
+                `Unable to install the ${contentNoun(
+                    isContentInstall
+                        ? tabKind
+                        : 'modpack',
+                )}.`;
 
             stopActivePolling();
             clearActiveInstallStorage();
@@ -2164,11 +2401,7 @@ export default () => {
                 indeterminate: false,
                 message,
             });
-            setOutcomeBanner({
-                kind: 'error',
-                message,
-            });
-            scheduleOutcomeClear();
+            pushToast('error', message);
         } finally {
             if (alive.current) {
                 setModalInstallLoading(false);
@@ -2441,11 +2674,7 @@ export default () => {
                 indeterminate: false,
                 message,
             });
-            setOutcomeBanner({
-                kind: 'error',
-                message,
-            });
-            scheduleOutcomeClear();
+            pushToast('error', message);
         } finally {
             if (alive.current) {
                 setInstallLoading(false);
@@ -2458,6 +2687,8 @@ export default () => {
             className="modpackinstaller-root"
             aria-busy={processing || searching}
         >
+            <ToastStack toasts={toasts} onDismiss={dismissToast} />
+
             <div className="modpackinstaller-card">
                 <CatalogToolbar
                     contentType={contentType}
@@ -2510,20 +2741,11 @@ export default () => {
                     />
                 )}
 
-                {providersError && (
-                    <div
-                        className="modpackinstaller-status modpackinstaller-status--error"
-                        role="alert"
-                    >
-                        {providersError}
-                    </div>
-                )}
-
                 <CatalogResults
                     items={items}
                     pagination={pagination}
                     searching={searching}
-                    catalogError={catalogError}
+                    catalogUnavailable={catalogUnavailable}
                     view={view}
                     processing={processing}
                     providerLabels={providerLabels}
@@ -2751,17 +2973,15 @@ export default () => {
                 <InstalledModpacksBody
                     installed={installed}
                     installedLoading={installedLoading}
-                    installedError={installedError}
-                    installedStatus={installedStatus}
+                    installedUnavailable={installedUnavailable}
                     lifecycleRecordId={lifecycleRecordId}
                     activeInstall={activeInstall}
                     activeProgress={activeProgress}
-                    outcomeBanner={outcomeBanner}
                     providerLabels={providerLabels}
                     onCancelActive={cancelActiveInstall}
                     onDismissOutcome={dismissOutcome}
                     onRefresh={refreshInstalled}
-                    onUpdate={updateInstalledModpack}
+                    onUpdate={openUpdatePicker}
                     onRestore={restoreInstalledModpack}
                     onUninstall={(record) =>
                         setPendingUninstall(record)
@@ -2773,7 +2993,7 @@ export default () => {
                 open={detailsItem !== null}
                 onClose={closeDetailsModal}
                 labelledBy="modpackinstaller-details-title"
-                title={detailsItem?.name ?? 'Modpack details'}
+                title={detailsItem?.name ?? 'Addon details'}
                 busy={modalBusy}
             >
                 {detailsItem && (
@@ -2849,8 +3069,12 @@ export default () => {
                 open={pendingUninstall !== null}
                 onClose={() => setPendingUninstall(null)}
                 labelledBy="modpackinstaller-uninstall-title"
-                title="Uninstall modpack"
+                title={contentActionLabel(
+                    'Uninstall',
+                    pendingUninstall?.content_kind,
+                )}
                 busy={lifecycleRecordId !== null}
+                variant="confirm"
             >
                 <UninstallConfirmBody
                     pendingUninstall={pendingUninstall}
@@ -2868,11 +3092,41 @@ export default () => {
                 onClose={cancelReplaceInstall}
                 labelledBy="modpackinstaller-replace-title"
                 title="Replace installed addon"
+                variant="confirm"
             >
                 <ReplaceConfirmBody
                     onCancel={cancelReplaceInstall}
                     onConfirm={confirmReplaceInstall}
                 />
+            </Modal>
+
+            <Modal
+                open={updateRecord !== null}
+                onClose={closeUpdatePicker}
+                labelledBy="modpackinstaller-update-title"
+                title={
+                    updateRecord === null
+                        ? 'Update addon'
+                        : `Update ${updateRecord.display_name}`
+                }
+                busy={updateLoading || updateInstallLoading}
+                variant="narrow"
+            >
+                {updateRecord !== null && (
+                    <UpdateVersionBody
+                        record={updateRecord}
+                        versions={updateVersions}
+                        loading={updateLoading}
+                        error={updateError}
+                        selection={updateSelection}
+                        installLoading={updateInstallLoading}
+                        installBlocked={activeRunning}
+                        onSelect={setUpdateSelection}
+                        onRetry={() => loadUpdateVersions(updateRecord)}
+                        onConfirm={confirmUpdate}
+                        onCancel={closeUpdatePicker}
+                    />
+                )}
             </Modal>
 
             <footer className="modpackinstaller-footer">

@@ -115,9 +115,13 @@ step_cmd() {
        LOCAL_ICON_URL="/assets/extensions/modpackinstaller/icon.$LOCAL_ICON_EXT"
        TMP_VIEW="$(mktemp)"
        {
+         # The header is re-read from the installed copy, which Blueprint closes with the body's own opening `<?php` glued onto the
+         # yield line. Trimming that line back to the yield keeps the rebuild idempotent — otherwise a second build opens PHP twice.
          sed -n '1,/extension\.description/p' "$INSTALLED_VIEW" \
-           | sed -E -e 's~\$EXTENSION_VERSION = ".*";~\$EXTENSION_VERSION = "'"${LOCAL_VERSION:-unknown}"'";~' \
+           | sed -E -e 's~^(.*@yield\(.extension\.description.\)).*$~\1~' \
+                    -e 's~\$EXTENSION_VERSION = ".*";~\$EXTENSION_VERSION = "'"${LOCAL_VERSION:-unknown}"'";~' \
                     -e 's~\$EXTENSION_ICON = ".*";~\$EXTENSION_ICON = "'"$LOCAL_ICON_URL"'";~'
+         printf '\n'
          cat "$SRC/view.blade.php"
          printf '\n@endsection\n'
        } > "$TMP_VIEW"

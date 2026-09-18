@@ -28,6 +28,8 @@ A powerful Pterodactyl Panel extension for browsing and installing Minecraft con
 - **Advanced Filtering** – Search by game version, loader, category and provider, in a grid or list view
 - **Live Downloads** – Per-file progress with stage reporting (download → unarchive → manifest → fetch → deploy) and a cancel button per install
 - **Server Management** – Installed tab with integrity checks, plus update, restore and uninstall
+- **Version-Picked Updates** – Updating opens the project's version list, so upgrading, downgrading or reinstalling a specific build runs through the same live progress and stage reporting an install does
+- **Clear Notifications** – Outcomes appear as dismissible popups at the top of the dashboard that close themselves after ten seconds, and they name the actual content type (`Unable to update the mod`, never "modpack")
 - **Secure** – API keys stored server-side, never exposed to the client
 
 ### Where each content type lands
@@ -76,6 +78,34 @@ sudo mi install
 - installs **Blueprint** if you don't have it yet,
 - installs this extension with `blueprint -install` and publishes the panel assets.
 
+### Uninstalling
+
+```bash
+sudo mi remove          # uninstalls the extension from the panel
+sudo mi remove --yes    # no confirmation prompt
+sudo mi remove -n       # print what would be removed, change nothing
+```
+
+`mi remove` deletes everything `mi install` / `mi build` published — the
+installed extension, its admin pages, routes, styles, published assets and the
+panel's rebuilt bundle — so a later install starts from a clean panel. It is
+**not** an uninstaller for your setup: system packages, PHP extensions,
+Blueprint, the checked-out repo and the global `mi` command all stay exactly
+where they are. Mods, plugins and packs already placed on a game server stay, and so does the
+extension's own bookkeeping (the install records in
+`/var/lib/pterodactyl/modpack-installer`, outside the panel) — rebuild and your
+Installed list is back.
+
+A developer's clone under `.blueprint/dev` is kept unless you ask for it, since
+deleting a working tree unasked would be destructive — `mi remove` tells you
+when one is still there, and `sudo mi remove --dev-tree` drops it:
+
+```bash
+sudo mi remove --dev-tree   # also drops .blueprint/dev
+```
+
+Rebuild any time with `sudo mi install` (or `mi build` from a checkout).
+
 ## Development
 
 The repo ships **`mi`**, a small developer CLI covering the whole workflow:
@@ -90,6 +120,7 @@ mi audit [path...]     # static check: catch clauses that can never match
 mi check               # lint + audit + test — run before pushing
 mi build               # deploy to the panel (auto-detects your setup)
 mi install             # full panel install (wraps tools/installer.sh)
+mi remove              # uninstall from the panel, dependencies untouched
 mi css                 # regenerate root.css from components/styles
 mi release [mmp]       # bump version from commits + write CHANGELOG.md
 mi coverage            # app classes with no test coverage
@@ -177,12 +208,15 @@ Security issues: **[SECURITY.md](SECURITY.md)** — please report privately.
 Mods and modpacks publish a loader, so their version window offers only the
 combinations that exist upstream: **Fabric, Forge, Quilt, NeoForge, LiteLoader,
 Cauldron, Rift** (CurseForge's set) plus whatever Modrinth lists for a project.
+Shaders publish a **shader loader** instead — **Iris, OptiFine** — which both
+providers record, so shader windows let you pick the loader the pack was built
+for and the installed file keeps it in its name.
 
-Plugins, data packs, resource packs and shaders on **CurseForge** are tagged with
-Minecraft versions only — CurseForge does not record which server software a
-plugin targets (Paper, Spigot, Purpur, Folia, Sponge, …), so those windows show
-the Minecraft version dropdown alone rather than a filter that would return
-nothing. On Modrinth the platform list comes from the project's own metadata.
+CurseForge does not record which server software a plugin targets (Paper,
+Spigot, Purpur, Folia, Sponge, …), and its resource packs and data packs carry
+Minecraft versions only, so those three windows show the Minecraft version
+dropdown alone rather than a filter that would return nothing. On Modrinth the
+platform list comes from the project's own metadata.
 
 ## API Providers
 
@@ -197,7 +231,7 @@ nothing. On Modrinth the platform list comes from the project's own metadata.
 - **Status**: Optional (requires API key)
 - **Content**: Modpacks, mods, plugins (Bukkit class), data packs, resource packs, shaders
 - **Rate Limit**: Depends on API tier
-- **Loaders**: recorded for mods and modpacks only, as above
+- **Loaders**: recorded for mods, modpacks and shaders (Iris/OptiFine), as above
 - **Manual installs**: a project whose author disabled third-party downloads can be
   browsed, but the window says so instead of offering a download that cannot resolve
 
@@ -215,6 +249,21 @@ nothing. On Modrinth the platform list comes from the project's own metadata.
 - Check server permissions: `ls -la /var/lib/pterodactyl/volumes/`
 - Verify file write permissions for the panel user
 
+### The panel shows a white / blank page
+
+The panel's frontend build deletes every JS bundle in `public/assets` before
+webpack compiles, so one compile error leaves the whole UI blank even though the
+page still returns `200`. Rebuild it:
+
+```bash
+cd /var/www/pterodactyl && yarn run build:production
+```
+
+`sudo mi build` does the same and re-syncs the extension sources first, and
+`sudo mi smoke` tells you whether a bundle is present. See
+[INSTALLATION.md](INSTALLATION.md#white--blank-panel-page) for the full
+diagnosis.
+
 ### The catalog is empty
 
 - Clear the filters (the provider's category list is per content type — picking a
@@ -225,8 +274,10 @@ nothing. On Modrinth the platform list comes from the project's own metadata.
 
 ### A version window shows a single dropdown
 
-That is correct for CurseForge plugins, data packs, resource packs and shaders:
-CurseForge does not record a loader for those classes, so there is nothing to pick.
+That is correct for CurseForge plugins, data packs and resource packs: CurseForge
+does not record a loader for those classes, so there is nothing to pick.
+CurseForge shaders do get a loader dropdown (Iris/OptiFine), because CurseForge
+records one for them.
 
 ## License
 

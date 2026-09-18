@@ -42,11 +42,7 @@ Route::get('/catalog/providers', [
     'catalogProviders',
 ]);
 
-Route::get('/install/progress', [
-    ModpackController::class,
-    'installProgress',
-]);
-
+// Every install route is scoped to a server the caller can reach, and each controller action enforces the matching panel file permission.
 Route::group([
     'prefix' => '/servers/{server}',
     'middleware' => [
@@ -69,6 +65,12 @@ Route::group([
     Route::post('/install/cancel', [
         ModpackController::class,
         'cancelInstall',
+    ]);
+
+    // Progress is read through the owning server so a token minted for one server is never resolvable through another.
+    Route::get('/install/progress', [
+        ModpackController::class,
+        'installProgress',
     ]);
 
     Route::get('/installed', [

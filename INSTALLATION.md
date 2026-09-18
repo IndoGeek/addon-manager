@@ -99,7 +99,22 @@ sudo mi install
 7. Installs this extension with `blueprint -install` (from the local checkout,
    falling back to the GitHub release URL) and runs:
    `php artisan blueprint:publish`, `view:clear` and `config:cache`.
-8. Fixes file ownership so the panel's detected web user can read the built assets.
+8. **Re-syncs your checkout over the installed copy and rebuilds the panel
+   frontend.** This matters because Blueprint rewrites placeholder tokens in
+   every file it packages and runs the panel's own build before the installer
+   can correct anything; the sync is what makes a first install end up
+   identical to a dev-tree build. It is the same pipeline `mi build` runs.
+9. **Verifies the panel still has a frontend bundle.** The panel's build
+   deletes every `public/assets/*.js` before it compiles, so a single compile
+   error would otherwise leave the whole UI blank. The installer keeps a copy
+   of the working assets before installing and puts them back if the rebuild
+   produces no bundle, instead of reporting success over a blank panel.
+   Skipped when the caller runs its own build (`mi build` installs first, then syncs).
+10. Fixes file ownership so the panel's detected web user can read the built assets.
+
+It draws the same live progress bar as `mi build` — one line per step while it
+runs, with warnings collected into a single block at the end instead of
+scrolling past. Press `w` during a run to expand the warnings so far.
 
 The script is **safe to re-run** — every step is idempotent. To force a
 reinstall of the extension use:
@@ -198,9 +213,34 @@ sudo chown -R www-data:www-data .blueprint public bootstrap/cache storage
 | `Class "ZipArchive" not found`                                  | PHP **zip** extension missing → `sudo apt install php<ver>-zip`.                                                                                                                                           |
 | `curl` errors while installing                                  | PHP **curl** extension missing → `sudo apt install php<ver>-curl`.                                                                                                                                         || `blueprint: command not found` | Blueprint isn't installed → run step 3 above or `sudo mi install`. |
 | `Server file target root does not exist or is not a directory.` | The panel web user can't reach the server data dirs. Run `sudo mi install` (it grants ACL access) or follow manual step 4. Verify with: `sudo -u "$(stat -c %U /var/www/pterodactyl/storage)" test -d /var/lib/pterodactyl && echo ok`. |
-| Panel shows a white screen after install                        | Frontend wasn't rebuilt/cleared → `blueprint -r` in the panel dir, then `php artisan blueprint:publish && php artisan view:clear`.                                                                         |
+| Panel shows a white screen after install                        | The panel's frontend build wiped `public/assets/*.js` and then failed to compile. Re-run `sudo mi build` from your checkout (or `cd /var/www/pterodactyl && yarn run build:production`) — see *White / blank panel page* below. `mi smoke` reports whether the bundle is present. |
 | Install succeeds but no mods on the server                      | You installed before this fix or the mrpack has no server files — re-run the installer after updating to the latest version.                                                                               |
 | Install reports success but server files are missing            | Make sure the extension code is up to date (this repo's `ModrinthProvider` resolves `modrinth.index.json` mod files).                                                                                      |
+
+### White / blank panel page
+
+The panel's frontend build deletes every JS asset in `public/assets` (`yarn run
+clean`) **before** webpack compiles. If compilation fails, there is no bundle
+left to serve, so the *entire* panel — not just this extension — renders blank.
+The HTML still answers `200`, which is why it can go unnoticed.
+
+```bash
+cd /var/www/pterodactyl
+ls public/assets/*.js        # no output = the bundle is gone
+yarn run build:production    # rebuilds it; read the error if it fails again
+```
+
+Running `sudo mi build` from your checkout does the same thing and additionally
+re-syncs the extension sources first, so prefer that when the failure came from
+an install. `sudo mi smoke` tells you whether a bundle is present, and
+`sudo mi remove` reports the same when uninstalling.
+
+A common cause on a fresh install is a **Blueprint placeholder collision**:
+Blueprint rewrites literal tokens such as `{version}`, `{name}`, `{target}` and
+`{root}` in every file it packages, so a variable named `version` used as JSX
+(`key={version}`) is replaced by the extension version and the file stops
+compiling. `mi check` scans the repository for those tokens, and the installer
+re-syncs the sources afterwards, so both the cause and the damage are covered.
 
 Find the panel's PHP-FPM service name with:
 
@@ -218,6 +258,53 @@ cd /var/www/pterodactyl/addon-manager
 sudo git pull
 sudo mi install               # reinstalls the updated extension
 ```
+
+---
+
+## Uninstalling
+
+Removes the extension from the panel so you can leave it out entirely or build
+it again from scratch:
+
+```bash
+cd /var/www/pterodactyl/addon-manager   # or .blueprint/dev for a dev tree
+sudo mi remove                          # asks for confirmation first
+sudo mi remove -n                       # dry run: show what would go
+sudo mi remove --yes                    # no prompt (scripts, CI)
+```
+
+What it removes:
+
+- the installed extension (via `blueprint -remove`) — its files, admin page,
+  controller, client routes, styles and published assets,
+- the leftover copies a build writes outside the extension folder
+  (`config/modpackinstaller.php`, `public/assets/extensions/modpackinstaller`, …),
+- the panel's frontend bundle is rebuilt without the extension, and the view,
+  config and cache stores are flushed as part of that.
+
+Afterwards `mi remove` checks the panel still has a frontend bundle and tells
+you how to rebuild it if not, so a break in that build can never leave you
+staring at a blank panel with no next step.
+
+A clone under `.blueprint/dev` is **kept** by default — a developer's working
+tree can live there and deleting one unasked would be destructive. `mi remove`
+warns when it is still present; pass `--dev-tree` to drop it when you want a
+completely clean panel before installing again:
+
+```bash
+sudo mi remove --dev-tree
+```
+
+What it deliberately **keeps**: system tools, PHP extensions (curl/zip), the
+PHP-FPM limits, **Blueprint** itself, this checkout, and the global `mi`
+command. Mods, plugins, worlds and packs already installed on a game server are never
+touched, and neither are the extension's install records — they live outside
+the panel in `/var/lib/pterodactyl/modpack-installer`, so a rebuild brings your
+Installed list straight back. Add `--dev-tree` to also drop
+`/var/www/pterodactyl/.blueprint/dev`, which is kept by default because a dev
+clone may live there.
+
+Afterwards, `sudo mi install` (or `mi build` in a dev tree) restores everything.
 
 ---
 

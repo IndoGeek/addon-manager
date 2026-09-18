@@ -163,7 +163,7 @@ export const DetailsModalBody = ({
             ),
         );
 
-    // CurseForge does not record a loader for every content type: plugins, resource packs, data packs and shaders...
+    // CurseForge records no loader for plugins, resource packs or data packs: those windows show Minecraft only.
     const modHasLoaders = modLoaders.length > 0;
 
     const modMcForLoader = modVersions === null
@@ -723,8 +723,8 @@ const ModVersionPickerBody = ({
     contentKind: string | null;
     /**
      * Whether this content type declares loaders at all. False for CurseForge
-     * plugins, resource packs, data packs and shaders, which are tagged with
-     * Minecraft versions only — those get a single dropdown.
+     * plugins, resource packs and data packs, which are tagged with Minecraft
+     * versions only — those get a single dropdown.
      */
     hasLoaders: boolean;
     loaders: string[];
@@ -1021,12 +1021,14 @@ const CompatibilitySection = ({
 
                 <div className="modpackinstaller-detail-compat-values">
                     {gameVersions.length > 0
-                        ? gameVersions.map((version) => (
+                        // Never name this binding "version": Blueprint's installer substitutes that placeholder token
+                        // in every packaged file, which would rewrite this JSX into invalid syntax.
+                        ? gameVersions.map((gameVersion) => (
                             <span
-                                key={version}
+                                key={gameVersion}
                                 className="modpackinstaller-pill"
                             >
-                                {version}
+                                {gameVersion}
                             </span>
                         ))
                         : (
@@ -1038,9 +1040,9 @@ const CompatibilitySection = ({
             </div>
 
             {/* Only shown when the project actually declares loaders: CurseForge
-                plugins, resource packs, data packs and shaders are tagged with
-                Minecraft versions only, so an empty "Loaders" row would imply
-                missing data that was never recorded upstream. */}
+                plugins, resource packs and data packs are tagged with Minecraft
+                versions only, so an empty "Loaders" row would imply missing
+                data that was never recorded upstream. */}
             {item.loaders.length > 0 && (
                 <div className="modpackinstaller-detail-compat-group">
                     <span className="modpackinstaller-detail-compat-label">

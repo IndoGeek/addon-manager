@@ -31,6 +31,22 @@ final class InstallHistoryStore
         });
     }
 
+    // Total number of recorded entries, used to size the settings page's paginator.
+    public function count(): int
+    {
+        return count($this->all(0));
+    }
+
+    // One page of entries, newest first.
+    // @return array<int, array<string, mixed>>
+    public function page(int $page, int $perPage = 10): array
+    {
+        $perPage = max(1, $perPage);
+        $offset = max(0, ($page - 1) * $perPage);
+
+        return array_slice($this->all(0), $offset, $perPage);
+    }
+
     // @return array<int, array<string, mixed>> newest first
     public function all(int $limit = 100): array
     {

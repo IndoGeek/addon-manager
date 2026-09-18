@@ -32,6 +32,12 @@ Two supported layouts:
 Either works; pick one. Only layout 1 requires Blueprint developer mode. See
 `INSTALLATION.md` for full panel setup.
 
+`sudo mi remove` uninstalls the extension from the panel and deletes everything
+`mi install` / `mi build` published, without touching system packages, PHP
+extensions, Blueprint or your checkout — handy for testing a first-time install
+(`mi remove --yes && mi build`) or leaving the panel clean. Use `mi remove -n`
+to preview it.
+
 ## The `mi` workflow
 
 | Command | What it does |
@@ -41,6 +47,7 @@ Either works; pick one. Only layout 1 requires Blueprint developer mode. See
 | `mi audit [path...]` | Static check for dead catches (unimported/unknown types) |
 | `mi check` | lint + audit + test — **must pass before every push** |
 | `mi build` | Deploy to your panel |
+| `mi remove` | Uninstall it again, leaving dependencies (and your clone) in place |
 | `mi smoke` | Post-deploy health check (page/API/CSS/data dir) |
 | `mi release` | Bump version from commits + write CHANGELOG.md |
 | `mi install-hooks` | Install the git pre-push gate (runs `mi check` before a push) |
@@ -61,6 +68,7 @@ Useful flags (run `mi <command> --help` for the rest):
 | `mi lint --only syntax` | Run one lint stage (`syntax`, `blade`, `style`, `ts`) |
 | `mi check --fast` | lint + audit without the suites |
 | `mi build -n` | Print the detected layout, source, panel and steps |
+| `mi remove -n` | Print what an uninstall would delete, change nothing |
 | `--no-color`, `NO_COLOR=1` | Plain output for logs and CI |
 
 ## Commit convention

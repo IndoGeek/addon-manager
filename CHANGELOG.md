@@ -2,6 +2,34 @@
 
 ![Addon Manager](assets/banner.webp)
 
+## 0.47.0 — 2026-09-19
+
+### Changed
+- version bumped 0.46.23 → 0.47.0
+
+## 0.46.23 — 2026-09-18
+
+### Features
+- installed addons update through a version picker with Upgrade, Downgrade and Reinstall actions instead of always grabbing the latest version
+- updates run as tracked installs with the same live per-stage progress card and cancel button as a fresh install
+- notifications are now top-of-panel popups that can be dismissed by hand and close themselves after 10 seconds
+- notifications can carry an action, so a failed catalog or installed-list load offers a Retry right in the popup
+- `mi remove` uninstalls the extension from the panel: it deletes only what an install or build published and leaves system packages, PHP extensions, Blueprint and your checkout in place, so `mi install` / `mi build` can rebuild from a clean panel
+
+### Changed
+- the update window is narrower, and confirmation windows now shrink to the question they ask instead of always opening at full width
+- every confirmation window centres its heading over the window instead of pinning it next to the close button
+- the chosen version in a version picker is highlighted green, matching the rest of the theme
+
+### Fixes
+- CurseForge mods, plugins, resource packs and shaders install as single-file content; they no longer fall into the modpack flow and ask for a modpack version
+- CurseForge shaders expose their Iris and OptiFine loader, so the version window offers a loader picker and the installed file records which loader it targets
+- upgrading a modpack or addon no longer reports a failure while the install keeps running in the background
+- notifications name the content type they are about (mod, plugin, resource pack, shader) instead of saying "modpack" for everything
+- catalog, provider and installed-list load failures are reported as dismissible popups rather than inline error blocks; a failed refresh keeps the installed list on screen
+- CurseForge content records show their real version number instead of a raw file id
+- updating a mod, plugin, resource pack or shader reports the file it replaced instead of "0 created, 0 overwritten"; only the single file the record owns is ever touched
+
 ## 0.46.22 — 2026-09-17
 
 ### Features
