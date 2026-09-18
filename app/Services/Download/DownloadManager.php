@@ -6,7 +6,7 @@ use InvalidArgumentException;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\InstallationCancelledException;
 use RuntimeException;
 
-final class DownloadManager implements ConcurrentDownloader
+final class DownloadManager implements ConcurrentDownloader, StageReporter
 {
     private const REDIRECT_CAP_BYTES = 1_048_576;
 
@@ -26,8 +26,28 @@ final class DownloadManager implements ConcurrentDownloader
     // @var null|callable(int|null $downloadedBytes, int|null $totalBytes): void
     private $progressCallback = null;
 
+    // Per-file progress of downloadBatch(), so concurrent runs can render
+    // one live row per file instead of only the aggregate bar.
+    // @var null|callable(array<int|string, array{downloaded_bytes: int, total_bytes: int, done: bool, failed: bool}>): void
+    private $batchProgressCallback = null;
+
     // @var null|callable(): bool
     private $cancelChecker = null;
+
+    // Consumer of stage announcements (see StageReporter).
+    // @var null|callable(string, int|null, int|null): void
+    private $stageCallback = null;
+
+    // The stage last announced, so a repeated announcement of the same stage
+    // is only forwarded when it carries fresh counts.
+    private ?string $announcedStage = null;
+
+    // Stages are throttled on their own clock. Sharing the byte-progress clock
+    // would starve every counted update: the batch engine writes byte progress
+    // immediately before it hands the per-file states to the provider, so a
+    // "12 / 300" update would always land inside the 0.4s byte window and be
+    // dropped, leaving the card stuck on "0 / 300" while the bar moved.
+    private float $lastStageReport = 0.0;
 
     // Bytes already accounted for by earlier downloads in the same logical operation, plus the operation-wide total when one...
     private int $progressOffsetBytes = 0;
@@ -65,10 +85,67 @@ final class DownloadManager implements ConcurrentDownloader
         $this->progressCallback = $callback;
     }
 
+    // Registers a callback that receives per-task progress during downloadBatch(), keyed by task id.
+    public function setBatchProgressCallback(?callable $callback): void
+    {
+        $this->batchProgressCallback = $callback;
+    }
+
     // Registers a predicate consulted mid-transfer.
     public function setCancelChecker(?callable $checker): void
     {
         $this->cancelChecker = $checker;
+    }
+
+    // Registers the consumer of stage announcements.
+    public function setStageCallback(?callable $callback): void
+    {
+        $this->stageCallback = $callback;
+
+        $this->announcedStage = null;
+        $this->lastStageReport = 0.0;
+    }
+
+    // Announces the step an operation is on. Throttled on its own clock, but
+    // never for the first announcement of a stage: the consumer needs the
+    // transition immediately to swap its label, and a counted update must never
+    // be swallowed by a byte-progress write.
+    public function stage(string $key, ?int $current = null, ?int $total = null): void
+    {
+        $callback = $this->stageCallback;
+
+        if ($callback === null) {
+            return;
+        }
+
+        $now = microtime(true);
+
+        $isTransition = $this->announcedStage !== $key;
+
+        // The closing update of a counted stage ("300 / 300") is never
+        // throttled: dropping it would leave the card reading "297 / 300" for
+        // the rest of the install even though every file arrived.
+        $isCompletion = $current !== null
+            && $total !== null
+            && $total > 0
+            && $current >= $total;
+
+        if (
+            !$isTransition
+            && !$isCompletion
+            && ($now - $this->lastStageReport) < 0.4
+        ) {
+            return;
+        }
+
+        $this->announcedStage = $key;
+        $this->lastStageReport = $now;
+
+        try {
+            $callback($key, $current, $total);
+        } catch (\Throwable) {
+            // Progress reporting must never abort an install.
+        }
     }
 
     // Anchors progress reporting to a running total shared across several downloads.
@@ -738,8 +815,9 @@ final class DownloadManager implements ConcurrentDownloader
         bool $force = false,
     ): int {
         $callback = $this->progressCallback;
+        $batchCallback = $this->batchProgressCallback;
 
-        if ($callback === null) {
+        if ($callback === null && $batchCallback === null) {
             return $peak;
         }
 
@@ -790,10 +868,36 @@ final class DownloadManager implements ConcurrentDownloader
 
         $safeTotal = max(1, $safeTotal - $declaredFailedBytes);
 
-        try {
-            $callback(min($done, $safeTotal), $safeTotal);
-        } catch (\Throwable) {
-            // Progress reporting must never abort a composition step.
+        // Per-file report first: the aggregate consumer reads the latest
+        // per-file snapshot when it writes its own state.
+        if ($batchCallback !== null) {
+            $files = [];
+
+            foreach ($pending as $id => $state) {
+                $files[$id] = [
+                    'downloaded_bytes' => $state['done']
+                        ? $state['size']
+                        : $state['transferred']
+                            + (int) floor($state['active']),
+                    'total_bytes' => (int) ($state['declaredSize'] ?? 0),
+                    'done' => (bool) $state['done'],
+                    'failed' => (bool) $state['failed'],
+                ];
+            }
+
+            try {
+                $batchCallback($files);
+            } catch (\Throwable) {
+                // Progress reporting must never abort a download.
+            }
+        }
+
+        if ($callback !== null) {
+            try {
+                $callback(min($done, $safeTotal), $safeTotal);
+            } catch (\Throwable) {
+                // Progress reporting must never abort a composition step.
+            }
         }
 
         return max($peak, $done);
@@ -1147,12 +1251,12 @@ final class DownloadManager implements ConcurrentDownloader
         ];
 
         @error_log(
-            'modpackinstaller download failure: '
+            'addonmanager download failure: '
             . (string) json_encode($details)
         );
 
         @error_log(
-            'modpackinstaller download failure (human readable): '
+            'addonmanager download failure (human readable): '
             . 'errno=' . (string) $details['errno']
             . ' host=' . $host
             . ' status=' . (string) $details['http_status']

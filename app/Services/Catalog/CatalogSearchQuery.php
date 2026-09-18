@@ -34,6 +34,19 @@ final readonly class CatalogSearchQuery
         'client-and-server',
     ];
 
+    // Content types a catalog search can target. The provider maps each to
+    // its upstream project-type facet ('modpack', 'mod', ...).
+    public const CONTENT_TYPE_VALUES = [
+        'modpack',
+        'mod',
+        'plugin',
+        'datapack',
+        'resourcepack',
+        'shader',
+    ];
+
+    public const DEFAULT_CONTENT_TYPE = 'modpack';
+
     public string $provider;
 
     public ?string $query;
@@ -50,6 +63,8 @@ final readonly class CatalogSearchQuery
     /** @var array<string> */
     public array $environments;
 
+    public string $contentType;
+
     public CatalogSort $sort;
 
     public int $page;
@@ -64,6 +79,7 @@ final readonly class CatalogSearchQuery
         array|string|null $loader = null,
         array|string|null $category = null,
         array|string|null $environments = null,
+        string $contentType = self::DEFAULT_CONTENT_TYPE,
         CatalogSort $sort = CatalogSort::RELEVANCE,
         int $page = self::DEFAULT_PAGE,
         int $limit = self::DEFAULT_LIMIT,
@@ -117,6 +133,14 @@ final readonly class CatalogSearchQuery
             }
         }
 
+        $this->contentType = trim($contentType);
+
+        if (!in_array($this->contentType, self::CONTENT_TYPE_VALUES, true)) {
+            throw new InvalidArgumentException(
+                'Invalid catalog content type.',
+            );
+        }
+
         $this->sort = $sort;
 
         if ($page < self::DEFAULT_PAGE || $page > self::MAX_PAGE) {
@@ -161,6 +185,7 @@ final readonly class CatalogSearchQuery
             'loaders' => $this->loaders,
             'categories' => $this->categories,
             'environments' => $this->environments,
+            'content_type' => $this->contentType,
         ];
     }
 

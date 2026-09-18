@@ -14,7 +14,7 @@ import {
     UploadIcon,
     WarningIcon,
 } from '../icons';
-import { formatDate } from '../utils/constants';
+import { contentKindLabel, formatDate } from '../utils/constants';
 
 interface InstalledModpacksBodyProps {
     installed: InstallRecordData[] | null;
@@ -103,7 +103,7 @@ export const InstalledModpacksBody = ({
                     className="modpackinstaller-catalog-state"
                     role="status"
                 >
-                    Loading installed modpacks ...
+                    Loading installed addons ...
                 </div>
             )}
 
@@ -176,6 +176,16 @@ export const InstalledModpacksBody = ({
                                             {record.loader && (
                                                 <span className="modpackinstaller-pill modpackinstaller-pill--loader">
                                                     {record.loader}
+                                                </span>
+                                            )}
+
+                                            {contentKindLabel(
+                                                record.content_kind,
+                                            ) !== null && (
+                                                <span className="modpackinstaller-pill modpackinstaller-pill--kind">
+                                                    {contentKindLabel(
+                                                        record.content_kind,
+                                                    )}
                                                 </span>
                                             )}
                                         </div>

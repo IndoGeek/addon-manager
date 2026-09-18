@@ -27,7 +27,8 @@ interface CatalogProvider
     public function capabilities(): array;
 
     // The option values the provider exposes for each filter group.
-    public function facets(): array;
+    // @param string $contentType the catalog content type ('modpack', 'mod', ...)
+    public function facets(string $contentType = 'modpack'): array;
 
     // timing out, rate limited, or disabled. payload this provider cannot validate.
     public function search(CatalogSearchQuery $query): CatalogResult;

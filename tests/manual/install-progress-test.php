@@ -3,6 +3,7 @@
 // Functional tests for installation progress reporting + raised caps: - InstallProgressStore round-trips state, expires...
 
 require __DIR__ . '/../../app/Services/Download/Downloader.php';
+require __DIR__ . '/../../app/Services/Download/StageReporter.php';
 require __DIR__ . '/../../app/Services/Download/ConcurrentDownloader.php';
 require __DIR__ . '/../../app/Services/Download/DownloadManager.php';
 require __DIR__ . '/../../app/Services/Deployment/DeploymentOperation.php';

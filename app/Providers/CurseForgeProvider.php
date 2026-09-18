@@ -6,6 +6,7 @@ use InvalidArgumentException;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Models\ModpackMetadata;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Download\ConcurrentDownloader;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Download\Downloader;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Download\StageReporter;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\InstallationCancelledException;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Provider\ProviderHttpClient;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Provider\ProviderHttpException;
@@ -27,9 +28,6 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
     private const MODPACK_CLASS_ID = 4471;
 
     private const MANIFEST_FILE = 'manifest.json';
-
-    // Share of the download progress band reserved for the modpack archive itself.
-    private const PROGRESS_ARCHIVE_SLICE = 0.12;
 
     // Winning source for a given relative server path: overrides win over manifest mod files.
     private const ENTRY_PRIORITIES = [
@@ -56,6 +54,21 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
     public function supports(string $source): bool
     {
         return $this->parseSource($source) !== null;
+    }
+
+    // Names the install step now in progress, when the downloader can report
+    // stages. A CurseForge install walks them in the order it really performs
+    // them: fetch the client pack, read its manifest, extract the pack's own
+    // files, then fetch every mod the manifest references. Any one of those can
+    // take minutes, so the card can say which one is running.
+    private function announceStage(
+        string $key,
+        ?int $current = null,
+        ?int $total = null,
+    ): void {
+        if ($this->downloader instanceof StageReporter) {
+            $this->downloader->stage($key, $current, $total);
+        }
     }
 
     public function getMetadata(string $source): ModpackMetadata
@@ -150,6 +163,8 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
         }
 
         $downloadUrl = (string) ($file['downloadUrl'] ?? '');
+
+        $this->announceStage('archive');
 
         $archivePath = $this->downloader->download($downloadUrl);
 
@@ -297,6 +312,8 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
         }
 
         $downloadUrl = (string) ($file['downloadUrl'] ?? '');
+
+        $this->announceStage('archive');
 
         $archivePath = $this->downloader->download($downloadUrl);
 
@@ -825,6 +842,8 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
                 }
             }
 
+            $this->announceStage('manifest');
+
             $rawManifest = $source->getFromName($prefix . self::MANIFEST_FILE);
 
             if ($rawManifest === false) {
@@ -967,6 +986,10 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
             );
         }
 
+        // Dedicated server pack: this archive IS the payload, so the extract
+        // step streams it straight out with no manifest or mods phase after.
+        $this->announceStage('extract');
+
         $this->downloader->setProgressOffset(0, max(1, $totalBytes));
 
         $outputPath = $this->createPackageDirectory();
@@ -1103,23 +1126,31 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
             );
         }
 
-        // Phase 2 of the download display: the client-pack zip already
-        // rendered 0..100% on its own, so the manifest phase re-anchors the
-        // progress window to the mods footprint only (overrides bytes streamed
-        // out of the archive plus every manifest mod still to fetch). The bar
-        // resets to 0 and fills again across this second, larger transfer.
-        $archiveBytes = 0;
+        // Every step of this install owns its own progress window. The bytes
+        // streamed out of the archive and the mods still to be fetched are
+        // unrelated footprints, and sharing one window was what made the bar
+        // freeze part-way and then jump back to zero between phases.
+        $overridesBytes = 0;
+        $modsBytes = 0;
 
         foreach ($content as $payload) {
-            $archiveBytes += max(0, (int) $payload['bytes']);
+            $bytes = max(0, (int) $payload['bytes']);
+
+            if ($payload['archiveEntry'] === null) {
+                $modsBytes += $bytes;
+
+                continue;
+            }
+
+            $overridesBytes += $bytes;
         }
 
-        $networkBytesDone = 0;
+        // Extract step: the overrides (and any mods shipped inside the pack)
+        // are streamed out of the archive onto disk. It owns the overrides'
+        // byte window, so its bar measures exactly this work.
+        $this->announceStage('extract');
 
-        $this->downloader->setProgressOffset(
-            0,
-            $archiveBytes,
-        );
+        $this->downloader->setProgressOffset(0, max(1, $overridesBytes));
 
         $outputPath = $this->createPackageDirectory();
 
@@ -1144,8 +1175,8 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
                     $payload['archiveEntry'],
                     $relative,
                     $outputPath,
-                    $networkBytesDone,
-                    $archiveBytes,
+                    0,
+                    max(1, $overridesBytes),
                     $overridesWritten,
                 );
             }
@@ -1156,9 +1187,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
             $downloadedMods = $this->fetchPackageMods(
                 $content,
                 $outputPath,
-                $networkBytesDone,
-                $overridesWritten,
-                $archiveBytes,
+                $modsBytes,
                 $failedMods,
                 $succeededMods,
             );
@@ -1194,7 +1223,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
                 }
 
                 @error_log(
-                    'modpackinstaller manifest download failed for '
+                    'addonmanager manifest download failed for '
                     . $failedCount
                     . ' of '
                     . $wantedMods
@@ -1249,9 +1278,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
     private function fetchPackageMods(
         array $content,
         string $outputPath,
-        int &$networkBytesDone,
-        int $overridesWritten,
-        int $archiveBytes,
+        int $modsBytes,
         array &$failedMods = [],
         array &$succeededMods = [],
     ): int {
@@ -1281,15 +1308,36 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
             $sha1ById[$task['id']] = $task['sha1'];
         }
 
-        if ($this->downloader instanceof ConcurrentDownloader) {
-            // Anchor the batch on the bytes already streamed (client pack plus
-            // its overrides) so the bar never steps backwards between phases.
-            $batchOffset = $networkBytesDone + $overridesWritten;
+        $totalMods = count($modTasks);
 
-            $this->downloader->setProgressOffset(
-                $batchOffset,
-                max($batchOffset, $archiveBytes),
-            );
+        // Mods step: the manifest's own count drives the label ("12 / 34"),
+        // and its own byte footprint drives the bar. The scratch counter below
+        // is stage-local for the same reason the window is.
+        $this->announceStage('mods', 0, $totalMods);
+
+        $bytesDone = 0;
+
+        if ($this->downloader instanceof ConcurrentDownloader) {
+            $this->downloader->setProgressOffset(0, max(1, $modsBytes));
+
+            if (method_exists($this->downloader, 'setBatchProgressCallback')) {
+                $this->downloader->setBatchProgressCallback(
+                    function (array $files) use ($totalMods): void {
+                        $resolved = 0;
+
+                        foreach ($files as $state) {
+                            if (
+                                ($state['done'] ?? false) === true
+                                || ($state['failed'] ?? false) === true
+                            ) {
+                                $resolved++;
+                            }
+                        }
+
+                        $this->announceStage('mods', $resolved, $totalMods);
+                    },
+                );
+            }
 
             $results = $this->downloader->downloadBatch($modTasks);
 
@@ -1318,6 +1366,12 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
                 $succeededMods[] = (string) $id;
             }
 
+            // Closing count for the step: the batch's last progress tick can
+            // land before the final transfers settle, so the resolved total is
+            // announced once more here (the downloader never throttles a
+            // completed count) instead of leaving the card a few short.
+            $this->announceStage('mods', $downloadedMods, $totalMods);
+
             return $downloadedMods;
         }
 
@@ -1333,8 +1387,8 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
             foreach ($modTasks as $task) {
                 $downloadPath = $this->downloadBestUrl(
                     $task['urls'],
-                    $networkBytesDone,
-                    $archiveBytes,
+                    $bytesDone,
+                    max(1, $modsBytes),
                     $task['sha1'],
                 );
 
@@ -1347,8 +1401,8 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
                     // failed downloads instead of the store expiring and the
                     // frontend dropping the install.
                     $this->downloader->reportProgress(
-                        $networkBytesDone,
-                        max(1, $archiveBytes - $failedBytes),
+                        $bytesDone,
+                        max(1, $modsBytes - $failedBytes),
                     );
 
                     continue;
@@ -1365,15 +1419,15 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
                 $downloadedMods++;
                 $succeededMods[] = $task['id'];
                 $downloadedTemps[] = $downloadPath;
-                $networkBytesDone += $task['bytes'];
+                $bytesDone += $task['bytes'];
             }
 
             // Closing report: land the window on exactly 100% (unthrottled)
             // so the frontend flips to the deploy phase instead of appearing
             // to stall a few percent short.
             $this->downloader->reportProgress(
-                max(1, $archiveBytes - $failedBytes),
-                max(1, $archiveBytes - $failedBytes),
+                max(1, $modsBytes - $failedBytes),
+                max(1, $modsBytes - $failedBytes),
             );
 
             return $downloadedMods;
@@ -1687,7 +1741,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
 
         if ($skipped > 0) {
             @error_log(
-                'modpackinstaller manifest resolution skipped '
+                'addonmanager manifest resolution skipped '
                 . $skipped
                 . ' of '
                 . count($wanted)
@@ -1722,7 +1776,7 @@ final class CurseForgeProvider implements ModpackProvider, ManualDownloadProvide
     private function recordManifestSkip(int $fileId): void
     {
         @error_log(
-            'modpackinstaller manifest resolution skipped mod file '
+            'addonmanager manifest resolution skipped mod file '
             . $fileId
             . ' (no usable download source on CurseForge).'
         );

@@ -14,16 +14,34 @@ export const UninstallConfirmBody = ({
     onCancel,
     onConfirm,
 }: UninstallConfirmBodyProps) => {
+    // Single-file content (mods, plugins, datapacks, resource packs,
+    // shaders): only the recorded file is removed — its directory and any
+    // other files in it are left untouched.
+    const isContent =
+        pendingUninstall?.content_type === 'content';
+
     return (
         <div className="modpackinstaller-confirm">
-            <p>
-                Uninstalling{' '}
-                <strong>
-                    {pendingUninstall?.display_name}
-                </strong>{' '}
-                will remove the modpack and all of its files from
-                this server. This cannot be undone.
-            </p>
+            {isContent ? (
+                <p>
+                    Uninstalling{' '}
+                    <strong>
+                        {pendingUninstall?.display_name}
+                    </strong>{' '}
+                    will remove only the file this extension installed. Your
+                    other mods, plugins, and data are not touched. This
+                    cannot be undone.
+                </p>
+            ) : (
+                <p>
+                    Uninstalling{' '}
+                    <strong>
+                        {pendingUninstall?.display_name}
+                    </strong>{' '}
+                    will remove the modpack and all of its files from
+                    this server. This cannot be undone.
+                </p>
+            )}
 
             <div className="modpackinstaller-confirm-actions">
                 <button

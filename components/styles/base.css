@@ -52,6 +52,11 @@
 }
 
 .modpackinstaller-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   margin-top: 20px;
   text-align: center;
   font-size: 0.8rem;
@@ -67,4 +72,9 @@
 .modpackinstaller-footer a:hover {
   text-decoration: underline;
   opacity: 1;
+}
+
+.modpackinstaller-footer svg {
+  display: inline-block;
+  vertical-align: -0.125em;
 }

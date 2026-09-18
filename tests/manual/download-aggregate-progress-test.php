@@ -307,18 +307,17 @@ $snapshots = $downloader->offsetSnapshots;
 if (($snapshots[0]['bytes'] ?? null) !== 0) {
     throw new RuntimeException('Download did not start at offset zero.');
 }
-// The mrpack phase is anchored to a virtual total (archive size over the
-// provider's progress slice) so the bar never spikes toward 85% before the
-// real index-file footprint is known in buildServerArchive.
-$expectedInitialTotal = max(1, (int) round(5000 / 0.12));
+// The archive phase owns its own window: the mrpack's real size, so its bar
+// fills across exactly the bytes that transfer before the pack is unpacked.
+$expectedInitialTotal = max(1, 5000);
 if (($snapshots[0]['total'] ?? null) !== $expectedInitialTotal) {
     throw new RuntimeException(
-        'Initial mrpack total did not use the virtual archive anchor.'
+        'Initial mrpack total did not use the archive footprint.'
     );
 }
 
-// Phase 2 re-anchor: the index phase restarts the window at zero with the
-// index-only footprint (embedded entries plus external index mods).
+// Next step's window: the files phase restarts at zero with the file
+// footprint (embedded entries plus external index mods).
 if (($snapshots[1]['bytes'] ?? null) !== 0
     || ($snapshots[1]['total'] ?? null) !== $indexTotal
 ) {

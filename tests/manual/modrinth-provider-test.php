@@ -356,10 +356,12 @@ if ($metadata->version !== '1.5.0') {
 
 pass('release version preferred deterministically');
 
+// Metadata resolution is display-only and accepts both modpacks and mods;
+// the modpack gate only guards the package pipeline (getPackage).
 $http = new FakeProviderHttpClient([
     new ProviderHttpResponse(200, array_merge(
         sampleResponses()['project'],
-        ['project_type' => 'mod'],
+        ['project_type' => 'shader'],
     )),
 ]);
 $provider = new ModrinthProvider(
@@ -370,15 +372,38 @@ $provider = new ModrinthProvider(
 
 try {
     $provider->getMetadata('modrinth://prominence-2-rpg');
-    throw new RuntimeException('Non-modpack project was accepted.');
+    throw new RuntimeException('Unsupported project type was accepted.');
 } catch (InvalidArgumentException $exception) {
-    if (!str_contains($exception->getMessage(), 'not a modpack')) {
-        throw new RuntimeException('Unexpected non-modpack error message.');
+    if (!str_contains($exception->getMessage(), 'not supported')) {
+        throw new RuntimeException('Unexpected unsupported-type error message.');
     }
 }
 
-pass('non-modpack project produces controlled error');
+pass('unsupported project type produces controlled error');
 
+$http = new FakeProviderHttpClient([
+    new ProviderHttpResponse(200, array_merge(
+        sampleResponses()['project'],
+        ['project_type' => 'mod'],
+    )),
+    new ProviderHttpResponse(200, sampleResponses()['versions']),
+]);
+$provider = new ModrinthProvider(
+    $http,
+    new FakeDownloader('/does/not/matter'),
+    $temporaryRoot,
+);
+
+$metadata = $provider->getMetadata('modrinth://prominence-2-rpg');
+
+if ($metadata->name !== 'Prominence 2 RPG') {
+    throw new RuntimeException('Unexpected mod metadata name.');
+}
+
+pass('mod project resolves metadata for version picking');
+
+// The missing-Minecraft-version rejection is gone: mods do not always
+// declare game versions, so an empty list now resolves with an empty label.
 $http = new FakeProviderHttpClient([
     new ProviderHttpResponse(200, [
         'id' => 'AANobbMI',
@@ -406,16 +431,13 @@ $provider = new ModrinthProvider(
     $temporaryRoot,
 );
 
-try {
-    $provider->getMetadata('modrinth://prominence-2-rpg');
-    throw new RuntimeException('Version without game versions was accepted.');
-} catch (InvalidArgumentException $exception) {
-    if (!str_contains($exception->getMessage(), 'Minecraft version')) {
-        throw new RuntimeException('Unexpected missing-version error message.');
-    }
+$metadata = $provider->getMetadata('modrinth://prominence-2-rpg');
+
+if ($metadata->minecraftVersion !== '') {
+    throw new RuntimeException('Expected empty Minecraft version label.');
 }
 
-pass('version without Minecraft version produces controlled error');
+pass('missing Minecraft version resolves with empty label');
 
 $http = new FakeProviderHttpClient([
     new ProviderHttpException('The provider returned an HTTP 404 response.', 404),

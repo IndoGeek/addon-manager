@@ -6,6 +6,7 @@ use InvalidArgumentException;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Models\ModpackMetadata;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Download\ConcurrentDownloader;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Download\Downloader;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Download\StageReporter;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\InstallationCancelledException;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Provider\ProviderHttpClient;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Provider\ProviderHttpException;
@@ -18,9 +19,6 @@ final class ModrinthProvider implements ModpackProvider, PartialPackageProvider
     private const API_BASE = 'https://api.modrinth.com/v2';
 
     private const INDEX_FILE = 'modrinth.index.json';
-
-    // Share of the download progress band reserved for the mrpack archive itself.
-    private const PROGRESS_ARCHIVE_SLICE = 0.12;
 
     // Winning source for a given relative server path: later entries override earlier ones (e.g.
     private const ENTRY_PRIORITIES = [
@@ -45,6 +43,18 @@ final class ModrinthProvider implements ModpackProvider, PartialPackageProvider
         return $this->parseSource($source) !== null;
     }
 
+    // Names the install step now in progress, when the downloader can report
+    // stages (see StageReporter).
+    private function announceStage(
+        string $key,
+        ?int $current = null,
+        ?int $total = null,
+    ): void {
+        if ($this->downloader instanceof StageReporter) {
+            $this->downloader->stage($key, $current, $total);
+        }
+    }
+
     public function getMetadata(string $source): ModpackMetadata
     {
         $parsed = $this->parseSource($source);
@@ -57,7 +67,10 @@ final class ModrinthProvider implements ModpackProvider, PartialPackageProvider
 
         $project = $this->fetchProject($parsed['project']);
 
-        $this->assertModpackProject($project);
+        // Metadata resolution is display-only (version picking, details),
+        // so mods are allowed through here; only the modpack package
+        // pipeline enforces the modpack project type.
+        $this->assertSupportedProject($project);
 
         $version = $this->selectedVersion(
             $parsed['versionId'],
@@ -69,17 +82,11 @@ final class ModrinthProvider implements ModpackProvider, PartialPackageProvider
             $this->firstNonEmpty($version['game_versions'] ?? [])
             ?? $this->firstNonEmpty($project['game_versions'] ?? []);
 
-        if ($minecraftVersion === null) {
-            throw new InvalidArgumentException(
-                'The Modrinth version does not declare a supported Minecraft version.',
-            );
-        }
-
         return new ModpackMetadata(
             id: (string) ($project['id'] ?? ''),
             name: (string) ($project['title'] ?? ''),
             version: (string) ($version['version_number'] ?? ''),
-            minecraftVersion: $minecraftVersion,
+            minecraftVersion: $minecraftVersion ?? '',
             loader: $this->firstNonEmpty($version['loaders'] ?? []),
             description: $this->nullableString($project['description'] ?? null),
             iconUrl: $this->validImageUrl(
@@ -136,27 +143,15 @@ final class ModrinthProvider implements ModpackProvider, PartialPackageProvider
             );
         }
 
-        // Anchor the whole acquisition (mrpack archive plus its index mod
-        // files) to a single running total so the progress bar never resets
-        // between parts. For an mrpack the primary file is only a fraction of
-        // what gets fetched: buildServerArchive re-anchors on the exact
-        // footprint once the index is parsed. Anchoring the raw archive size
-        // would make the bar spike toward 85% while only the archive is in
-        // flight and then drop on that re-anchor, so scale it to a virtual
-        // total that reserves the rest of the band for the index files.
+        // The archive owns its own progress window. Its index files are a
+        // separate step with a separate window once the pack is unpacked, so
+        // the bar fills across the archive's own bytes and then starts over on
+        // the files that step fetches.
         $archiveSize = max(0, (int) ($file['size'] ?? 0));
 
-        if ($extension === 'mrpack') {
-            $this->downloader->setProgressOffset(
-                0,
-                max(1, (int) round($archiveSize / self::PROGRESS_ARCHIVE_SLICE)),
-            );
-        } else {
-            $this->downloader->setProgressOffset(
-                0,
-                $archiveSize,
-            );
-        }
+        $this->announceStage('archive');
+
+        $this->downloader->setProgressOffset(0, max(1, $archiveSize));
 
         $archivePath = $this->downloader->download($url);
 
@@ -269,18 +264,13 @@ final class ModrinthProvider implements ModpackProvider, PartialPackageProvider
             );
         }
 
-        // Same progress anchoring as getPackage(): the archive phase is
-        // scaled so the later index-phase re-anchor does not jump backwards.
+        // Same staging as getPackage(): the archive gets its own window, and
+        // the unpacked file set gets the next one.
         $archiveSize = max(0, (int) ($file['size'] ?? 0));
 
-        if ($extension === 'mrpack') {
-            $this->downloader->setProgressOffset(
-                0,
-                max(1, (int) round($archiveSize / self::PROGRESS_ARCHIVE_SLICE)),
-            );
-        } else {
-            $this->downloader->setProgressOffset(0, $archiveSize);
-        }
+        $this->announceStage('archive');
+
+        $this->downloader->setProgressOffset(0, max(1, $archiveSize));
 
         $archivePath = $this->downloader->download($url);
 
@@ -501,6 +491,23 @@ final class ModrinthProvider implements ModpackProvider, PartialPackageProvider
         }
     }
 
+    // Metadata-level gate: anything the catalog can browse (modpacks, mods)
+    // may be resolved for display and version picking.
+    private function assertSupportedProject(array $project): void
+    {
+        if (
+            !in_array(
+                $project['project_type'] ?? '',
+                ['modpack', 'mod'],
+                true,
+            )
+        ) {
+            throw new InvalidArgumentException(
+                'The Modrinth project type is not supported.',
+            );
+        }
+    }
+
     // @param array<int, array<string, mixed>> $versions @return array<string, mixed>
     private function selectVersion(array $versions): array
     {
@@ -560,6 +567,8 @@ final class ModrinthProvider implements ModpackProvider, PartialPackageProvider
 
             $content = $this->collectArchiveContent($source, $wanted);
 
+            $this->announceStage('index');
+
             $this->mergeIndexFiles($source, $content, $wanted);
 
             if ($content === []) {
@@ -568,12 +577,11 @@ final class ModrinthProvider implements ModpackProvider, PartialPackageProvider
                 );
             }
 
-            // Phase 2 of the download display mirrors the CurseForge flow:
-            // the mrpack archive rendered its own 0..100% window, so the
-            // index phase re-anchors to the index-file footprint only
-            // (embedded entries streamed out of the archive plus every
-            // external mod still to fetch). The bar resets to 0 and fills
-            // again across this second, larger transfer.
+            // Mods step: embedded entries are streamed out of the archive and
+            // every external index file is fetched, both against this step's
+            // own byte footprint.
+            $this->announceStage('mods');
+
             $archiveBytes = 0;
 
             foreach ($content as $payload) {

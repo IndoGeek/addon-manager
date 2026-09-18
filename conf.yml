@@ -1,13 +1,13 @@
 info:
-  name: "Modpack Installer"
+  name: "Addon Manager"
   identifier: "modpackinstaller"
-  description: "A simple modpack installer extension for Pterodactyl."
+  description: "Browse and install modpacks, mods, plugins, datapacks, resource packs and shaders from Modrinth and CurseForge."
   flags: ""
-  version: "0.44.22"
+  version: "0.46.22"
   target: "beta-2026-08"
   author: "IndoGeek"
   icon: ""
-  website: "https://github.com/IndoGeek/modpack-installer"
+  website: "https://github.com/IndoGeek/addon-manager"
 
 admin:
   view: "view.blade.php"

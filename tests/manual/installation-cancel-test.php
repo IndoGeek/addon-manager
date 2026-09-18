@@ -12,6 +12,7 @@ require __DIR__ . '/../../app/Services/Deployment/DeploymentExecutor.php';
 require __DIR__ . '/../../app/Services/Archive/ArchiveValidator.php';
 require __DIR__ . '/../../app/Services/Archive/ArchiveExtractor.php';
 require __DIR__ . '/../../app/Services/Download/Downloader.php';
+require __DIR__ . '/../../app/Services/Download/StageReporter.php';
 require __DIR__ . '/../../app/Services/Download/ConcurrentDownloader.php';
 require __DIR__ . '/../../app/Services/Download/DownloadManager.php';
 

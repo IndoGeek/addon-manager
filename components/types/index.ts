@@ -34,7 +34,19 @@ export interface InstallationResult {
 }
 
 export interface InstallResponse {
-    data: InstallationResult;
+    data: InstallationResult & {
+        /** How many files the install run placed (main mod + dependencies). */
+        installed_count?: number;
+    };
+}
+
+/** Live state of one file inside a multi-file download run. */
+export interface InstallProgressFile {
+    /** Catalog kind of this file (mod, plugin, datapack, ...). */
+    kind?: string | null;
+    downloaded_bytes: number | null;
+    total_bytes: number | null;
+    state: 'downloading' | 'done' | 'failed';
 }
 
 export interface InstallProgressData {
@@ -45,6 +57,21 @@ export interface InstallProgressData {
     total_bytes?: number | null;
     deployed_files?: number | null;
     total_files?: number | null;
+    /** 1-based index of the file being downloaded in a multi-file run. */
+    file_index?: number | null;
+    /** How many files the current install run downloads in total. */
+    file_count?: number | null;
+    /**
+     * Per-file state of a multi-file run, in download order. Every file
+     * downloads at once, so each entry carries its own byte counters.
+     */
+    files?: InstallProgressFile[] | null;
+    /**
+     * Ordered steps of a multi-phase install, each with its own state and
+     * progress. Modpack runs walk several (fetch archive, extract it, read
+     * the manifest, fetch the mods it lists, deploy).
+     */
+    stages?: InstallProgressStage[] | null;
     message?: string | null;
     /** Server-side unix timestamp of the last progress write. */
     updated_at?: number | null;
@@ -52,6 +79,30 @@ export interface InstallProgressData {
 
 export interface InstallProgressResponse {
     data: InstallProgressData;
+}
+
+/** One labeled step of a multi-phase install. */
+export interface InstallProgressStage {
+    key: string;
+    label: string;
+    state: 'pending' | 'active' | 'done';
+    /** This step's own progress; null while it has not started measuring. */
+    percent: number | null;
+    downloaded_bytes?: number | null;
+    total_bytes?: number | null;
+    /** Item counts when the step walks a list (the mods a manifest lists). */
+    current?: number | null;
+    total?: number | null;
+}
+
+/** One file a single install run downloads (the main content + dependencies). */
+export interface ActiveInstallFile {
+    name: string;
+    icon_url: string | null;
+    /** True for a recommended dependency installed alongside the main file. */
+    dependency: boolean;
+    /** Catalog kind of this file (mod, plugin, datapack, ...). */
+    kind?: string | null;
 }
 
 export interface ActiveInstallRecord {
@@ -63,6 +114,16 @@ export interface ActiveInstallRecord {
     icon_url: string | null;
     source: string;
     started_at: string;
+    /** Optional selection pills for single-file installs (mods). */
+    mc_version?: string | null;
+    loader?: string | null;
+    /** Catalog kind of the entry: modpack, mod, plugin, datapack, ... */
+    kind?: string | null;
+    /**
+     * Every file this run installs, in download order. Single-file runs and
+     * modpack installs leave this empty and render one card.
+     */
+    files?: ActiveInstallFile[];
 }
 
 export interface RecordIntegrity {
@@ -86,6 +147,13 @@ export interface InstallRecordData {
     installed_at: string;
     updated_at: string;
     status: string;
+    /** 'content' = single-file install (mods); 'modpack' = full archive. */
+    content_type?: string;
+    /**
+     * Which catalog kind this record is: modpack, mod, plugin, datapack,
+     * resourcepack, or shader.
+     */
+    content_kind?: string;
     ownership: {
         created: string[];
         overwritten: string[];
@@ -203,6 +271,43 @@ export interface CatalogVersionsResponse {
     };
 }
 
+/** A mod version entry with loader/game-version options and dependencies. */
+export interface ModVersion {
+    version_id: string;
+    version_number: string;
+    loaders: string[];
+    game_versions: string[];
+    date_published: string | null;
+    downloads: number | null;
+    file_size: number | null;
+    source: string;
+    dependencies: ModDependency[];
+}
+
+/** A recommended dependency of a mod version. */
+export interface ModDependency {
+    project_id: string;
+    title: string;
+    /** Provider slug, used to fetch the dependency's own versions. */
+    slug: string | null;
+    icon_url: string | null;
+    type: string;
+}
+
+export interface ModVersionsResponse {
+    data: {
+        provider: string;
+        project: string;
+        versions: ModVersion[];
+        /**
+         * Why a project has no installable versions when it does have files:
+         * `distribution_disabled` means the author turned off automated
+         * downloads on CurseForge, so nothing can be fetched for them.
+         */
+        unavailable_reason?: 'distribution_disabled' | null;
+    };
+}
+
 export interface CatalogResponseData {
     items: CatalogItem[];
     pagination: CatalogPagination;
@@ -228,6 +333,8 @@ export interface ProviderCapabilities {
     categories: boolean;
     environment: boolean;
     sort: boolean;
+    /** Backend content types this provider can actually serve. */
+    content_types?: string[];
 }
 
 export interface ProviderFacets {
@@ -279,6 +386,15 @@ export interface CardTag {
     label: string;
     loader: boolean;
 }
+
+/** Catalog content types shown as the segment bar in the toolbar. */
+export type CatalogContentType =
+    | 'modpacks'
+    | 'mods'
+    | 'plugins'
+    | 'resourcepacks'
+    | 'datapacks'
+    | 'shaders';
 
 export interface DropdownOption {
     value: string;

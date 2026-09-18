@@ -11,6 +11,7 @@ interface CatalogResultsProps {
     view: 'grid' | 'list';
     processing: boolean;
     providerLabels: Record<string, string>;
+    contentType: string;
     onRetry: () => void;
     onOpenDetails: (item: CatalogItem) => void;
     onPage: (page: number) => void;
@@ -24,6 +25,7 @@ export const CatalogResults = ({
     view,
     processing,
     providerLabels,
+    contentType,
     onRetry,
     onOpenDetails,
     onPage,
@@ -48,7 +50,7 @@ export const CatalogResults = ({
                     className="modpackinstaller-catalog-state"
                     role="status"
                 >
-                    Searching for modpacks ...
+                    Searching ...
                 </div>
             )}
 
@@ -58,7 +60,7 @@ export const CatalogResults = ({
                 && !searching && (
                     <div className="modpackinstaller-catalog-state modpackinstaller-catalog-state--empty">
                         <p>
-                            No modpacks matched your search.
+                            Nothing matched your search.
                             Try broadening the filters.
                         </p>
                     </div>

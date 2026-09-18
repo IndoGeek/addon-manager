@@ -6,6 +6,7 @@ use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Manageme
 use RuntimeException;
 
 require_once __DIR__ . '/../../app/Services/Server/ServerRelativePath.php';
+require_once __DIR__ . '/../../app/Services/Installation/ContentInstallTarget.php';
 require_once __DIR__ . '/../../app/Services/Management/InstallRecord.php';
 
 $record = new InstallRecord(
@@ -153,3 +154,104 @@ try {
 }
 
 echo "PASS: empty record id is rejected.\n";
+
+// ── Content kind ──────────────────────────────────────────────────────
+
+// A record written with an explicit kind round trips it.
+$datapackRecord = new InstallRecord(
+    id: str_repeat('b', 32),
+    serverUuid: 'server-aaa',
+    provider: 'modrinth',
+    projectId: 'terralith',
+    versionId: 'v1',
+    source: 'modrinth://terralith@v1',
+    displayName: 'Terralith',
+    version: '2.5',
+    minecraftVersion: '1.21.1',
+    loader: 'datapack',
+    iconUrl: null,
+    installedAt: '2026-01-01T00:00:00+00:00',
+    updatedAt: '2026-01-01T00:00:00+00:00',
+    status: InstallRecord::STATUS_INSTALLED,
+    createdFiles: ['world/datapacks/terralith-datapack-1-21-1.zip'],
+    overwrittenFiles: [],
+    contentType: InstallRecord::TYPE_CONTENT,
+    contentKind: 'datapack',
+);
+
+if (
+    InstallRecord::fromArray($datapackRecord->toArray())->contentKind
+    !== 'datapack'
+) {
+    throw new RuntimeException('Content kind did not round trip.');
+}
+
+echo "PASS: content kind round trips.\n";
+
+// Records written before the kind existed infer it from where the files
+// were placed.
+$legacyKinds = [
+    'mods/a.jar' => 'mod',
+    'plugins/vault.jar' => 'plugin',
+    'world/datapacks/pack.zip' => 'datapack',
+    'resourcepacks/pack.zip' => 'resourcepack',
+    'shaderpacks/pack.zip' => 'shader',
+];
+
+foreach ($legacyKinds as $path => $expectedKind) {
+    $legacy = InstallRecord::fromArray([
+        'id' => str_repeat('c', 32),
+        'server_uuid' => 'server-aaa',
+        'provider' => 'modrinth',
+        'project_id' => 'legacy',
+        'source' => 'modrinth://legacy@v1',
+        'display_name' => 'Legacy',
+        'version' => '1.0.0',
+        'installed_at' => '2026-01-01T00:00:00+00:00',
+        'updated_at' => '2026-01-01T00:00:00+00:00',
+        'content_type' => 'content',
+        'ownership' => ['created' => [$path], 'overwritten' => []],
+    ]);
+
+    if ($legacy->contentKind !== $expectedKind) {
+        throw new RuntimeException(
+            "Legacy record at {$path} must report {$expectedKind}, got "
+                . $legacy->contentKind . '.',
+        );
+    }
+}
+
+echo "PASS: legacy records infer their kind from the installed path.\n";
+
+// A modpack record without a stored kind stays a modpack.
+if ($roundTripped->contentKind !== 'modpack') {
+    throw new RuntimeException('Modpack records must report the modpack kind.');
+}
+
+echo "PASS: modpack records report the modpack kind.\n";
+
+// An unrecognized stored kind falls back to inference instead of a label
+// nobody understands.
+$unknown = InstallRecord::fromArray([
+    'id' => str_repeat('d', 32),
+    'server_uuid' => 'server-aaa',
+    'provider' => 'modrinth',
+    'project_id' => 'weird',
+    'source' => 'modrinth://weird@v1',
+    'display_name' => 'Weird',
+    'version' => '1.0.0',
+    'installed_at' => '2026-01-01T00:00:00+00:00',
+    'updated_at' => '2026-01-01T00:00:00+00:00',
+    'content_type' => 'content',
+    'content_kind' => 'executable',
+    'ownership' => [
+        'created' => ['plugins/weird.jar'],
+        'overwritten' => [],
+    ],
+]);
+
+if ($unknown->contentKind !== 'plugin') {
+    throw new RuntimeException('An unknown stored kind must be inferred.');
+}
+
+echo "PASS: unrecognized content kinds fall back to inference.\n";

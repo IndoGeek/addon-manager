@@ -190,7 +190,7 @@ assertRejected('modrinth missing project_type is controlled', function () use (
     try {
         $provider->getMetadata('modrinth://prominence-2-rpg');
     } catch (InvalidArgumentException $exception) {
-        if (!str_contains($exception->getMessage(), 'not a modpack')) {
+        if (!str_contains($exception->getMessage(), 'not supported')) {
             throw new RuntimeException('Unexpected error message.');
         }
 

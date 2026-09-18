@@ -8,11 +8,15 @@ import {
     DownloadStatIcon,
     FollowsStatIcon,
     UpdatedStatIcon,
+    DownloadIcon,
     OpenIcon,
-    ViewIcon,
 } from '../icons';
 
-/** Icon-only Open/View pair used inside the list card's meta row. */
+/**
+ * Icon-only action pair used inside the list card's meta row. The icons mirror
+ * the ones the details window uses for the same two actions: download for
+ * "open the install window", open/external for "view on the provider page".
+ */
 const ListCardActions = ({
     item,
     onOpen,
@@ -28,10 +32,10 @@ const ListCardActions = ({
             className="modpackinstaller-card-action-open modpackinstaller-card-action-icon"
             onClick={() => onOpen(item)}
             disabled={disabled}
-            aria-label="Open modpack"
-            title="Open"
+            aria-label="Open install window"
+            title="Install"
         >
-            <OpenIcon />
+            <DownloadIcon />
         </button>
 
         {item.project_url && (
@@ -44,7 +48,7 @@ const ListCardActions = ({
                 aria-label="View on provider page"
                 title="View"
             >
-                <ViewIcon />
+                <OpenIcon />
             </a>
         )}
     </div>
@@ -159,10 +163,10 @@ export const CatalogCard = ({
                             className="modpackinstaller-card-action-open"
                             onClick={() => onOpen(item)}
                             disabled={disabled}
-                            aria-label="Open modpack"
-                            title="Open"
+                            aria-label="Open install window"
+                            title="Install"
                         >
-                            <OpenIcon />
+                            <DownloadIcon />
                             <span>Open</span>
                         </button>
 
@@ -174,10 +178,9 @@ export const CatalogCard = ({
                                 rel="noopener noreferrer"
                                 referrerPolicy="no-referrer"
                                 aria-label="View on provider page"
-                                title="View"
+                                title="View on provider page"
                             >
-                                <ViewIcon />
-                                <span>Details</span>
+                                <OpenIcon />
                             </a>
                         )}
                     </div>

@@ -177,11 +177,12 @@ final class MockCatalogProvider implements CatalogProvider
             'categories' => true,
             'environment' => true,
             'sort' => true,
+            'content_types' => ['modpack'],
         ];
     }
 
     // @return array{game_versions: array<int, string>, loaders: array<int, string>, categories: array<int, string>...
-    public function facets(): array
+    public function facets(string $contentType = 'modpack'): array
     {
         return [
             'game_versions' => self::collectValues(['game_versions']),

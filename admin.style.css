@@ -1,47 +1,293 @@
-/* Modpack Installer — admin panel styles.
+/* Addon Manager — admin panel styles.
    Loaded on every Blueprint admin page (Blueprint imports this file into
    admin.extensions.css), which lets us also restyle our extension card on
-   the main extensions list. */
+   the main extensions list.
+
+   Theme: matches Pterodactyl's dark admin palette (#1f2933 page background)
+   with panels one step darker so cards read as distinct surfaces. */
 
 /* ------------------------------------------------------------------ */
-/* Settings page                                                       */
+/* Settings page — dark theme                                          */
 /* ------------------------------------------------------------------ */
+
+.mi-settings {
+  color: #cad1d8;
+}
 
 .mi-settings .mi-panel {
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background-color: #1a222d;
+  border: 1px solid rgba(255, 255, 255, 0.05);
   border-radius: 8px;
   box-shadow: none;
+  color: #cad1d8;
+  margin-bottom: 20px;
 }
 
 .mi-settings .mi-panel > .panel-heading {
+  background-color: #171e27;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px 8px 0 0;
+  color: #e8ecef;
   padding: 12px 16px;
 }
 
-.mi-settings .form-control {
-  border-radius: 6px;
+.mi-settings .mi-panel > .panel-heading .panel-title {
+  align-items: center;
+  display: flex;
+  font-size: 15px;
+  line-height: 1.4;
 }
 
-.mi-settings .input-group-addon {
-  border-radius: 6px 0 0 6px;
+.mi-settings .mi-panel > .panel-heading .panel-title > i {
+  color: #7d8b99;
+  font-size: 14px;
+}
+
+.mi-settings .mi-panel > .panel-body {
+  padding: 16px;
+}
+
+/* Body text */
+.mi-settings p {
+  color: #aebac5;
+  line-height: 1.55;
+}
+
+.mi-settings .text-muted {
+  color: #7d8b99 !important;
+}
+
+.mi-settings a {
+  color: #3c8dbc;
+}
+
+.mi-settings a:hover {
+  color: #5fa2cc;
 }
 
 .mi-settings code {
+  background-color: #0e141b;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 4px;
+  color: #9fb2c4;
+  padding: 2px 6px;
   word-break: break-all;
 }
 
 /* ------------------------------------------------------------------ */
-/* Extensions list card                                                */
+/* Forms                                                               */
 /* ------------------------------------------------------------------ */
 
-/* Softer update badge on our card (Blueprint renders the green pill). */
+.mi-settings .form-group {
+  margin-bottom: 16px;
+}
+
+.mi-settings label.control-label {
+  color: #d5dce2;
+  font-size: 13px;
+  letter-spacing: 0.01em;
+  margin-bottom: 6px;
+}
+
+.mi-settings .form-control {
+  background-color: #131a22;
+  border: 1px solid #2c3742;
+  border-radius: 6px;
+  box-shadow: none;
+  color: #e8ecef;
+  height: auto;
+  padding: 8px 12px;
+  transition: border-color 0.15s ease;
+}
+
+.mi-settings .form-control:focus {
+  border-color: #3c8dbc;
+  box-shadow: none;
+  outline: none;
+}
+
+.mi-settings .form-control::placeholder {
+  color: #5d6b78;
+  opacity: 1;
+}
+
+.mi-settings select.form-control {
+  appearance: auto;
+}
+
+.mi-settings .input-group-addon {
+  background-color: #171e27;
+  border: 1px solid #2c3742;
+  border-radius: 6px 0 0 6px;
+  color: #7d8b99;
+}
+
+/* Custom checkbox: native inputs are unreliable inside the panel layout
+   (AdminLTE positions them absolutely, which makes them untappable), so the
+   input is visually hidden and the box is drawn by the label. Gray box with
+   border when unchecked; blue with a white tick when checked. */
+.mi-settings .checkbox {
+  margin: 0 0 4px;
+}
+
+.mi-settings .checkbox label {
+  color: #d5dce2;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  font-size: 13.5px;
+  gap: 8px;
+  line-height: 18px;
+  margin: 0;
+  padding-left: 0;
+  position: relative;
+  user-select: none;
+}
+
+.mi-settings .checkbox input[type='checkbox'] {
+  height: 16px;
+  left: 0;
+  margin: 0;
+  opacity: 0;
+  position: absolute;
+  top: 1px;
+  width: 16px;
+}
+
+/* The drawn box */
+.mi-settings .checkbox label::before {
+  background-color: #131a22;
+  border: 1px solid #3a4652;
+  border-radius: 4px;
+  content: '';
+  display: inline-block;
+  flex-shrink: 0;
+  height: 16px;
+  transition: background-color 0.12s ease, border-color 0.12s ease;
+  width: 16px;
+}
+
+/* The tick */
+.mi-settings .checkbox label::after {
+  color: #fff;
+  content: '✔';
+  display: none;
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 700;
+  height: 16px;
+  left: 0;
+  line-height: 16px;
+  position: absolute;
+  text-align: center;
+  top: 1px;
+  width: 16px;
+}
+
+/* Checked: blue box + visible tick */
+.mi-settings .checkbox input[type='checkbox']:checked + label::before {
+  background-color: #3c8dbc;
+  border-color: #3c8dbc;
+}
+
+.mi-settings .checkbox input[type='checkbox']:checked + label::after {
+  display: block;
+}
+
+/* Focus ring for keyboard users */
+.mi-settings .checkbox input[type='checkbox']:focus + label::before {
+  border-color: #5fa2cc;
+  box-shadow: 0 0 0 2px rgba(60, 141, 188, 0.3);
+}
+
+/* Label text must sit right of the drawn box */
+.mi-settings .checkbox label span {
+  pointer-events: none;
+}
+
+.mi-settings .btn-primary {
+  background-color: #3c8dbc;
+  border-color: #3c8dbc;
+  border-radius: 6px;
+  color: #fff;
+  margin-top: 4px;
+  padding: 8px 20px;
+}
+
+.mi-settings .btn-primary:hover,
+.mi-settings .btn-primary:focus {
+  background-color: #367fa9;
+  border-color: #367fa9;
+  color: #fff;
+}
+
+/* Help text under fields */
+.mi-settings .form-group > p.text-muted,
+.mi-settings .form-group .help-block {
+  line-height: 1.5;
+  margin-bottom: 0;
+  margin-top: 6px;
+}
+
+/* ------------------------------------------------------------------ */
+/* Install history table                                               */
+/* ------------------------------------------------------------------ */
+
+.mi-settings .table {
+  color: #aebac5;
+}
+
+.mi-settings .table > thead > tr > th {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  color: #7d8b99;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+.mi-settings .table > tbody > tr > td {
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  vertical-align: middle;
+}
+
+.mi-settings .table > tbody > tr:hover > td {
+  background-color: rgba(255, 255, 255, 0.02);
+}
+
+.mi-settings .label {
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  text-transform: lowercase;
+}
+
+.mi-settings .table-responsive {
+  overflow-x: auto;
+}
+
+/* ------------------------------------------------------------------ */
+/* Environment variables reference table                               */
+/* ------------------------------------------------------------------ */
+
+.mi-settings .table-condensed > tbody > tr > td {
+  padding: 8px 8px 8px 0;
+  word-break: break-word;
+}
+
+/* ------------------------------------------------------------------ */
+/* Extensions list card (shared Blueprint markup)                      */
+/* ------------------------------------------------------------------ */
+
 .extension-btn .extension-btn-update {
   border-radius: 999px;
 }
 
-/* Keep the version row compact so long versions don't wrap the card. */
 .extension-btn .extension-btn-version {
-  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }

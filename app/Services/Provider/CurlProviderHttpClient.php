@@ -55,6 +55,8 @@ final class CurlProviderHttpClient implements ProviderHttpClient
             );
         }
 
+        $headers = $this->normalizeHeaders($headers);
+
         $options = [
             CURLOPT_URL => $target,
             CURLOPT_RETURNTRANSFER => true,
@@ -130,6 +132,33 @@ final class CurlProviderHttpClient implements ProviderHttpClient
 
         return new ProviderHttpResponse($status, $payload);
 }
+
+    // CURLOPT_HTTPHEADER takes raw header LINES, and curl uses the array's
+    // VALUES: a "Name => value" map is therefore sent as a bare value with no
+    // header name, which silently drops the header entirely (an API key that
+    // never leaves the panel, answered with a 403). Both shapes are accepted
+    // here so that mistake can never produce an unauthenticated request.
+    // @param array<mixed> $headers @return array<int, string>
+    private function normalizeHeaders(array $headers): array
+    {
+        $normalized = [];
+
+        foreach ($headers as $name => $value) {
+            if (is_string($name)) {
+                $normalized[] = $name
+                    . ': '
+                    . (is_scalar($value) ? (string) $value : '');
+
+                continue;
+            }
+
+            if (is_string($value) && trim($value) !== '') {
+                $normalized[] = $value;
+            }
+        }
+
+        return $normalized;
+    }
 
     private function assertHttpUrl(string $url): void
     {

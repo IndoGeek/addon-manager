@@ -69,6 +69,156 @@ final class ModrinthCatalogProvider implements CatalogProvider
         'misc',
     ];
 
+    // Modrinth categories for mods — the exact slugs Modrinth's API uses for
+    // project_type "mod" (GET /v2/tag/category). Plugins and datapacks reuse
+    // this set upstream. Do not hand-edit without re-checking the live list.
+    private const MOD_CATEGORIES = [
+        'adventure',
+        'cursed',
+        'decoration',
+        'economy',
+        'equipment',
+        'food',
+        'game-mechanics',
+        'library',
+        'magic',
+        'management',
+        'minigame',
+        'mobs',
+        'optimization',
+        'social',
+        'storage',
+        'technology',
+        'transportation',
+        'utility',
+        'worldgen',
+    ];
+
+    // Resource pack categories (GET /v2/tag/category, project_type
+    // "resourcepack").
+    private const RESOURCEPACK_CATEGORIES = [
+        '8x-',
+        '16x',
+        '32x',
+        '48x',
+        '64x',
+        '128x',
+        '256x',
+        '512x+',
+        'audio',
+        'blocks',
+        'combat',
+        'core-shaders',
+        'cursed',
+        'decoration',
+        'entities',
+        'environment',
+        'equipment',
+        'fonts',
+        'gui',
+        'items',
+        'locale',
+        'modded',
+        'models',
+        'realistic',
+        'simplistic',
+        'themed',
+        'tweaks',
+        'utility',
+        'vanilla-like',
+    ];
+
+    // Shader categories (GET /v2/tag/category, project_type "shader").
+    private const SHADER_CATEGORIES = [
+        'atmosphere',
+        'bloom',
+        'cartoon',
+        'colored-lighting',
+        'cursed',
+        'fantasy',
+        'foliage',
+        'high',
+        'low',
+        'medium',
+        'path-tracing',
+        'pbr',
+        'potato',
+        'realistic',
+        'reflections',
+        'screenshot',
+        'semi-realistic',
+        'shadows',
+        'vanilla-like',
+    ];
+
+    // The upstream project_type value each catalog content type maps to.
+    private const CONTENT_TYPE_FACETS = [
+        'modpack' => 'modpack',
+        'mod' => 'mod',
+        'plugin' => 'plugin',
+        'datapack' => 'datapack',
+        'resourcepack' => 'resourcepack',
+        'shader' => 'shader',
+    ];
+
+    // Category slugs offered in the filter panel, per content type.
+    private const CATEGORIES_BY_CONTENT_TYPE = [
+        'modpack' => self::MODPACK_CATEGORIES,
+        'mod' => self::MOD_CATEGORIES,
+        'plugin' => self::MOD_CATEGORIES,
+        'datapack' => self::MOD_CATEGORIES,
+        'resourcepack' => self::RESOURCEPACK_CATEGORIES,
+        'shader' => self::SHADER_CATEGORIES,
+    ];
+
+    // Loader slugs offered per content type. Modrinth does not return a
+    // `loaders` array for plugin/datapack/resourcepack/shader search hits —
+    // the loader is a category there — so this list and KNOWN_LOADERS below
+    // must stay in sync.
+    private const LOADERS_BY_CONTENT_TYPE = [
+        'modpack' => ['fabric', 'forge', 'quilt', 'neoforge', 'liteloader', 'rift'],
+        'mod' => ['fabric', 'forge', 'quilt', 'neoforge', 'liteloader', 'rift'],
+        'plugin' => [
+            'paper',
+            'spigot',
+            'bukkit',
+            'purpur',
+            'folia',
+            'sponge',
+            'bungeecord',
+            'velocity',
+            'waterfall',
+            'geyser',
+            'fabric',
+            'forge',
+            'quilt',
+            'neoforge',
+        ],
+        'datapack' => ['datapack', 'fabric', 'forge', 'quilt', 'neoforge'],
+        'resourcepack' => ['minecraft'],
+        'shader' => ['iris', 'optifine'],
+    ];
+
+    // The Modrinth URL path segment used to link a project.
+    private const PROJECT_URL_SEGMENTS = [
+        'modpack' => 'modpack',
+        'mod' => 'mod',
+        'plugin' => 'plugin',
+        'datapack' => 'datapack',
+        'resourcepack' => 'resourcepack',
+        'shader' => 'shader',
+    ];
+
+    // Content types that only exist on the client. Their search must not
+    // restrict to server-side projects, and client-only hits must not be
+    // dropped, or the catalog would come back nearly empty.
+    private const CLIENT_ONLY_CONTENT_TYPES = [
+        'resourcepack' => true,
+        'shader' => true,
+    ];
+
+    // Every loader slug this provider understands, used to split loader tags
+    // out of a project's category list.
     // @var array<string, true>
     private const KNOWN_LOADERS = [
         'fabric' => true,
@@ -78,6 +228,19 @@ final class ModrinthCatalogProvider implements CatalogProvider
         'liteloader' => true,
         'rift' => true,
         'datapack' => true,
+        'paper' => true,
+        'spigot' => true,
+        'bukkit' => true,
+        'purpur' => true,
+        'folia' => true,
+        'sponge' => true,
+        'bungeecord' => true,
+        'velocity' => true,
+        'waterfall' => true,
+        'geyser' => true,
+        'minecraft' => true,
+        'iris' => true,
+        'optifine' => true,
     ];
 
     public function __construct(
@@ -125,16 +288,19 @@ final class ModrinthCatalogProvider implements CatalogProvider
             'categories' => true,
             'environment' => true,
             'sort' => true,
+            'content_types' => array_keys(self::CONTENT_TYPE_FACETS),
         ];
     }
 
     // @return array{game_versions: array<int, string>, loaders: array<int, string>, categories: array<int, string>...
-    public function facets(): array
+    public function facets(string $contentType = 'modpack'): array
     {
         return [
             'game_versions' => self::COMMON_GAME_VERSIONS,
-            'loaders' => array_keys(self::KNOWN_LOADERS),
-            'categories' => self::MODPACK_CATEGORIES,
+            'loaders' => self::LOADERS_BY_CONTENT_TYPE[$contentType]
+                ?? array_keys(self::KNOWN_LOADERS),
+            'categories' => self::CATEGORIES_BY_CONTENT_TYPE[$contentType]
+                ?? self::MODPACK_CATEGORIES,
             'environments' => CatalogSearchQuery::ENVIRONMENT_VALUES,
         ];
     }
@@ -189,7 +355,7 @@ final class ModrinthCatalogProvider implements CatalogProvider
                 );
             }
 
-            return $this->mapProject($response->body);
+            return $this->mapProject($response->body, $query);
         } catch (InvalidArgumentException $exception) {
             throw $exception;
         } catch (CatalogProviderException $exception) {
@@ -574,13 +740,36 @@ final class ModrinthCatalogProvider implements CatalogProvider
     // Serializes the validated filters into Modrinth facet groups.
     private function buildFacets(CatalogSearchQuery $query): string
     {
+        $clientOnly = isset(
+            self::CLIENT_ONLY_CONTENT_TYPES[$query->contentType],
+        );
+
         $facets = [
-            ['project_type:modpack'],
             [
-                'server_side:required',
-                'server_side:optional',
+                'project_type:'
+                    . (self::CONTENT_TYPE_FACETS[$query->contentType]
+                        ?? 'modpack'),
             ],
         ];
+
+        // Server-installable content defaults to server-side projects.
+        // Client-only content types have no server-side representation, so
+        // the group is skipped there (and replaced by the user's own
+        // environment selection below).
+        if (!$clientOnly && $query->environments === []) {
+            $facets[] = [
+                'server_side:required',
+                'server_side:optional',
+            ];
+        }
+
+        // "Client"/"Server" are Modrinth side facets, not categories; each
+        // selection expands to the side groups it means.
+        foreach ($query->environments as $environment) {
+            foreach (self::environmentFacets($environment) as $group) {
+                $facets[] = $group;
+            }
+        }
 
         if ($query->gameVersions !== []) {
             $facets[] = array_map(
@@ -606,15 +795,22 @@ final class ModrinthCatalogProvider implements CatalogProvider
             );
         }
 
-        if ($query->environments !== []) {
-            $facets[] = array_map(
-                static fn (string $environment): string =>
-                    'categories:' . $environment,
-                $query->environments,
-            );
-        }
-
         return json_encode($facets);
+    }
+
+    // Modrinth facet groups for one environment selection.
+    // @return array<int, array<int, string>>
+    private static function environmentFacets(string $environment): array
+    {
+        $client = ['client_side:required', 'client_side:optional'];
+        $server = ['server_side:required', 'server_side:optional'];
+
+        return match ($environment) {
+            'client' => [$client],
+            'server' => [$server],
+            'client-and-server' => [$client, $server],
+            default => [],
+        };
     }
 
     // @param array<string, mixed> $payload
@@ -632,6 +828,13 @@ final class ModrinthCatalogProvider implements CatalogProvider
 
         $total = $this->totalHits($payload['total_hits'] ?? null);
 
+        // Client-only content types legitimately return client-only hits;
+        // for everything else they are filtered out (and the upstream total
+        // stays authoritative, so pagination is unaffected).
+        $skipClientOnly = !isset(
+            self::CLIENT_ONLY_CONTENT_TYPES[$query->contentType],
+        );
+
         $items = [];
 
         foreach ($hits as $hit) {
@@ -641,16 +844,18 @@ final class ModrinthCatalogProvider implements CatalogProvider
                 );
             }
 
-            if ($this->hitIsClientOnly($hit)) {
+            if ($skipClientOnly && $this->hitIsClientOnly($hit)) {
                 continue;
             }
 
-            $items[] = $this->mapHit($hit);
+            $items[] = $this->mapHit($hit, $query->contentType);
         }
 
-        if (count($items) < count($hits)) {
-            $total = $query->offset() + count($items);
-        }
+        // The upstream total_hits stays authoritative even when this page
+        // contains fewer mapped items than raw hits (client-only entries are
+        // filtered above). Collapsing the total to offset+count here used to
+        // shrink the whole catalog to a single page whenever one hit was
+        // filtered out.
 
         return new CatalogResult(
             items: $items,
@@ -670,7 +875,7 @@ final class ModrinthCatalogProvider implements CatalogProvider
     }
 
     // @param array<string, mixed> $hit
-    private function mapHit(array $hit): CatalogItem
+    private function mapHit(array $hit, string $contentType): CatalogItem
     {
         $projectId = $this->stringOrNull($hit['project_id'] ?? null)
             ?? $this->stringOrNull($hit['id'] ?? null)
@@ -680,15 +885,16 @@ final class ModrinthCatalogProvider implements CatalogProvider
 
         $categories = $this->stringList($hit['categories'] ?? []);
 
-        $loaders = $this->stringList($hit['display_categories'] ?? []);
-
-        if ($loaders === []) {
-            $loaders = array_values(array_filter(
-                $categories,
-                static fn (string $category): bool =>
-                    isset(self::KNOWN_LOADERS[$category]),
-            ));
-        }
+        // Search hits carry no `loaders` array for any project type:
+        // Modrinth mixes the loader slugs into `categories`, and
+        // `display_categories` is a curated subset of those (it holds plain
+        // tags too, e.g. "library", which must not become a loader). Split
+        // the real loader slugs out of the category list instead.
+        $loaders = array_values(array_filter(
+            $categories,
+            static fn (string $category): bool =>
+                isset(self::KNOWN_LOADERS[$category]),
+        ));
 
         $tags = array_values(array_diff($categories, $loaders));
 
@@ -705,7 +911,11 @@ final class ModrinthCatalogProvider implements CatalogProvider
             ),
             projectUrl: $sourceId === ''
                 ? null
-                : 'https://modrinth.com/modpack/' . $sourceId,
+                : 'https://modrinth.com/'
+                    . (self::PROJECT_URL_SEGMENTS[$contentType]
+                        ?? 'modpack')
+                    . '/'
+                    . $sourceId,
             downloads: $this->intOrNull($hit['downloads'] ?? null),
             follows: $this->intOrNull($hit['follows'] ?? null),
             categories: $tags,
@@ -724,7 +934,10 @@ final class ModrinthCatalogProvider implements CatalogProvider
     }
 
     // @param array<string, mixed> $project
-    private function mapProject(array $project): CatalogItem
+    private function mapProject(
+        array $project,
+        CatalogProjectQuery $query,
+    ): CatalogItem
     {
         $projectId = $this->stringOrNull($project['id'] ?? null) ?? '';
 
@@ -746,6 +959,10 @@ final class ModrinthCatalogProvider implements CatalogProvider
 
         $sourceId = $slug ?? ($this->validSlug($projectId) ?? '');
 
+        // The project endpoint reports its canonical type; use it for the
+        // public link so a mod no longer points at a /modpack/ URL.
+        $projectType = $this->stringOrNull($project['project_type'] ?? null);
+
         return new CatalogItem(
             provider: $this->name(),
             providerProjectId: $projectId,
@@ -757,7 +974,13 @@ final class ModrinthCatalogProvider implements CatalogProvider
             ),
             projectUrl: $sourceId === ''
                 ? null
-                : 'https://modrinth.com/modpack/' . $sourceId,
+                : 'https://modrinth.com/'
+                    . ($projectType !== null
+                        ? (self::PROJECT_URL_SEGMENTS[$projectType]
+                            ?? 'modpack')
+                        : 'modpack')
+                    . '/'
+                    . $sourceId,
             downloads: $this->intOrNull($project['downloads'] ?? null),
             follows: $this->intOrNull($project['followers'] ?? null),
             categories: $tags,

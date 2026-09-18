@@ -5,10 +5,21 @@ namespace Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Ca
 // Application-level catalog facade used by the HTTP layer.
 final class CatalogService
 {
+    // Content type used for the providers()/facets() listing; set per request
+    // by the controller so the category lists match the active tab.
+    private ?string $facetsContentType = null;
+
     public function __construct(
         private readonly CatalogProviderRegistry $registry,
         private readonly ?CatalogCache $cache = null,
     ) {
+    }
+
+    public function withFacetsContentType(string $contentType): self
+    {
+        $this->facetsContentType = $contentType;
+
+        return $this;
     }
 
     // The provider the UI should preselect: the first provider that is available and not development-only, or the plain first...
@@ -45,7 +56,10 @@ final class CatalogService
                 'development' => $provider->developmentOnly(),
                 'unavailable_reason' => $provider->unavailableReason(),
                 'capabilities' => $provider->capabilities(),
-                'facets' => $provider->facets(),
+                'facets' => $provider->facets(
+                    $this->facetsContentType ??
+                        CatalogSearchQuery::DEFAULT_CONTENT_TYPE,
+                ),
             ];
         }
 
@@ -64,6 +78,7 @@ final class CatalogService
 
         $key = CatalogCache::key('search', [
             'provider' => $query->provider,
+            'content_type' => $query->contentType,
             'query' => $query->query,
             'game_versions' => $query->gameVersions,
             'loaders' => $query->loaders,

@@ -110,6 +110,47 @@ try {
     }
 
     echo "PASS: hostile and directory paths are rejected.\n";
+
+    // Content semantics (mods): pruneEmptyDirs=false must leave the parent
+    // directory in place even when the removed file was its last entry —
+    // the user may have other mods in mods/ that the store does not know
+    // about, and deleting the directory would be destructive.
+    $target->ensureDirectory('plugins');
+    $target->write('plugins/only-mod.jar', 'mod');
+
+    $content = $remover->remove(['plugins/only-mod.jar'], pruneEmptyDirs: false);
+
+    if (
+        count($content['deleted']) !== 1
+        || $content['errors'] !== []
+    ) {
+        throw new RuntimeException('Content removal failed.');
+    }
+
+    if (!$target->isDirectory('plugins')) {
+        throw new RuntimeException(
+            'Content removal must never prune the parent directory.'
+        );
+    }
+
+    echo "PASS: content removal leaves the parent directory in place.\n";
+
+    // Modpack semantics (default) still prune emptied parents.
+    $target->ensureDirectory('mods-deep/nested');
+    $target->write('mods-deep/nested/last.jar', 'modpack');
+
+    $modpack = $remover->remove(['mods-deep/nested/last.jar']);
+
+    if (
+        count($modpack['deleted']) !== 1
+        || $target->isDirectory('mods-deep')
+    ) {
+        throw new RuntimeException(
+            'Default removal must prune emptied parent directories.'
+        );
+    }
+
+    echo "PASS: modpack removal still prunes emptied parents.\n";
 } finally {
     $iterator = new \RecursiveIteratorIterator(
         new \RecursiveDirectoryIterator($root, \FilesystemIterator::SKIP_DOTS),

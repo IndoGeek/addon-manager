@@ -1,9 +1,112 @@
-import { CatalogItem, CatalogVersion, CardTag } from '../types';
+import {
+    CatalogContentType,
+    CatalogItem,
+    CatalogVersion,
+    CardTag,
+} from '../types';
 
 export const API_BASE = '/api/client/extensions/modpackinstaller';
 export const DEFAULT_PROVIDER = 'modrinth';
+export const DEFAULT_CONTENT_TYPE: CatalogContentType = 'modpacks';
 export const PAGE_LIMIT = 20;
 export const VIEW_STORAGE_KEY = 'modpackinstaller-view';
+export const CONTENT_TYPE_STORAGE_KEY = 'modpackinstaller-content-type';
+
+/** Toolbar segment-bar options, in display order. */
+export const CONTENT_TYPE_OPTIONS: Array<{
+    value: CatalogContentType;
+    label: string;
+}> = [
+    { value: 'modpacks', label: 'Modpacks' },
+    { value: 'mods', label: 'Mods' },
+    { value: 'plugins', label: 'Plugins' },
+    { value: 'resourcepacks', label: 'Resource Packs' },
+    { value: 'datapacks', label: 'Datapacks' },
+    { value: 'shaders', label: 'Shaders' },
+];
+
+export const isCatalogContentType = (
+    value: unknown,
+): value is CatalogContentType =>
+    CONTENT_TYPE_OPTIONS.some((option) => option.value === value);
+
+/** Toolbar tab → backend catalog content type. */
+const BACKEND_CONTENT_TYPES: Record<CatalogContentType, string> = {
+    modpacks: 'modpack',
+    mods: 'mod',
+    plugins: 'plugin',
+    resourcepacks: 'resourcepack',
+    datapacks: 'datapack',
+    shaders: 'shader',
+};
+
+export const backendContentType = (type: CatalogContentType): string =>
+    BACKEND_CONTENT_TYPES[type];
+
+/**
+ * Whether a tab installs a single downloadable file (mods, plugins,
+ * datapacks, resource packs, shaders) instead of a whole modpack. These
+ * share the version window (loader + Minecraft version) and the
+ * simple-content install endpoint.
+ */
+export const isSingleFileContentType = (
+    type: CatalogContentType,
+): boolean => backendContentType(type) !== 'modpack';
+
+/**
+ * Tabs each provider's segment bar shows. Both providers now serve every
+ * content type (CurseForge via its own per-type classes: Bukkit Plugins,
+ * Mods, Resource Packs, Data Packs, Shaders, Modpacks), so the bar is the
+ * full list and `providerSupportedContentTypes` decides what is enabled.
+ * A provider that serves only some types can override this map.
+ */
+const PROVIDER_VISIBLE_TABS: Record<string, CatalogContentType[]> = {};
+
+export const visibleContentTypes = (
+    provider: string,
+): CatalogContentType[] =>
+    PROVIDER_VISIBLE_TABS[provider]
+    ?? CONTENT_TYPE_OPTIONS.map((option) => option.value);
+
+/**
+ * Which content types the given provider can actually serve, from the
+ * capabilities advertised by the backend. Falls back to modpacks-only
+ * when the provider does not advertise anything (older payload).
+ */
+export const providerSupportedContentTypes = (
+    capabilities: { content_types?: string[] } | undefined,
+): string[] =>
+    capabilities?.content_types
+        && Array.isArray(capabilities.content_types)
+        && capabilities.content_types.length > 0
+        ? capabilities.content_types
+        : ['modpack'];
+
+/**
+ * Human label for the kind of content an install record or downloaded file
+ * is: a datapack can be installed next to a mod, and the card should say
+ * which one it is. Unknown kinds render no pill rather than a wrong one.
+ */
+export const contentKindLabel = (
+    kind: string | null | undefined,
+): string | null => {
+    switch (kind) {
+        case 'modpack':
+            return 'Modpack';
+        case 'mod':
+            return 'Mod';
+        case 'plugin':
+            return 'Plugin';
+        case 'datapack':
+            return 'Datapack';
+        case 'resourcepack':
+            return 'Resource Pack';
+        case 'shader':
+            return 'Shader';
+        default:
+            return null;
+    }
+};
 
 export const activeInstallStorageKey = (server: string): string =>
     `modpackinstaller-active-install-${server}`;
@@ -16,7 +119,7 @@ export const SORT_OPTIONS: Array<{ value: string; label: string }> = [
     { value: 'updated', label: 'Recently updated' },
 ];
 
-export const EXTENSION_VERSION = '0.44.22';
+export const EXTENSION_VERSION = "0.46.22";
 
 /** Page-size options for the catalog "Stack" dropdown. */
 export const STACK_OPTIONS: Array<{ value: string; label: string }> = [

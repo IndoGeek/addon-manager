@@ -1,7 +1,7 @@
 Navigation:
   Routes:
-    - Name: Modpack Installer
-      Path: /modpack-installer
+    - Name: Addon Manager
+      Path: /addon-manager
       Type: server
       Component: ModpackInstaller
       AdminOnly: 'false'

@@ -18,6 +18,7 @@ use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogVersionQuery;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Provider\ProviderHttpClient;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Provider\ProviderHttpException;
+use Throwable;
 
 // Real CurseForge catalog search against the official api.curseforge.com API.
 final class CurseForgeCatalogProvider implements CatalogProvider
@@ -29,6 +30,50 @@ final class CurseForgeCatalogProvider implements CatalogProvider
     private const GAME_ID = 432;
 
     private const MODPACK_CLASS_ID = 4471;
+
+    // The Mods class. Content installs (mods/) filter on this instead of the
+    // modpacks class.
+    private const MOD_CLASS_ID = 6;
+
+    private const PLUGIN_CLASS_ID = 5;
+
+    private const RESOURCE_PACK_CLASS_ID = 12;
+
+    private const DATAPACK_CLASS_ID = 6945;
+
+    private const SHADER_CLASS_ID = 6552;
+
+    // The CurseForge class behind each content type we install, verified
+    // against GET /v1/categories?gameId=432 (classes: Bukkit Plugins 5,
+    // Mods 6, Resource Packs 12, Modpacks 4471, Shaders 6552, Data Packs
+    // 6945). CurseForge has no Sponge class: Sponge plugins are not
+    // published here at all, so no class maps to them.
+    private const CLASS_BY_CONTENT_TYPE = [
+        'modpack' => self::MODPACK_CLASS_ID,
+        'mod' => self::MOD_CLASS_ID,
+        'plugin' => self::PLUGIN_CLASS_ID,
+        'resourcepack' => self::RESOURCE_PACK_CLASS_ID,
+        'datapack' => self::DATAPACK_CLASS_ID,
+        'shader' => self::SHADER_CLASS_ID,
+    ];
+
+    // Content types whose CurseForge files carry a mod loader. The Mods and
+    // Modpacks classes record one per file; every other class does not — a
+    // plugin file's modLoader is null and its gameVersions hold Minecraft
+    // versions only (verified live across EssentialsX, WorldEdit, Chunky,
+    // ViaVersion and LuckPerms). A loader filter there would filter on a
+    // field CurseForge never populates.
+    private const TYPES_WITH_LOADERS = ['modpack', 'mod'];
+
+    // Project page prefix per class, for the "open on CurseForge" link.
+    private const URL_BASE_BY_CLASS_ID = [
+        self::MODPACK_CLASS_ID => self::MODPACK_URL_BASE,
+        self::MOD_CLASS_ID => self::MOD_URL_BASE,
+        self::PLUGIN_CLASS_ID => 'https://www.curseforge.com/minecraft/bukkit-plugins/',
+        self::RESOURCE_PACK_CLASS_ID => 'https://www.curseforge.com/minecraft/texture-packs/',
+        self::DATAPACK_CLASS_ID => 'https://www.curseforge.com/minecraft/data-packs/',
+        self::SHADER_CLASS_ID => 'https://www.curseforge.com/minecraft/shaders/',
+    ];
 
     private const MAX_UPSTREAM_LIMIT = 50;
 
@@ -50,6 +95,8 @@ final class CurseForgeCatalogProvider implements CatalogProvider
     private const CLASS_CLIENT_ONLY = 'client_only';
 
     private const MODPACK_URL_BASE = 'https://www.curseforge.com/minecraft/modpacks/';
+
+    private const MOD_URL_BASE = 'https://www.curseforge.com/minecraft/mc-mods/';
 
     private const FILES_PAGE_SIZE = 50;
 
@@ -75,25 +122,118 @@ final class CurseForgeCatalogProvider implements CatalogProvider
         '1.16.5',
     ];
 
-    // CurseForge modpack categories (default sub-categories under the Modpacks class).
+    // CurseForge modpack categories — the REAL slugs returned by
+    // GET /v1/categories?gameId=432&classId=4471 (the Modpacks class).
+    // These must match CurseForge exactly: search() resolves the slug to a
+    // categoryId and an unknown slug yields an empty result, and the
+    // multi-select post-filter intersects against the slugs embedded in
+    // each modpack's own categories.
     private const MODPACK_CATEGORIES = [
         'adventure-and-rpg',
-        'boss',
-        'combat-pve',
-        'crafting',
-        'creation',
-        'decoration',
+        'combat-pvp',
+        'expert',
         'exploration',
+        'ftb-official-pack',
+        'hardcore',
+        'horror',
         'magic',
-        'management',
-        'map',
-        'minigame',
-        'pve',
-        'pvp',
+        'map-based',
+        'mini-game',
+        'multiplayer',
+        'quests',
+        'rlcraft',
+        'sci-fi',
+        'skyblock',
+        'small-light',
+        'tech',
+        'vanilla',
+        'extra-large',
+    ];
+
+    // Fallback Mods-class (6) category slugs, used only when the live category
+    // list cannot be loaded (no API key, network failure, rate limit). The
+    // live list is preferred because a slug CurseForge does not know resolves
+    // to no category at all, which would silently filter every mod out.
+    private const MOD_CATEGORIES = [
+        'adventure-and-rpg',
+        'api-and-library',
+        'armor-tools-and-weapons',
+        'cosmetic',
+        'education',
+        'food',
+        'magic',
+        'map-and-information',
+        'miscellaneous',
+        'optimization',
+        'redstone',
+        'server-utility',
         'storage',
         'technology',
-        'theme',
+        'transportation',
         'world-gen',
+    ];
+
+    // Fallback category slugs per class, used only when the live category
+    // list cannot be loaded (no API key, network failure, rate limit). All of
+    // them are verbatim slugs from GET /v1/categories?gameId=432&classId=N:
+    // an unknown slug resolves to no category at all, which would silently
+    // filter every result out.
+    private const PLUGIN_CATEGORIES = [
+        'admin-tools',
+        'anti-griefing-tools',
+        'chat-related',
+        'developer-tools',
+        'economy',
+        'fixes',
+        'fun',
+        'general',
+        'informational',
+        'mechanics',
+        'miscellaneous',
+        'role-playing',
+        'teleportation',
+        'twitch-integration',
+        'website-administration',
+        'world-editing-and-management',
+        'world-generators',
+    ];
+
+    private const RESOURCE_PACK_CATEGORIES = [
+        'animated',
+        'data-packs',
+        'five-twelve-x-and-beyond',
+        'font-packs',
+        'medieval',
+        'miscellaneous',
+        'mod-support',
+        'modern',
+        'modjam-2025',
+        'one-twenty-eight-x',
+        'photo-realistic',
+        'sixteen-x',
+        'sixty-four-x',
+        'steampunk',
+        'thirty-two-x',
+        'traditional',
+        'two-fifty-six-x',
+    ];
+
+    private const DATAPACK_CATEGORIES = [
+        'adventure',
+        'fantasy',
+        'library',
+        'magic',
+        'miscellaneous',
+        'mod-support',
+        'modjam-2025',
+        'tech',
+        'utility',
+    ];
+
+    private const SHADER_CATEGORIES = [
+        'fantasy',
+        'realistic',
+        'vanilla',
     ];
 
     // File statuses that are visible to the public.
@@ -192,16 +332,60 @@ final class CurseForgeCatalogProvider implements CatalogProvider
             'categories' => true,
             'environment' => false,
             'sort' => true,
+            // CurseForge serves modpacks plus the four single-file classes
+            // and mods; the UI enables exactly the tabs listed here.
+            'content_types' => array_keys(self::CLASS_BY_CONTENT_TYPE),
         ];
     }
 
-    // @return array{game_versions: array<int, string>, loaders: array<int, string>, categories: array<int, string>...
-    public function facets(): array
+    // The CurseForge class behind a content type, or null when this provider
+    // does not serve that type at all.
+    private static function classIdFor(string $contentType): ?int
     {
+        return self::CLASS_BY_CONTENT_TYPE[$contentType] ?? null;
+    }
+
+    // @return array<int, string>
+    private static function fallbackCategories(string $contentType): array
+    {
+        return match ($contentType) {
+            'modpack' => self::MODPACK_CATEGORIES,
+            'mod' => self::MOD_CATEGORIES,
+            'plugin' => self::PLUGIN_CATEGORIES,
+            'resourcepack' => self::RESOURCE_PACK_CATEGORIES,
+            'datapack' => self::DATAPACK_CATEGORIES,
+            'shader' => self::SHADER_CATEGORIES,
+            default => [],
+        };
+    }
+
+    // @return array{game_versions: array<int, string>, loaders: array<int, string>, categories: array<int, string>...
+    public function facets(string $contentType = 'modpack'): array
+    {
+        $classId = self::classIdFor($contentType);
+
+        if ($classId === null) {
+            return [
+                'game_versions' => [],
+                'loaders' => [],
+                'categories' => [],
+                'environments' => [],
+            ];
+        }
+
+        // Every type is a different CurseForge class with its own category
+        // set, so the facet list follows the active tab. Only the Mods and
+        // Modpacks classes record a mod loader; the others have no loader
+        // field to filter on and must not pretend otherwise.
         return [
             'game_versions' => self::COMMON_GAME_VERSIONS,
-            'loaders' => array_keys(self::LOADER_TO_MOD_LOADER),
-            'categories' => self::MODPACK_CATEGORIES,
+            'loaders' => in_array($contentType, self::TYPES_WITH_LOADERS, true)
+                ? array_keys(self::LOADER_TO_MOD_LOADER)
+                : [],
+            'categories' => $this->categoriesForClass(
+                $classId,
+                self::fallbackCategories($contentType),
+            ),
             'environments' => [],
         ];
     }
@@ -209,6 +393,21 @@ final class CurseForgeCatalogProvider implements CatalogProvider
     public function search(CatalogSearchQuery $query): CatalogResult
     {
         $this->assertConfigured();
+
+        $classId = self::classIdFor($query->contentType);
+
+        // A content type CurseForge has no class for (there is no Sponge
+        // class, for example) shows an empty result instead of wrong rows.
+        if ($classId === null) {
+            return $this->emptyResult($query);
+        }
+
+        // Single-file content is directly installable, so it takes the plain
+        // upstream pagination instead of the modpack path below, which scans
+        // every project for a server-installable archive.
+        if ($query->contentType !== 'modpack') {
+            return $this->searchContent($query, $classId);
+        }
 
         if ($query->environments !== []) {
             return $this->emptyResult($query);
@@ -242,7 +441,10 @@ final class CurseForgeCatalogProvider implements CatalogProvider
         $categoryId = null;
 
         if ($query->categories !== []) {
-            $categoryId = $this->resolveCategoryId($query->categories[0]);
+            $categoryId = $this->resolveCategoryId(
+                $query->categories[0],
+                self::MODPACK_CLASS_ID,
+            );
 
             if ($categoryId === null) {
                 return $this->emptyResult($query);
@@ -301,7 +503,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
 
             $upstreamCount += count($entries);
 
-            $items = $this->mapSearchItems($entries);
+            $items = $this->mapSearchItems($entries, self::MODPACK_CLASS_ID);
 
             if ($needsPostFilter) {
                 $items = $this->postFilterItems($query, $items);
@@ -386,6 +588,158 @@ final class CurseForgeCatalogProvider implements CatalogProvider
             filteredTotal: $filteredTotal,
             diagnostics: $diagnostics,
         );
+    }
+
+    // Single-file search (mods, plugins, resource packs, data packs,
+    // shaders): a straight upstream page of the type's own CurseForge class,
+    // filtered with the same single-value parameters, plus the multi-select
+    // post-filter the modpack path uses so "Forge + Fabric" style picks still
+    // behave.
+    private function searchContent(
+        CatalogSearchQuery $query,
+        int $classId,
+    ): CatalogResult {
+        if ($query->environments !== []) {
+            return $this->emptyResult($query);
+        }
+
+        if ($query->offset() > self::MAX_SEARCH_INDEX) {
+            throw new InvalidArgumentException(
+                'The requested page is out of range for the CurseForge catalog.',
+            );
+        }
+
+        $parameters = [
+            'gameId' => self::GAME_ID,
+            'classId' => $classId,
+            'sortField' => $this->sortField($query->sort),
+            'sortOrder' => 'desc',
+        ];
+
+        if ($query->query !== null) {
+            $parameters['searchFilter'] = $query->query;
+        }
+
+        if ($query->gameVersions !== []) {
+            $parameters['gameVersion'] = $query->gameVersions[0];
+        }
+
+        // Only the classes that record a loader accept the upstream filter;
+        // sending it for a plugin search would narrow it to nothing.
+        if (
+            $query->loaders !== []
+            && in_array(
+                $query->contentType,
+                self::TYPES_WITH_LOADERS,
+                true,
+            )
+        ) {
+            $parameters['modLoaderType'] = $this->modLoader($query->loaders[0]);
+        }
+
+        if ($query->categories !== []) {
+            $categoryId = $this->resolveCategoryId(
+                $query->categories[0],
+                $classId,
+            );
+
+            if ($categoryId === null) {
+                return $this->emptyResult($query);
+            }
+
+            $parameters['categoryId'] = $categoryId;
+        }
+
+        $parameters['index'] = $query->offset();
+        $parameters['pageSize'] = min(
+            self::MAX_UPSTREAM_LIMIT,
+            $query->limit,
+        );
+
+        $payload = $this->requestSearch($parameters);
+
+        $items = array_values(array_filter(
+            $this->mapSearchItems($payload['data'], $classId),
+            static fn (CatalogItem $item): bool =>
+                self::matchesMultiFilters($query, $item),
+        ));
+
+        $upstreamTotal = $this->intOrNull(
+            $payload['pagination']['totalCount'] ?? null,
+        );
+
+        return new CatalogResult(
+            items: $items,
+            pagination: new CatalogPagination(
+                $query->page,
+                $query->limit,
+                $upstreamTotal ?? count($items),
+            ),
+            provider: $this->name(),
+            sort: $query->sort->value,
+            appliedQuery: $query->query,
+            appliedGameVersions: $query->gameVersions,
+            appliedLoaders: $query->loaders,
+            appliedCategories: $query->categories,
+            appliedEnvironments: $query->environments,
+            upstreamTotal: $upstreamTotal,
+            filteredTotal: count($items),
+            diagnostics: [
+                'content_type' => $query->contentType,
+                'class_id' => $classId,
+                'upstream_total' => $upstreamTotal,
+                'returned' => count($items),
+            ],
+        );
+    }
+
+    // The category slugs CurseForge actually exposes for a class. The live
+    // list is preferred over the curated fallback: a slug CurseForge does not
+    // know resolves to no categoryId at all, which would silently filter out
+    // every result. Never throws — the toolbar must survive a failed lookup.
+    // @param array<int, string> $fallback
+    // @return array<int, string>
+    private function categoriesForClass(int $classId, array $fallback): array
+    {
+        try {
+            $response = $this->http->get(
+                self::API_BASE . '/categories',
+                query: [
+                    'gameId' => self::GAME_ID,
+                    'classId' => $classId,
+                ],
+                headers: $this->headers(),
+            );
+        } catch (Throwable) {
+            return $fallback;
+        }
+
+        $categories = is_array($response->body)
+            ? ($response->body['data'] ?? null)
+            : null;
+
+        if (!is_array($categories)) {
+            return $fallback;
+        }
+
+        $slugs = [];
+
+        foreach ($categories as $category) {
+            if (
+                !is_array($category)
+                || ($category['isClass'] ?? false) === true
+            ) {
+                continue;
+            }
+
+            $slug = $this->validSlug($category['slug'] ?? null);
+
+            if ($slug !== null) {
+                $slugs[$slug] = true;
+            }
+        }
+
+        return $slugs === [] ? $fallback : array_keys($slugs);
     }
 
     // @return array<int, CatalogVersion>
@@ -494,9 +848,11 @@ final class CurseForgeCatalogProvider implements CatalogProvider
                 );
             }
 
-            if (!$this->isModpackClass($response->body['data'])) {
+            // The details modal opens for both classes; anything else is not
+            // something this provider installs.
+            if (!$this->isCatalogClass($response->body['data'])) {
                 throw new CatalogProviderException(
-                    'The requested project is not a modpack.',
+                    'The requested project is not a modpack or a mod.',
                 );
             }
 
@@ -562,8 +918,12 @@ final class CurseForgeCatalogProvider implements CatalogProvider
         }
     }
 
+    // Maps raw search entries, keeping only the class being searched: the
+    // modpack scan must never accept another class (its server-archive
+    // classification has no meaning there) and a plugin search must not
+    // return mods, so the expected class is a parameter.
     // @param array<mixed> $entries @return array<int, CatalogItem>
-    private function mapSearchItems(array $entries): array
+    private function mapSearchItems(array $entries, int $classId): array
     {
         $items = [];
 
@@ -574,7 +934,12 @@ final class CurseForgeCatalogProvider implements CatalogProvider
                 );
             }
 
-            if (!$this->isModpackClass($mod)) {
+            // An absent classId is tolerated: the upstream request already
+            // filtered on classId, so a payload without one is still the
+            // class that was asked for.
+            $entryClassId = $this->intOrNull($mod['classId'] ?? null);
+
+            if ($entryClassId !== null && $entryClassId !== $classId) {
                 continue;
             }
 
@@ -955,7 +1320,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
         }
 
         $line = sprintf(
-            '[modpackinstaller] CurseForge search page=%d limit=%d query=%s '
+            '[addonmanager] CurseForge search page=%d limit=%d query=%s '
                 . 'original_api_result_count=%d inspected=%d accepted=%d '
                 . 'excluded=%d exclusion_reasons=%s classification=%s '
                 . 'upstream_total=%s source_pages=%d more_source_pages=%d '
@@ -1006,10 +1371,10 @@ final class CurseForgeCatalogProvider implements CatalogProvider
 
         if (
             count($query->categories) > 1
-            && array_intersect(
+            && self::categoriesIntersect(
                 $query->categories,
                 $item->categories,
-            ) === []
+            ) === false
         ) {
             return false;
         }
@@ -1106,14 +1471,14 @@ final class CurseForgeCatalogProvider implements CatalogProvider
     }
 
     // Resolves a catalog category slug to a CurseForge category id for the modpacks class, or null when no category matches.
-    private function resolveCategoryId(string $slug): ?int
+    private function resolveCategoryId(string $slug, int $classId): ?int
     {
         try {
             $response = $this->http->get(
                 self::API_BASE . '/categories',
                 query: [
                     'gameId' => self::GAME_ID,
-                    'classId' => self::MODPACK_CLASS_ID,
+                    'classId' => $classId,
                 ],
                 headers: $this->headers(),
             );
@@ -1128,23 +1493,40 @@ final class CurseForgeCatalogProvider implements CatalogProvider
                 );
             }
 
+            $fallback = null;
+
             foreach ($categories as $category) {
                 if (!is_array($category)) {
                     continue;
                 }
 
-                if (
-                    strtolower((string) ($category['slug'] ?? '')) === $slug
-                ) {
+                $candidate = strtolower((string) ($category['slug'] ?? ''));
+
+                if ($candidate === $slug) {
                     $id = $category['id'] ?? null;
 
                     if (is_int($id)) {
                         return $id;
                     }
                 }
+
+                // Tolerant fallback: CurseForge slugs use hyphens where a
+                // filter may say "vanilla+" or drop separators. Only used
+                // when no exact slug matched.
+                if (
+                    $fallback === null
+                    && str_replace(['-', '+', '_'], '', $candidate)
+                        === str_replace(['-', '+', '_'], '', $slug)
+                ) {
+                    $id = $category['id'] ?? null;
+
+                    if (is_int($id)) {
+                        $fallback = $id;
+                    }
+                }
             }
 
-            return null;
+            return $fallback;
         } catch (InvalidArgumentException $exception) {
             throw $exception;
         } catch (CatalogProviderException $exception) {
@@ -1152,6 +1534,30 @@ final class CurseForgeCatalogProvider implements CatalogProvider
         } catch (ProviderHttpException $exception) {
             throw $this->requestFailure($exception);
         }
+    }
+
+    // Compares filter category slugs against an item's category slugs with
+    // hyphen/underscore/plus normalization, so "minigame" matches CF's
+    // "mini-game" etc. Exact matches still win — this only ever broadens.
+    private static function categoriesIntersect(array $filters, array $itemCategories): bool
+    {
+        $normalize = static function (string $value): string {
+            return str_replace(['-', '_', '+'], '', strtolower($value));
+        };
+
+        $itemSet = [];
+
+        foreach ($itemCategories as $category) {
+            $itemSet[$normalize($category)] = true;
+        }
+
+        foreach ($filters as $filter) {
+            if (isset($itemSet[$normalize($filter)])) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function emptyResult(CatalogSearchQuery $query): CatalogResult
@@ -1283,6 +1689,12 @@ final class CurseForgeCatalogProvider implements CatalogProvider
 
         $sourceId = $slug ?? $id;
 
+        // Each class lives under its own CurseForge URL prefix (mods, modpacks,
+        // bukkit plugins, texture packs, data packs, shaders).
+        $urlBase = self::URL_BASE_BY_CLASS_ID[
+            $this->intOrNull($mod['classId'] ?? null) ?? self::MODPACK_CLASS_ID
+        ] ?? self::MODPACK_URL_BASE;
+
         return new CatalogItem(
             provider: $this->name(),
             providerProjectId: $id,
@@ -1295,7 +1707,7 @@ final class CurseForgeCatalogProvider implements CatalogProvider
             ),
             projectUrl: $sourceId === ''
                 ? null
-                : self::MODPACK_URL_BASE . $sourceId,
+                : $urlBase . $sourceId,
             downloads: $this->intOrNull($mod['downloadCount'] ?? null),
             follows: null,
             categories: array_keys($categories),
@@ -1363,8 +1775,9 @@ final class CurseForgeCatalogProvider implements CatalogProvider
         return $this->stringOrNull($file['downloadUrl'] ?? null) !== null;
     }
 
-    // Whether a mod belongs to the Modpacks class.
-    private function isModpackClass(array $mod): bool
+    // Every class this provider installs; the URL a project links to and the
+    // way it installs both follow from which one it is.
+    private function isCatalogClass(array $mod): bool
     {
         $classId = $this->intOrNull($mod['classId'] ?? null);
 
@@ -1372,7 +1785,11 @@ final class CurseForgeCatalogProvider implements CatalogProvider
             return true;
         }
 
-        return $classId === self::MODPACK_CLASS_ID;
+        return in_array(
+            $classId,
+            array_values(self::CLASS_BY_CONTENT_TYPE),
+            true,
+        );
     }
 
     private function sortField(CatalogSort $sort): int

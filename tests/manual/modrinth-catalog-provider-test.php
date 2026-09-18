@@ -260,13 +260,15 @@ if ($multiRequest === null) {
     throw new RuntimeException('No multi-value HTTP request was made.');
 }
 
+// "Client"/"Server" are Modrinth side facets: each selected environment
+// becomes its own group, replacing the default server-side group.
 if (($multiRequest['query']['facets'] ?? null) !== json_encode([
     ['project_type:modpack'],
+    ['client_side:required', 'client_side:optional'],
     ['server_side:required', 'server_side:optional'],
     ['versions:1.21.1', 'versions:1.20.1'],
     ['categories:fabric', 'categories:neoforge'],
     ['categories:adventure', 'categories:technology'],
-    ['categories:client', 'categories:server'],
 ])) {
     throw new RuntimeException(
         'Multi-value facets did not map to separate ANDed groups.',
@@ -274,6 +276,162 @@ if (($multiRequest['query']['facets'] ?? null) !== json_encode([
 }
 
 pass('multi-value filters map to separate ANDed facet groups');
+
+// Client-only content types (resource packs, shaders) must not restrict to
+// server-side projects, or the catalog would come back nearly empty.
+$http = new FakeProviderHttpClient([
+    new ProviderHttpResponse(200, [
+        'hits' => [],
+        'total_hits' => 0,
+    ]),
+]);
+$shaderProvider = new ModrinthCatalogProvider($http);
+
+$shaderProvider->search(new CatalogSearchQuery(
+    provider: 'modrinth',
+    contentType: 'shader',
+));
+
+$shaderRequest = $http->requests[0] ?? null;
+
+if ($shaderRequest === null) {
+    throw new RuntimeException('No shader HTTP request was made.');
+}
+
+if (($shaderRequest['query']['facets'] ?? null) !== json_encode([
+    ['project_type:shader'],
+])) {
+    throw new RuntimeException(
+        'Client-only content types must skip the server-side facet group.',
+    );
+}
+
+pass('client-only content types skip the server-side facet group');
+
+// Every content type maps to its own upstream project_type facet.
+$contentTypeFacets = [
+    'modpack' => 'modpack',
+    'mod' => 'mod',
+    'plugin' => 'plugin',
+    'datapack' => 'datapack',
+    'resourcepack' => 'resourcepack',
+    'shader' => 'shader',
+];
+
+foreach ($contentTypeFacets as $contentType => $upstream) {
+    $http = new FakeProviderHttpClient([
+        new ProviderHttpResponse(200, [
+            'hits' => [],
+            'total_hits' => 0,
+        ]),
+    ]);
+
+    (new ModrinthCatalogProvider($http))->search(
+        new CatalogSearchQuery(
+            provider: 'modrinth',
+            contentType: $contentType,
+        ),
+    );
+
+    $facets = $http->requests[0]['query']['facets'] ?? '';
+
+    if (!is_string($facets)
+        || !str_contains($facets, '"project_type:' . $upstream . '"')
+    ) {
+        throw new RuntimeException(
+            "Content type {$contentType} must request "
+                . "project_type:{$upstream}.",
+        );
+    }
+}
+
+pass('every content type maps to its upstream project_type facet');
+
+// Facet option lists differ per content type, and the loader lists match
+// the loaders the provider actually reports for that type.
+$facetProvider = new ModrinthCatalogProvider(
+    new FakeProviderHttpClient([]),
+);
+
+$shaderFacets = $facetProvider->facets('shader');
+
+if (!in_array('iris', $shaderFacets['loaders'], true)
+    || !in_array('optifine', $shaderFacets['loaders'], true)
+) {
+    throw new RuntimeException('Shader loaders must include iris/optifine.');
+}
+
+if (!in_array('shadows', $shaderFacets['categories'], true)) {
+    throw new RuntimeException('Shader categories missing.');
+}
+
+$resourcepackFacets = $facetProvider->facets('resourcepack');
+
+if ($resourcepackFacets['loaders'] !== ['minecraft']) {
+    throw new RuntimeException(
+        'Resource packs must offer the minecraft loader only.',
+    );
+}
+
+if (!in_array('16x', $resourcepackFacets['categories'], true)) {
+    throw new RuntimeException('Resource pack categories missing.');
+}
+
+$pluginFacets = $facetProvider->facets('plugin');
+
+if (!in_array('paper', $pluginFacets['loaders'], true)
+    || !in_array('library', $pluginFacets['categories'], true)
+) {
+    throw new RuntimeException('Plugin facets missing.');
+}
+
+pass('facet options are content-type specific');
+
+// A plain tag must never become a loader: Modrinth mixes both into
+// `display_categories`, which used to surface "library" as a loader pill.
+$http = new FakeProviderHttpClient([
+    new ProviderHttpResponse(200, [
+        'hits' => [
+            [
+                'project_id' => 'lib00001',
+                'slug' => 'fabric-api',
+                'title' => 'Fabric API',
+                'client_side' => 'optional',
+                'server_side' => 'required',
+                'categories' => ['fabric', 'library'],
+                'display_categories' => ['fabric', 'library'],
+                'versions' => ['1.21.1'],
+                'project_type' => 'mod',
+            ],
+        ],
+        'total_hits' => 1,
+    ]),
+]);
+
+$tagItems = (new ModrinthCatalogProvider($http))->search(
+    new CatalogSearchQuery(provider: 'modrinth', contentType: 'mod'),
+)->items;
+
+if (($tagItems[0]->loaders ?? null) !== ['fabric']) {
+    throw new RuntimeException(
+        'Only real loader slugs may map to loaders.',
+    );
+}
+
+if (($tagItems[0]->categories ?? null) !== ['library']) {
+    throw new RuntimeException('Plain tags must stay categories.');
+}
+
+if (
+    ($tagItems[0]->projectUrl ?? null)
+    !== 'https://modrinth.com/mod/fabric-api'
+) {
+    throw new RuntimeException(
+        'Mod project links must use the /mod/ URL segment.',
+    );
+}
+
+pass('loader slugs and plain tags are split correctly');
 
 $http = new FakeProviderHttpClient([
     new ProviderHttpResponse(200, [
@@ -325,9 +483,12 @@ if ($serverOnly->items[0]->environment !== 'server') {
     throw new RuntimeException('Server-only hit environment label mismatch.');
 }
 
-if ($serverOnly->pagination->total !== 1) {
+// The upstream total_hits stays authoritative even when client-only hits
+// are filtered out — collapsing the total used to shrink the catalog to a
+// single page whenever one hit was removed.
+if ($serverOnly->pagination->total !== 500) {
     throw new RuntimeException(
-        'Filtered search must report a conservative total.',
+        'Upstream total_hits must stay authoritative after filtering.',
     );
 }
 
@@ -369,7 +530,9 @@ if ($first->follows !== 8500) {
     throw new RuntimeException('Unexpected follows.');
 }
 if ($first->loaders !== ['fabric']) {
-    throw new RuntimeException('Loaders should come from display_categories.');
+    throw new RuntimeException(
+        'Loaders should be split out of the category list.',
+    );
 }
 if (!in_array('adventure', $first->categories, true)) {
     throw new RuntimeException('Categories should exclude loaders.');
@@ -409,7 +572,7 @@ if ($second->summary !== null) {
 
 if ($second->loaders !== ['forge']) {
     throw new RuntimeException(
-        'Loaders should fall back to known loader categories.',
+        'Known loader categories must map to loaders.',
     );
 }
 

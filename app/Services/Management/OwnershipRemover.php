@@ -15,8 +15,14 @@ final class OwnershipRemover
     ) {
     }
 
-    // @param list<string> $relativePaths @return array{deleted: list<string>, missing: list<string>, errors: list<string>}
-    public function remove(array $relativePaths): array
+    // @param list<string> $relativePaths
+    // @param bool $pruneEmptyDirs When true, parent directories that become
+    //        empty after a removal are deleted too (modpack semantics). Must
+    //        be false for single-file content (mods): the user may keep
+    //        other mods in the same directory — removing mods/fabric-api.jar
+    //        must never delete the mods directory itself.
+    // @return array{deleted: list<string>, missing: list<string>, errors: list<string>}
+    public function remove(array $relativePaths, bool $pruneEmptyDirs = true): array
     {
         $deleted = [];
         $missing = [];
@@ -52,7 +58,9 @@ final class OwnershipRemover
 
                 $deleted[] = $relativePath;
 
-                $this->pruneEmptyParents($relativePath);
+                if ($pruneEmptyDirs) {
+                    $this->pruneEmptyParents($relativePath);
+                }
             } catch (Throwable $exception) {
                 $errors[] = "Unable to remove owned file: {$relativePath}";
             }

@@ -1,3 +1,12 @@
+<?php
+// Load the settings-page stylesheet directly (with a cache-busting query)
+// instead of relying on Blueprint's admin.extensions.css @import chain, which
+// browsers and CDNs cache aggressively.
+$miStylePath = public_path('assets/extensions/modpackinstaller/admin.style.css');
+$miStyleVersion = is_file($miStylePath) ? filemtime($miStylePath) : '1';
+?>
+<link rel="stylesheet" href="/assets/extensions/modpackinstaller/admin.style.css?v={{ $miStyleVersion }}">
+
 <div class="mi-settings" style="margin-top: 10px;">
 
   <div class="row">
@@ -24,18 +33,32 @@
               <div class="input-group">
                 <span class="input-group-addon"><i class="bi bi-key-fill"></i></span>
                 <input
-                  type="text"
+                  type="password"
                   class="form-control"
                   name="curseforge_api_key"
-                  value="{{ $settings['curseforge_api_key'] }}"
-                  placeholder="@if(!empty($envValues['curseforge_api_key']))Using value from .env — override here@elseNot configured — CurseForge stays unavailable@endif"
+                  value=""
+                  autocomplete="new-password"
+                  placeholder="{{ $settings['curseforge_api_key'] !== '' ? '•••••••••••• saved — enter a new key to replace' : (empty($envValues['curseforge_api_key']) ? 'Not configured — CurseForge stays unavailable' : 'Using value from .env — override here') }}"
                 />
               </div>
               <p class="text-muted small" style="margin-top:6px;">
                 Enables the CurseForge provider. Get a free key at
                 <a href="https://console.curseforge.com/" target="_blank" rel="noopener">console.curseforge.com</a>.
-                Modrinth needs no key. Leave empty to use the <code>CURSEFORGE_API_KEY</code> environment variable.
+                The saved key is stored server-side and never displayed again — leave the field empty to keep it.
+                @if($settings['curseforge_api_key'] !== '')
+                  A key is currently saved.
+                @elseif(!empty($envValues['curseforge_api_key']))
+                  A key from <code>.env</code> is currently in use.
+                @endif
               </p>
+              @if($settings['curseforge_api_key'] !== '')
+                <div class="checkbox">
+                  <input type="checkbox" id="mi-clear-key" name="clear_curseforge_api_key" value="1" />
+                  <label for="mi-clear-key">
+                    <span>Remove the saved key (falls back to <code>.env</code>)</span>
+                  </label>
+                </div>
+              @endif
             </div>
 
             <div class="row">
@@ -48,7 +71,7 @@
                     class="form-control"
                     name="max_download_mb"
                     value="{{ $settings['max_download_mb'] }}"
-                    placeholder="@if(!empty($envValues['max_download_mb'])){{ $envValues['max_download_mb'] }} (.env)@elseNo limit@endif"
+                    placeholder="{{ empty($envValues['max_download_mb']) ? 'No limit' : $envValues['max_download_mb'] . ' (.env)' }}"
                   />
                   <p class="text-muted small" style="margin-top:6px;">
                     Blocks modpack downloads larger than this. Leave empty for no limit.
@@ -64,7 +87,7 @@
                     class="form-control"
                     name="catalog_cache_ttl"
                     value="{{ $settings['catalog_cache_ttl'] }}"
-                    placeholder="@if(!empty($envValues['catalog_cache_ttl'])){{ $envValues['catalog_cache_ttl'] }} (.env)@else300@endif"
+                    placeholder="{{ empty($envValues['catalog_cache_ttl']) ? '300' : $envValues['catalog_cache_ttl'] . ' (.env)' }}"
                   />
                   <p class="text-muted small" style="margin-top:6px;">
                     How long Modrinth/CurseForge search results stay cached. Lower = fresher results,
@@ -114,15 +137,16 @@
             </div>
 
             <div class="form-group">
-              <div class="checkbox" style="margin-bottom:4px;">
-                <label style="font-weight:600;">
-                  <input
-                    type="checkbox"
-                    name="disable_curseforge"
-                    value="1"
-                    @if($settings['disable_curseforge'] === '1') checked @endif
-                  />
-                  Disable CurseForge entirely
+              <div class="checkbox">
+                <input
+                  type="checkbox"
+                  id="mi-disable-curseforge"
+                  name="disable_curseforge"
+                  value="1"
+                  @if($settings['disable_curseforge'] === '1') checked @endif
+                />
+                <label for="mi-disable-curseforge">
+                  <span style="font-weight:600;">Disable CurseForge entirely</span>
                 </label>
               </div>
               <p class="text-muted small" style="margin-top:2px;">
@@ -240,7 +264,7 @@
             <a href="https://www.curseforge.com" target="_blank" rel="noopener"><strong>CurseForge</strong></a>
             directly onto your Pterodactyl servers.
           </p>
-          <ul class="list-unstyled" style="line-height:2;">
+          <ul class="list-unstyled" style="line-height:2; margin-bottom:0;">
             <li><i class="bi bi-people-fill" style="margin-right:8px;color:#6e56cf;"></i>Browse modpacks from the server dashboard</li>
             <li><i class="bi bi-download" style="margin-right:8px;color:#6e56cf;"></i>One-click install with live progress</li>
             <li><i class="bi bi-arrow-repeat" style="margin-right:8px;color:#6e56cf;"></i>Update, restore and uninstall installed packs</li>
@@ -260,20 +284,16 @@
           <p class="text-muted" style="margin-bottom:12px;">
             Advanced options that require editing <code>.env</code> on the server:
           </p>
-          <table class="table table-condensed" style="margin-bottom:8px;">
-            <tbody>
-              <tr>
-                <td><code>MODPACK_INSTALLER_SERVER_ROOT</code></td>
-                <td class="text-muted small">Custom server root path<br>(default <code>/var/lib/pterodactyl/volumes</code>)</td>
-              </tr>
-              <tr>
-                <td><code>MODPACK_INSTALLER_DATA_DIR</code></td>
-                <td class="text-muted small">Install records path<br>(default <code>/var/lib/pterodactyl/modpack-installer</code>)</td>
-              </tr>
-            </tbody>
-          </table>
+          <p style="margin-bottom:10px; line-height:1.5;">
+            <code>MODPACK_INSTALLER_SERVER_ROOT</code>
+            <span class="text-muted small"> — custom server root path (default <code>/var/lib/pterodactyl/volumes</code>)</span>
+          </p>
+          <p style="margin-bottom:12px; line-height:1.5;">
+            <code>MODPACK_INSTALLER_DATA_DIR</code>
+            <span class="text-muted small"> — install records path (default <code>/var/lib/pterodactyl/modpack-installer</code>)</span>
+          </p>
           <p class="text-muted small" style="margin-bottom:0;">
-            After editing <code>.env</code>, run <code>php artisan config:cache</code> and restart PHP-FPM.
+            After editing, run <code>php artisan config:cache</code> and restart PHP-FPM.
           </p>
         </div>
       </div>

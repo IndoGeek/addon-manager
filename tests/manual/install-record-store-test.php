@@ -7,6 +7,7 @@ use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Manageme
 use RuntimeException;
 
 require_once __DIR__ . '/../../app/Services/Server/ServerRelativePath.php';
+require_once __DIR__ . '/../../app/Services/Installation/ContentInstallTarget.php';
 require_once __DIR__ . '/../../app/Services/Management/InstallRecord.php';
 require_once __DIR__ . '/../../app/Services/Management/InstallRecordStore.php';
 

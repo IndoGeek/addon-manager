@@ -1,0 +1,1296 @@
+#!/usr/bin/env bash
+#
+# mi — developer CLI for the Addon Manager Blueprint extension.
+#
+# Usage:
+#   mi test  [all|<name-substring>]   Run manual test suites (default: all)
+#   mi lint  [--fix]                  PHP syntax + style lint (--fix applies)
+#   mi check                          lint + audit + test — run before pushing
+#   mi audit [path...] [--json]       Static check for dead catch clauses
+#   mi install-hooks [--remove]       Install/remove the git pre-push gate
+#   mi build                          Deploy to the local panel (build.sh)
+#   mi css                            Regenerate root.css from modular styles
+#   mi help                           Show this help
+#
+# Install (optional): sudo ln -sf "$PWD/mi" /usr/local/bin/mi
+#
+# Author: IndoGeek
+# License: MIT
+set -uo pipefail
+
+SRC="${BASH_SOURCE[0]}"
+# Resolve symlinks (e.g. /usr/local/bin/mi -> repo/mi) so the CLI works from
+# anywhere with no setup.
+while [ -L "$SRC" ]; do
+  DIR="$(cd -P "$(dirname "$SRC")" && pwd)"
+  SRC="$(readlink "$SRC")"
+  [[ $SRC != /* ]] && SRC="$DIR/$SRC"
+done
+SRC="$(cd -P "$(dirname "$SRC")" && pwd)"
+cd "$SRC" || exit 1
+
+# ───────────────────────────── arg helpers ─────────────────────────
+# Tiny, dependency-free flag parsing shared by every subcommand.
+arg_has() { # arg_has <flag> <args...> → true when the flag is present
+  local needle="$1"; shift
+  local a
+  for a in "$@"; do [ "$a" = "$needle" ] && return 0; done
+  return 1
+}
+
+arg_val() { # arg_val <flag> <args...> → value of "--flag=v" or "--flag v"
+  local needle="$1"; shift
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      "$needle") printf '%s' "${2:-}"; return 0 ;;
+      "$needle"=*) printf '%s' "${1#*=}"; return 0 ;;
+    esac
+    shift
+  done
+  return 1
+}
+
+arg_pos() { # arg_pos <args...> → first non-option argument (skips option values)
+  local skip=0 a
+  for a in "$@"; do
+    if [ "$skip" = 1 ]; then skip=0; continue; fi
+    case "$a" in
+      --filter|--only|--min|--url|--panel-dir|--jobs) skip=1; continue ;;
+      -*) continue ;;
+      *) printf '%s' "$a"; return 0 ;;
+    esac
+  done
+  return 1
+}
+
+# Stage filter shared by `mi lint --only <stage>` and `mi check --only <cmd>`.
+ONLY_STAGE=""
+stage_wanted() { [ -z "$ONLY_STAGE" ] || [ "$ONLY_STAGE" = "$1" ]; }
+
+# ───────────────────────────── UI helpers ──────────────────────────
+if [ -t 1 ]; then
+  C_RESET=$'\e[0m';  C_DIM=$'\e[2m';   C_BOLD=$'\e[1m'
+  C_GREEN=$'\e[38;5;114m'; C_CYAN=$'\e[38;5;81m'
+  C_YELLOW=$'\e[38;5;179m'; C_RED=$'\e[38;5;203m'
+  C_BLUE=$'\e[38;5;75m'
+  TTY=1
+else
+  C_RESET=""; C_DIM=""; C_BOLD=""; C_GREEN=""; C_CYAN=""
+  C_YELLOW=""; C_RED=""; C_BLUE=""
+  TTY=0
+fi
+
+color_off() {
+  C_RESET=""; C_DIM=""; C_BOLD=""; C_GREEN=""
+  C_CYAN=""; C_YELLOW=""; C_RED=""; C_BLUE=""
+  TTY=0   # also drops the in-place progress bar, so logs stay line-per-event
+}
+
+# Plain output for CI logs and redirects: the standard NO_COLOR env var, or
+# --no-color anywhere on the command line.
+if [ -n "${NO_COLOR:-}" ] || arg_has --no-color "$@"; then
+  color_off
+fi
+
+SPIN_FRAMES=("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")
+BAR_WIDTH=22
+
+cleanup_tty() {
+  if [ "$TTY" = 1 ]; then
+    printf '\r\e[2K\e[?25h'
+  fi
+}
+trap cleanup_tty EXIT
+trap 'cleanup_tty; exit 130' INT TERM
+
+info()  { printf '%s[..]%s %s\n' "$C_BLUE" "$C_RESET" "$*"; }
+ok()    { printf '%s[ok]%s %s\n' "$C_GREEN" "$C_RESET" "$*"; }
+# Success line for in-progress checks (smoke): silent under --quiet/--json so
+# only failures and the machine-readable summary reach the terminal.
+okq()   { if [ "${QUIET:-0}" = 0 ] && [ "${JSON:-0}" = 0 ]; then ok "$*"; fi; }
+warn()  { printf '%s[!!]%s %s\n' "$C_YELLOW" "$C_RESET" "$*"; }
+die()   { cleanup_tty; printf '%s[!!]%s %s\n' "$C_RED" "$C_RESET" "$*" >&2; exit 1; }
+
+bar_glyphs() { # $1 = 0..1000, $2 = spin frame
+  local ratio=$(( $1 * BAR_WIDTH / 1000 )) out="" i
+  for ((i = 0; i < BAR_WIDTH; i++)); do
+    if (( i < ratio )); then out+="${C_GREEN}█"
+    elif (( i == ratio && $1 < 1000 )); then out+="${C_YELLOW}${SPIN_FRAMES[$(($2 % ${#SPIN_FRAMES[@]}))]}"
+    else out+="${C_DIM}░"
+    fi
+  done
+  printf '%s%s' "$out" "$C_RESET"
+}
+
+# One-line in-place progress: bar + counts + current item
+draw() { # $1=done $2=total $3=frame $4=current-label
+  local prog=0
+  (( $2 > 0 )) && prog=$(( $1 * 1000 / $2 ))
+  printf '\r\e[2K %s %s%3d%%%s %s%s/%s%s %s' \
+    "$(bar_glyphs "$prog" "$3")" "$C_BOLD" $(( prog / 10 )) "$C_RESET" \
+    "$C_BOLD" "$1" "$2" "$C_RESET" "${4:-}"
+}
+
+# ───────────────────────────── mi test ─────────────────────────────
+# Machine-readable summary for CI (--json): just the fields a pipeline needs.
+print_test_json() {
+  local passed="$1" failed="$2" secs="$3"; shift 3
+  local rows=("$@") row name rest status dur first=1
+  printf '{"passed":%s,"failed":%s,"seconds":%s,"suites":[' "$passed" "$failed" "$secs"
+  for row in "${rows[@]}"; do
+    name="${row%%|*}"; rest="${row#*|}"
+    status="${rest%%|*}"; dur="${rest#*|}"
+    [ "$first" = 1 ] || printf ','
+    first=0
+    printf '{"name":"%s","status":"%s","seconds":%s}' \
+      "$name" "$([ "$status" = 0 ] && echo passed || echo failed)" "$dur"
+  done
+  printf ']}\n'
+}
+
+cmd_test() {
+  local filter list_only=0 bail=0 show_full=0
+  local json_rows=()
+  filter="$(arg_val --filter "$@" || true)"
+  [ -n "$filter" ] || filter="$(arg_pos "$@" || true)"
+  filter="${filter:-all}"
+  if arg_has --list "$@" || arg_has -l "$@"; then list_only=1; fi
+  if arg_has --bail "$@" || arg_has -x "$@"; then bail=1; fi
+  if arg_has --verbose "$@" || arg_has -v "$@"; then show_full=1; fi
+
+  # Collect suites (a suite is one runnable file in tests/manual)
+  local suites=()
+  while IFS= read -r f; do suites+=("$f"); done < <(
+    find "$SRC/tests/manual" -maxdepth 1 -name '*.php' -type f | sort
+  )
+
+  [ "${#suites[@]}" -gt 0 ] || die "No test suites found in tests/manual."
+
+  local runnable=()
+  if [ "$filter" != "all" ]; then
+    local s
+    for s in "${suites[@]}"; do
+      [[ "$(basename "$s")" == *"$filter"* ]] && runnable+=("$s")
+    done
+    [ "${#runnable[@]}" -gt 0 ] || die "No suite matches '$filter'."
+  else
+    runnable=("${suites[@]}")
+  fi
+
+  if [ "$list_only" = 1 ]; then
+    local s n
+    for s in "${runnable[@]}"; do
+      n="$(basename "$s" -test.php)"; n="$(basename "$n" .php)"
+      printf '%s\n' "$n"
+    done
+    printf '%s%d suite(s)%s\n' "$C_DIM" "${#runnable[@]}" "$C_RESET" >&2
+    return 0
+  fi
+
+  local total=${#runnable[@]}
+  local passed=0 failed=0 skipped=0
+  local failures=() timings=()
+  local log logdir
+  logdir="$(mktemp -d)"
+
+  if [ "$QUIET" = 0 ] && [ "$JSON" = 0 ]; then
+    printf '%s▲%s %smi test%s — %s%d%s suite%s (%s)\n\n' \
+      "$C_CYAN" "$C_RESET" "$C_BOLD" "$C_RESET" \
+      "$C_DIM" "$total" "$C_RESET" \
+      "$([ "$total" = 1 ] && echo '' || echo 's')" "$filter"
+  fi
+
+  local i=0 frame=0 t0=$SECONDS
+  for suite in "${runnable[@]}"; do
+    local name
+    name="$(basename "$suite" -test.php)"
+    name="$(basename "$name" .php)"
+    i=$(( i + 1 ))
+
+    log="$logdir/$name.log"
+
+    if [ "$QUIET" = 0 ] && [ "$JSON" = 0 ]; then
+      if [ "$TTY" = 1 ]; then
+        draw "$(( i - 1 ))" "$total" "$frame" \
+          "${C_CYAN}▶${C_RESET} $name"
+      else
+        printf '%s▸%s %d/%d · %s\n' "$C_BLUE" "$C_RESET" "$i" "$total" "$name"
+      fi
+    fi
+
+    local start=$SECONDS
+    php "$suite" >"$log" 2>&1
+    local status=$?
+    local dur=$(( SECONDS - start ))
+    json_rows+=("$name|$status|$dur")
+
+    if [ "$status" -eq 0 ]; then
+      passed=$(( passed + 1 ))
+      timings+=("ok $name (${dur}s)")
+    else
+      failed=$(( failed + 1 ))
+      failures+=("$name:$log")
+      timings+=("fail $name (${dur}s)")
+      if [ "$bail" = 1 ]; then
+        cleanup_tty
+        printf '\n'
+        printf '  %s✗ bail — stopping after the first failure (%s)%s\n' \
+          "$C_RED" "$name" "$C_RESET" >&2
+        printf '  %sfull output: %s%s\n' "$C_DIM" "$log" "$C_RESET" >&2
+        exit 1
+      fi
+    fi
+
+    if [ "$TTY" = 1 ] && [ "$QUIET" = 0 ] && [ "$JSON" = 0 ]; then
+      frame=$(( frame + 2 ))
+      # tick summary: keep the line calm — only counts change
+      draw "$i" "$total" "$frame" ""
+      printf '' # no newline; next draw overwrites
+    fi
+  done
+
+  cleanup_tty
+  [ "$JSON" = 1 ] || printf '\n'
+
+  # Per-suite results — compact: one glyph line per suite, details only on fail.
+  # --quiet keeps the failures (that's the point of running it) and drops the
+  # success noise; --json drops both and prints the summary object alone.
+  local entry
+  for entry in "${timings[@]}"; do
+    if [[ "$entry" == ok* ]]; then
+      if [ "$JSON" = 0 ] && [ "$QUIET" = 0 ]; then
+        printf '  %s✓%s %s\n' "$C_GREEN" "$C_RESET" "${entry#ok }"
+      fi
+    else
+      [ "$JSON" = 0 ] && printf '  %s✗%s %s\n' "$C_RED" "$C_RESET" "${entry#fail }"
+    fi
+  done
+
+  # Failure details (stderr in JSON mode so stdout stays a single JSON object)
+  if [ "${#failures[@]}" -gt 0 ]; then
+    local pair
+    if [ "$JSON" = 1 ]; then
+      for pair in "${failures[@]}"; do
+        printf 'test failed: %s -> %s\n' "${pair%%:*}" "${pair#*:}" >&2
+      done
+    else
+      printf '\n%s── failures ───────────────────────────%s\n' "$C_RED" "$C_RESET"
+      for pair in "${failures[@]}"; do
+        local fname="${pair%%:*}" flog="${pair#*:}"
+        printf '\n%s✗ %s%s\n' "$C_RED" "$fname" "$C_RESET"
+        tail -n "$([ "$show_full" = 1 ] && echo 200 || echo 12)" "$flog" | sed 's/^/    /'
+      done
+      printf '\n%sfull output:%s %s/<name>.log\n' "$C_DIM" "$C_RESET" "$logdir"
+    fi
+  else
+    rm -rf "$logdir"
+  fi
+
+  local total_dur=$(( SECONDS - t0 ))
+  if [ "$JSON" = 1 ]; then
+    print_test_json "$passed" "$failed" "$total_dur" "${json_rows[@]}"
+  else
+    printf '\n%s── summary ────────────────────────────%s\n' "$C_DIM" "$C_RESET"
+    printf '  %s✓ %d passed%s  %s✗ %d failed%s  %s%d skipped%s  %s◷ %ds%s\n' \
+      "$C_GREEN" "$passed" "$C_RESET" \
+      "$C_RED" "$failed" "$C_RESET" \
+      "$C_DIM" "$skipped" "$C_RESET" \
+      "$C_BLUE" "$total_dur" "$C_RESET"
+  fi
+
+  [ "$failed" -eq 0 ] || exit 1
+}
+
+# ───────────────────────────── mi lint ─────────────────────────────
+cmd_lint() {
+  local fix=0 skip_ts=0 only=""
+  if arg_has --fix "$@" || arg_has fix "$@"; then fix=1; fi
+  if arg_has --no-ts "$@" || arg_has --no-typescript "$@"; then skip_ts=1; fi
+  only="$(arg_val --only "$@" || true)"
+  case "$only" in
+    ""|syntax|blade|style|ts|typescript) ;;
+    *) die "mi lint --only expects syntax|blade|style|ts (got '$only')" ;;
+  esac
+  [ "$only" = "typescript" ] && only="ts"
+  ONLY_STAGE="$only"
+
+  local php_files=()
+  while IFS= read -r f; do php_files+=("$f"); done < <(
+    find "$SRC/app" "$SRC/config" "$SRC/tests" -name '*.php' -type f | sort
+  )
+
+  printf '%s▲%s %smi lint%s — %d PHP files\n\n' \
+    "$C_CYAN" "$C_RESET" "$C_BOLD" "$C_RESET" "${#php_files[@]}"
+
+  local failed=0 f fcount=0
+  if stage_wanted syntax; then
+  for f in "${php_files[@]}"; do
+    fcount=$(( fcount + 1 ))
+    [ "$TTY" = 1 ] && printf '\r\e[2K %s scanning %s' "$C_DIM" "$(basename "$f")$C_RESET"
+    php -l "$f" >/dev/null 2>&1 || {
+      failed=$(( failed + 1 ))
+      printf '\n'
+      warn "syntax: $(realpath --relative-to="$SRC" "$f")"
+      php -l "$f" 2>&1 | tail -2 | sed 's/^/    /'
+    }
+  done
+  [ "$TTY" = 1 ] && printf '\r\e[2K'
+  ok "syntax scan: $fcount files${failed:+, ${C_RED}$failed failed${C_RESET}}"
+  fi
+
+  # Blade compile check: compile with the panel's real BladeCompiler, then
+  # php -l the generated PHP. This catches the "directives inside attribute"
+  # class of bug that php -l on the raw blade file cannot see.
+  local panel="/var/www/pterodactyl"
+  if stage_wanted blade; then
+  if [ -f "$panel/vendor/autoload.php" ] && [ -f "$SRC/view.blade.php" ]; then
+    local tmpc="/tmp/mi_blade_lint.php"
+    if sudo -n php -r '
+require "'"$panel"'/vendor/autoload.php";
+$blade = new Illuminate\View\Compilers\BladeCompiler(new Illuminate\Filesystem\Filesystem, sys_get_temp_dir()."/mi-compiled");
+file_put_contents("'"$tmpc"'", $blade->compileString(file_get_contents("'"$SRC"'/view.blade.php")));
+' >/dev/null 2>&1 && php -l "$tmpc" >/dev/null 2>&1; then
+      ok "blade: view.blade.php compiles"
+      sudo -n rm -f "$tmpc" 2>/dev/null || rm -f "$tmpc" 2>/dev/null || true
+    else
+      failed=$(( failed + 1 ))
+      warn "blade: view.blade.php does not compile"
+      php -l "$tmpc" 2>&1 | tail -2 | sed 's/^/    /'
+    fi
+  else
+    warn "blade check skipped (panel vendor dir not found)"
+  fi
+  fi
+
+  # Style lint via php-cs-fixer when available
+  if stage_wanted style; then
+  if [ -x "$SRC/vendor/bin/php-cs-fixer" ]; then
+    if [ "$fix" = 1 ]; then
+      "$SRC/vendor/bin/php-cs-fixer fix" >/dev/null 2>&1
+      ok "style: fixed (php-cs-fixer)"
+    else
+      if "$SRC/vendor/bin/php-cs-fixer fix" --dry-run --diff >/dev/null 2>&1; then
+        ok "style: clean (php-cs-fixer)"
+      else
+        failed=$(( failed + 1 ))
+        warn "style: issues found — run 'mi lint --fix'"
+      fi
+    fi
+  else
+    warn "style: php-cs-fixer not installed (skipped)"
+  fi
+  fi
+
+  # Frontend typecheck: catches TS regressions before the panel's slow
+  # yarn build does. Needs axios types (provided by the panel in production).
+  if stage_wanted ts && [ "$skip_ts" = 0 ]; then
+  if [ -d "$SRC/node_modules/typescript" ] || command -v npx >/dev/null 2>&1; then
+    local ts_out ts_status
+    ts_out="$(cd "$SRC" && npx tsc --noEmit --jsx react-jsx --esModuleInterop \
+      --module esnext --moduleResolution bundler --target es2020 \
+      --skipLibCheck --strict false components/ModpackInstaller.tsx 2>&1 \
+      | grep -v '^npm notice')"
+    # tsc exit code is lost through the grep pipe; re-derive from output
+    if [ -z "$ts_out" ]; then ts_status=0; else ts_status=1; fi
+    if [ "$ts_status" -eq 0 ]; then
+      ok "typescript: components typecheck clean"
+    elif printf '%s' "$ts_out" | grep -q "error TS2307.*axios" \
+      && [ -z "$(printf '%s' "$ts_out" | grep -v 'error TS2307.*axios')" ]; then
+      warn "typescript: only missing axios types (panel-provided in prod) — skipped"
+    else
+      failed=$(( failed + 1 ))
+      warn "typescript: errors found"
+      printf '%s\n' "$ts_out" | head -10 | sed 's/^/    /'
+    fi
+  else
+    warn "typescript: npx not available (skipped)"
+  fi
+  fi
+
+  if [ "$failed" -gt 0 ]; then
+    die "lint failed with $failed issue(s)."
+  fi
+  ok "lint passed${ONLY_STAGE:+ (only: $ONLY_STAGE)}"
+  ONLY_STAGE=""
+}
+
+# ───────────────────────────── mi audit ───────────────────────────
+# Static check for dead catch clauses: a caught type that cannot resolve
+# (an unimported global, a class that lives in another namespace, an import
+# with no file) is a clause that never matches, so the error it was written
+# to handle escapes instead. Pass paths to narrow the scan.
+cmd_audit() {
+  [ -f "$SRC/tools/audit-php.php" ] || die "tools/audit-php.php not found."
+
+  local paths=("$@")
+  [ "${#paths[@]}" -gt 0 ] || paths=("app")
+
+  php "$SRC/tools/audit-php.php" "${paths[@]}"
+}
+
+# ───────────────────────────── mi install-hooks ──────────────
+# Symlinks the versioned hooks in tools/hooks into .git/hooks, so the checks
+# that gate a push live in the repository instead of on one machine.
+cmd_hooks() {
+  local action="${1:-install}"
+  local hooks_dir="$SRC/tools/hooks"
+
+  if [ "$action" = "remove" ] || [ "$action" = "uninstall" ] || [ "$action" = "--remove" ]; then
+    [ -d .git ] || die "Not a git repository."
+
+    local hook name removed=0
+    for hook in "$hooks_dir"/*; do
+      [ -e "$hook" ] || continue
+      name="$(basename "$hook")"
+
+      if [ -e ".git/hooks/$name" ] || [ -L ".git/hooks/$name" ]; then
+        rm -f ".git/hooks/$name"
+        ok "removed .git/hooks/$name"
+        removed=$(( removed + 1 ))
+      fi
+    done
+
+    [ "$removed" -gt 0 ] || warn "no installed hooks to remove"
+    return 0
+  fi
+
+  [ -d .git ] || die "Not a git repository — run this inside the checkout."
+  [ -d "$hooks_dir" ] || die "tools/hooks not found."
+
+  printf '%s▲%s %smi install-hooks%s\n\n' \
+    "$C_CYAN" "$C_RESET" "$C_BOLD" "$C_RESET"
+
+  local hook name
+  for hook in "$hooks_dir"/*; do
+    [ -f "$hook" ] || continue
+    name="$(basename "$hook")"
+    chmod +x "$hook"
+    ln -sf "$hook" ".git/hooks/$name"
+    ok "$name -> .git/hooks/$name"
+  done
+
+  info "bypass a single push with MI_SKIP_CHECKS=1 git push"
+}
+
+# ───────────────────────────── mi check ────────────────────────────
+# The pre-push gate: lint → audit → every suite.
+#   --fast          static gates only (lint + audit), skip the 55 suites
+#   --only <stage>  run one of lint|audit|test on its own
+#   --json          forwards --json to the audit and the suites
+cmd_check() {
+  local fast=0 only="" extra=()
+  if arg_has --fast "$@" || arg_has -F "$@"; then fast=1; fi
+  only="$(arg_val --only "$@" || true)"
+  case "$only" in
+    ""|lint|audit|test) ;;
+    *) die "mi check --only expects lint|audit|test (got '$only')" ;;
+  esac
+  if [ "$JSON" = 1 ]; then extra=(--json); fi
+  if [ "$fast" = 1 ] && [ "$only" = "" ]; then
+    info "--fast: lint + audit only (test suites skipped)"
+  fi
+
+  if [ "$only" = "" ] || [ "$only" = lint ]; then
+    cmd_lint
+    [ "$JSON" = 1 ] || printf '\n'
+  fi
+
+  if [ "$only" = "" ] || [ "$only" = audit ]; then
+    cmd_audit app ${extra[@]+"${extra[@]}"} \
+      || die "audit failed — fix the reported catch clause(s)."
+    [ "$JSON" = 1 ] || printf '\n'
+  fi
+
+  if [ "$fast" = 0 ] && { [ "$only" = "" ] || [ "$only" = test ]; }; then
+    cmd_test all ${extra[@]+"${extra[@]}"}
+  fi
+}
+
+# ───────────────────────────── mi build / css ──────────────────
+# Detects which panel layout we're working with:
+#   1. Working directly in the panel's dev tree (/var/www/pterodactyl/
+#      .blueprint/dev): no rsync pipeline needed — regenerate css, sync the
+#      install-time files, reinstall via Blueprint's developer-build.
+#   2. Repo checkout elsewhere: deploy via build.sh (rsync pipeline).
+panel_dir() {
+  # repo sits inside a panel?
+  if [ -f "$SRC/../artisan" ] && [ -f "$SRC/../blueprint.sh" ]; then
+    dirname "$SRC/../artisan"
+    return 0
+  fi
+  # standard local-dev location?
+  if [ -f "/var/www/pterodactyl/artisan" ]; then
+    echo "/var/www/pterodactyl"
+    return 0
+  fi
+  return 1
+}
+
+in_panel_dev_tree() {
+  case "$SRC" in
+    */.blueprint/dev|*/.blueprint/dev/*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# `mi build [-n|--dry-run] [--css-only]`
+#   -n          show which layout/target would be used, then stop
+#   --css-only  regenerate root.css and nothing else
+cmd_build() {
+  local panel dry=0
+  if arg_has --dry-run "$@" || arg_has -n "$@"; then dry=1; fi
+
+  if arg_has --css-only "$@"; then
+    cmd_css
+    return 0
+  fi
+
+  if in_panel_dev_tree; then
+    panel="$(dirname "$(dirname "$(dirname "$SRC")")")"   # .blueprint/dev -> panel
+
+    if [ "$dry" = 1 ]; then
+      info "layout:   panel dev tree"
+      info "source:   $SRC"
+      info "panel:    $panel"
+      info "steps:    css rebuild → sync admin files → blueprint -build"
+      return 0
+    fi
+
+    info "Dev-tree deploy (working directly inside the panel)"
+
+    node "$SRC/tools/build-css.mjs" || die "css build failed."
+
+    sync_admin_files "$panel"
+
+    cd "$panel" || die "Panel directory disappeared."
+    sudo -n blueprint -build || die "blueprint -build failed."
+
+    ok "deployed from dev tree — hard-refresh the panel"
+    return 0
+  fi
+
+  if panel=$(panel_dir); then
+    if [ "$dry" = 1 ]; then
+      info "layout:   repo checkout"
+      info "source:   $SRC"
+      info "panel:    $panel"
+      info "steps:    build.sh rsync pipeline → blueprint -build"
+      return 0
+    fi
+    info "Deploying from repo checkout to panel at $panel"
+    exec bash "$SRC/build.sh"
+  fi
+
+  die "No Pterodactyl panel found. Run from the repo or the panel dev tree."
+}
+
+# Copies the admin-page files Blueprint only places at install time (view,
+# controller, conf, admin css) from the current tree into the installed
+# extension, keeping the version in sync.
+sync_admin_files() {
+  local panel="$1"
+  local identifier
+  identifier="$(sed -n 's/^[[:space:]]*identifier:[[:space:]]*"\([^"]*\)".*/\1/p' "$SRC/conf.yml" | head -1)"
+  [ -n "$identifier" ] || die "conf.yml: missing identifier."
+
+  # Match the owner the panel actually runs as (same logic as the installer:
+  # never assume www-data — RHEL nginx/apache and custom FPM pools differ).
+  local web_owner
+  web_owner="$(sudo -n stat -c '%U:%G' "$panel/storage" 2>/dev/null || echo "www-data:www-data")"
+  if [ "${web_owner%%:*}" = "root" ] || [ -z "$web_owner" ]; then
+    web_owner="www-data:www-data"
+  fi
+
+  local version
+  version="$(sed -n 's/^[[:space:]]*version:[[:space:]]*"\([^"]*\)".*/\1/p' "$SRC/conf.yml" | head -1)"
+
+  local installed_view="$panel/resources/views/admin/extensions/$identifier/index.blade.php"
+  local installed_ctl="$panel/app/Http/Controllers/Admin/Extensions/$identifier/${identifier}ExtensionController.php"
+  local installed_conf="$panel/.blueprint/extensions/$identifier/private/.store/conf.yml"
+  local installed_css="$panel/.blueprint/extensions/$identifier/assets/admin.style.css"
+
+  local tmpv="$(mktemp)"
+  {
+    sed -n '1,/extension\.description/p' "$installed_view" 2>/dev/null \
+      | sed -E 's~\$EXTENSION_VERSION = ".*";~\$EXTENSION_VERSION = "'"${version:-unknown}"'";~'
+    cat "$SRC/view.blade.php"
+    printf '\n@endsection\n'
+  } > "$tmpv"
+
+  sudo -n cp "$tmpv" "$installed_view" \
+    && sudo -n chown "$web_owner" "$installed_view" \
+    && sudo -n rsync -a "$SRC/app/AdminController.php" "$installed_ctl" \
+    && sudo -n rsync -a "$SRC/conf.yml" "$installed_conf" \
+    && sudo -n rsync -a "$SRC/admin.style.css" "$installed_css" \
+    && sudo -n chown "$web_owner" "$installed_ctl" "$installed_conf" "$installed_css" \
+    || die "syncing admin files failed (is the extension installed?)."
+
+  rm -f "$tmpv"
+
+  ( cd "$panel" && sudo -n php artisan view:clear >/dev/null 2>&1; true )
+
+  # Keep Blueprint's admin css import alive (idempotent).
+  local bp_css="$panel/.blueprint/extensions/blueprint/assets/admin.extensions.css"
+  local import_line="@import url(/assets/extensions/$identifier/admin.style.css);"
+  if [ -f "$bp_css" ] && ! sudo -n grep -qF "$import_line" "$bp_css"; then
+    printf '%s\n' "$import_line" | sudo -n tee -a "$bp_css" >/dev/null
+  fi
+}
+
+# `mi css [--check]`
+#   --check   fail when root.css is stale (hand-edited or not regenerated),
+#             for CI; the file is regenerated either way.
+cmd_css() {
+  if ! arg_has --check "$@"; then
+    node "$SRC/tools/build-css.mjs"
+    return 0
+  fi
+
+  local before
+  before="$(mktemp)"
+  cp "$SRC/root.css" "$before" 2>/dev/null || : > "$before"
+  node "$SRC/tools/build-css.mjs" >/dev/null || die "css build failed."
+
+  if diff -q "$before" "$SRC/root.css" >/dev/null 2>&1; then
+    rm -f "$before"
+    ok "css: root.css matches components/styles (regenerated)"
+    return 0
+  fi
+
+  rm -f "$before"
+  warn "css: root.css was out of date — it has been regenerated from components/styles"
+  printf '%s\n' "  commit the regenerated root.css" | sed 's/^/    /'
+  return 1
+}
+
+# ───────────────────────────── mi release ───────────────────
+# Computes the next version from the commit history (feat → minor,
+# fix → patch), updates conf.yml + constants.ts, and prepends a
+# CHANGELOG.md section. Pass --tag to also commit and tag.
+cmd_release() {
+  local bump="" do_tag=0 dry=0
+  local arg
+  for arg in "$@"; do
+    case "$arg" in
+      major|minor|patch) bump="$arg" ;;
+      --tag)             do_tag=1 ;;
+      --dry-run|-n)      dry=1 ;;
+      *) die "mi release: unknown argument '$arg' (use major|minor|patch [--tag] [--dry-run])" ;;
+    esac
+  done
+
+  [ -f "$SRC/conf.yml" ] || die "conf.yml not found."
+  command -v git >/dev/null || die "git not available."
+
+  local cur
+  cur="$(sed -n 's/^[[:space:]]*version:[[:space:]]*"\([^"]*\)".*/\1/p' "$SRC/conf.yml" | head -1)"
+  [[ "$cur" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "conf.yml version '$cur' is not X.Y.Z."
+  local maj=${cur%%.*} rest=${cur#*.}
+  local min=${rest%%.*} pat=${rest#*.}
+
+  # Version scheme: 0.<feat-count>.<fix-count> — counts over ALL history
+  # (deterministic, matches how conf.yml versions were derived). `major`
+  # bumps the leading component instead for a 1.x.y-style release.
+  local subjects=()
+  while IFS= read -r s; do [ -n "$s" ] && subjects+=("$s"); done < <(
+    git -C "$SRC" log --pretty=format:%s 2>/dev/null
+  )
+  [ "${#subjects[@]}" -gt 0 ] || die "No commits found — nothing to release."
+
+  local nfeat=0 nfix=0 s
+  for s in "${subjects[@]}"; do
+    case "$s" in
+      feat*:*|feat:*|feat\(*:*) nfeat=$(( nfeat + 1 )) ;;
+      fix*:*)                   nfix=$(( nfix + 1 )) ;;
+    esac
+  done
+
+  if [ "$bump" = "major" ]; then
+    maj=$(( maj + 1 ))
+  fi
+  min=$nfeat
+  pat=$nfix
+  local next="$maj.$min.$pat"
+
+  [ "$next" != "$cur" ] || die "Version already at $next (0 feat/fix commits added since)."
+
+  # --- changelog entry ---
+  local feats=() fixes=() others=()
+  for s in "${subjects[@]}"; do
+    case "$s" in
+      feat*:*) feats+=("${s#*:}") ;;
+      fix*:*)  fixes+=("${s#*:}") ;;
+      chore*:*|chore:*) ;;
+      *)       others+=("$s") ;;
+    esac
+  done
+
+  local entry="\n## $next — $(date +%Y-%m-%d)\n"
+  if [ "${#feats[@]}" -gt 0 ]; then
+    entry+="### Features\n"
+    for s in "${feats[@]}"; do entry+="- ${s# }\n"; done
+    entry+="\n"
+  fi
+  if [ "${#fixes[@]}" -gt 0 ]; then
+    entry+="### Fixes\n"
+    for s in "${fixes[@]}"; do entry+="- ${s# }\n"; done
+    entry+="\n"
+  fi
+  if [ "${#others[@]}" -gt 0 ]; then
+    entry+="### Other\n"
+    for s in "${others[@]}"; do entry+="- $s\n"; done
+    entry+="\n"
+  fi
+
+  if [ "$dry" = 1 ]; then
+    printf '%b' "$entry"
+    info "dry run — nothing written; $cur would become $next ($nfeat feat, $nfix fix)"
+    return 0
+  fi
+
+  # --- write files ---
+  sed -i 's~^\([[:space:]]*version:[[:space:]]*\)"[^"]*"~\1"'"$next"'"~' "$SRC/conf.yml" \
+    || die "failed to update conf.yml."
+  sed -E "s~^(export const EXTENSION_VERSION = ).*;~\1\"$next\";~" \
+    "$SRC/components/utils/constants.ts" > "$SRC/components/utils/constants.ts.tmp" \
+    && mv "$SRC/components/utils/constants.ts.tmp" "$SRC/components/utils/constants.ts" \
+    || die "failed to update components/utils/constants.ts."
+
+  # Prepend to CHANGELOG.md (after the title line if present).
+  local tmpcl="$(mktemp)"
+  if [ -f "$SRC/CHANGELOG.md" ]; then
+    { head -1 "$SRC/CHANGELOG.md"; printf '%b' "$entry"; tail -n +2 "$SRC/CHANGELOG.md"; } > "$tmpcl"
+  else
+    { printf '# Changelog\n\n'; printf '%b' "$entry"; } > "$tmpcl"
+  fi
+  mv "$tmpcl" "$SRC/CHANGELOG.md"
+
+  ok "version: $cur → $next ($nfeat feat, $nfix fix)"
+  info "updated: conf.yml, components/utils/constants.ts, CHANGELOG.md"
+
+  if [ "$do_tag" = 1 ]; then
+    git -C "$SRC" add conf.yml components/utils/constants.ts CHANGELOG.md
+    git -C "$SRC" commit -m "chore: release $next" \
+      || die "git commit failed."
+    git -C "$SRC" tag -a "v$next" -m "Release $next" \
+      || die "git tag failed."
+    ok "committed and tagged v$next — push with: git push --follow-tags"
+  else
+    info "review the diff, then run: git add -A && git commit -m 'chore: release $next'"
+    info "or re-run with --tag to commit + tag automatically."
+  fi
+}
+
+# ───────────────────────────── mi coverage ────────────────────
+# Maps app/ classes against test suites: which classes have no test file
+# referencing them. Fast gap report, not a real coverage tool.
+# `mi coverage [--min <pct>] [--json]`
+#   --min   exit non-zero when coverage is below the given percentage
+#           (otherwise any uncovered class fails, as before)
+cmd_coverage() {
+  local classes=() f base
+  local min
+  min="$(arg_val --min "$@" || true)"
+  case "$min" in
+    ""|[0-9]|[0-9][0-9]|100) ;;
+    *) die "mi coverage --min expects 0-100 (got '$min')" ;;
+  esac
+  while IFS= read -r f; do
+    base="$(basename "$f" .php)"
+    [ "$base" = "helpers" ] && continue
+    classes+=("$base")
+  done < <(find "$SRC/app" -name '*.php' -type f | sort)
+
+  local tested=0 untested=0 c
+  local uncovered=()
+  if [ "$QUIET" = 0 ] && [ "$JSON" = 0 ]; then
+    printf '%s▲%s %smi coverage%s — %d app classes\n\n' \
+      "$C_CYAN" "$C_RESET" "$C_BOLD" "$C_RESET" "${#classes[@]}"
+  fi
+
+  for c in "${classes[@]}"; do
+    if grep -rql "$c" "$SRC/tests/manual" 2>/dev/null; then
+      tested=$(( tested + 1 ))
+      [ "$TTY" = 1 ] && printf '  %s✓%s %s\n' "$C_GREEN" "$C_RESET" "$c"
+    else
+      untested=$(( untested + 1 ))
+      uncovered+=("$c")
+    fi
+  done
+
+  if [ "$TTY" = 1 ]; then
+    # TTY: only print the gap list (the checked set is noise)
+    :
+  fi
+
+  if [ "${#uncovered[@]}" -gt 0 ] && [ "$QUIET" = 0 ] && [ "$JSON" = 0 ]; then
+    printf '%s── no test references these classes ──%s\n' "$C_YELLOW" "$C_RESET"
+    for c in "${uncovered[@]}"; do
+      printf '  %s·%s %s\n' "$C_YELLOW" "$C_RESET" "$c"
+    done
+  fi
+
+  local pct=$(( tested * 100 / (${#classes[@]} > 0 ? ${#classes[@]} : 1) ))
+
+  if [ "$JSON" = 1 ]; then
+    printf '{"classes":%d,"covered":%d,"uncovered":%d,"percent":%d,"uncovered_classes":[' \
+      "${#classes[@]}" "$tested" "$untested" "$pct"
+    local first=1
+    for c in "${uncovered[@]}"; do
+      [ "$first" = 1 ] || printf ','
+      first=0
+      printf '"%s"' "$c"
+    done
+    printf ']}\n'
+  else
+    printf '\n%s── summary ────────────────────────────%s\n' "$C_DIM" "$C_RESET"
+    printf '  %s✓ %d covered%s  %s· %d uncovered%s  (%d%%)\n' \
+      "$C_GREEN" "$tested" "$C_RESET" \
+      "$C_YELLOW" "$untested" "$C_RESET" "$pct"
+  fi
+
+  if [ -n "$min" ]; then
+    [ "$pct" -ge "$min" ] \
+      || die "coverage ${pct}% is below the --min ${min}% threshold."
+    [ "$JSON" = 1 ] || ok "coverage ${pct}% meets --min ${min}%"
+    return 0
+  fi
+
+  [ "$untested" -eq 0 ]
+}
+
+# ───────────────────────────── mi smoke ────────────────────────
+# Post-deploy health check against the local panel: admin page renders,
+# API route responds, admin CSS asset serves.
+cmd_smoke() {
+  local panel="${PANEL_DIR:-/var/www/pterodactyl}" fails=0
+  local url_override
+  url_override="$(arg_val --url "$@" || true)"
+
+  local app_url=""
+  if [ -f "$panel/.env" ]; then
+    app_url="$(sudo -n sed -n 's/^APP_URL="\?\([^"\n]*\)"\?$/\1/p' "$panel/.env" 2>/dev/null | head -1)"
+  fi
+  # --url wins: lets you smoke-test a remote panel from any machine.
+  [ -n "$url_override" ] && app_url="$url_override"
+  [ -n "$app_url" ] \
+    || die "No APP_URL in $panel/.env — pass --url https://your-panel."
+
+  local identifier="modpackinstaller"
+  local base="${app_url%/}"
+  local panel_code="" admin_code="" api_code="" css_code=""
+  local datadir="" datadir_state="unchecked"
+
+  if [ "$QUIET" = 0 ] && [ "$JSON" = 0 ]; then
+    printf '%s▲%s %smi smoke%s — %s\n\n' \
+      "$C_CYAN" "$C_RESET" "$C_BOLD" "$C_RESET" "$base"
+  fi
+
+  # 1. Panel is up at all
+  local code
+  code="$(curl -sk -o /dev/null -w '%{http_code}' --max-time 10 "$base/")"
+  panel_code="$code"
+  if [ "$code" = 200 ] || [ "$code" = 302 ]; then
+    okq "panel responds ($code)"
+  else
+    warn "panel responded $code (expected 200/302)"; fails=$(( fails + 1 ))
+  fi
+
+  # 2. Admin extension page renders (via session-less curl this may 302 to
+  #    login — the point is it must NOT 500)
+  code="$(curl -sk -o /dev/null -w '%{http_code}' --max-time 10 "$base/admin/extensions/$identifier")"
+  admin_code="$code"
+  if [ "$code" = 500 ]; then
+    warn "admin page 500 — check storage/logs/laravel-*.log"; fails=$(( fails + 1 ))
+  else
+    okq "admin page not erroring ($code)"
+  fi
+
+  # 3. Client API route exists (unauthenticated → 401, never 404/500)
+  code="$(curl -sk -o /dev/null -w '%{http_code}' --max-time 10 \
+    "$base/api/client/extensions/$identifier/catalog/providers")"
+  api_code="$code"
+  case "$code" in
+    401|403|302) okq "api route guarded ($code)" ;;
+    404)     warn "api route 404 — router not registered/cached"; fails=$(( fails + 1 )) ;;
+    *)       warn "api route responded $code"; fails=$(( fails + 1 )) ;;
+  esac
+
+  # 4. Admin CSS asset serves through the web server
+  code="$(curl -sk -o /dev/null -w '%{http_code}' --max-time 10 \
+    "$base/assets/extensions/$identifier/admin.style.css")"
+  css_code="$code"
+  if [ "$code" = 200 ]; then
+    okq "admin css serves"
+  else
+    warn "admin css responded $code (symlink/nginx issue?)"; fails=$(( fails + 1 ))
+  fi
+
+  # 5. Data dir writable by php-fpm user
+  datadir="$(sudo -n php -r '
+require "'"$panel"'/vendor/autoload.php";
+$c = new Illuminate\Config\Repository;
+$f = "'"$panel"'/config/modpackinstaller.php";
+$d = is_file($f) ? (require $f) : [];
+echo $d["data_dir"] ?? "/var/lib/pterodactyl/modpack-installer";
+' 2>/dev/null || echo "/var/lib/pterodactyl/modpack-installer")"
+  if sudo -n test -d "$datadir" && sudo -n test -w "$datadir"; then
+    datadir_state="writable"
+    okq "data dir writable ($datadir)"
+  elif sudo -n test -d "$datadir"; then
+    datadir_state="not-writable"
+    warn "data dir exists but not writable: $datadir"; fails=$(( fails + 1 ))
+  else
+    datadir_state="absent"
+    info "data dir not created yet ($datadir) — ok until first install"
+  fi
+
+  if [ "$JSON" = 1 ]; then
+    printf '{"base":"%s","failures":%d,"panel":"%s","admin":"%s","api":"%s","css":"%s","data_dir":{"path":"%s","state":"%s"}}\n' \
+      "$base" "$fails" "$panel_code" "$admin_code" "$api_code" "$css_code" \
+      "$datadir" "$datadir_state"
+  fi
+
+  if [ "$fails" -gt 0 ]; then
+    die "smoke check failed ($fails issue(s))."
+  fi
+  okq "smoke passed — deployment looks healthy"
+}
+
+# ───────────────────────────── mi db:reset ────────────────────
+# Wipes extension-owned local state: install records, history, catalog
+# cache keys. Settings in the panel DB are preserved (pass --all to drop
+# them too). Requires sudo when the data dir is root-owned.
+cmd_dbreset() {
+  local wipe_settings=0 dry=0
+  if arg_has --all "$@" || arg_has -a "$@"; then wipe_settings=1; fi
+  if arg_has --dry-run "$@" || arg_has -n "$@"; then dry=1; fi
+
+  local panel="${PANEL_DIR:-/var/www/pterodactyl}"
+  local datadir="${MI_DATA_DIR:-/var/lib/pterodactyl/modpack-installer}"
+
+  info "Resetting extension state (records, history, catalog cache)"
+
+  # Nothing is touched without this early exit — safe to read the plan first.
+  if [ "$dry" = 1 ]; then
+    info "dry run — nothing was removed"
+    info "would remove: $datadir/installs.json, $datadir/history.json"
+    info "would flush:  modpackinstaller:catalog:* cache keys"
+    if [ "$wipe_settings" = 1 ]; then
+      info "would delete: settings rows named modpackinstaller::*"
+    else
+      info "settings preserved (--all would delete them)"
+    fi
+    return 0
+  fi
+
+  if [ -d "$datadir" ]; then
+    sudo -n rm -f "$datadir/installs.json" "$datadir/history.json" \
+      || die "could not remove state files (sudo?)."
+    ok "removed install records + history"
+  else
+    info "no data dir at $datadir — nothing on disk to wipe"
+  fi
+
+  # Catalog cache keys in the panel cache store (same scan pattern build.sh uses)
+  if [ -f "$panel/artisan" ]; then
+    sudo -n php -r '
+require "'"$panel"'/vendor/autoload.php";
+$app = require "'"$panel"'/bootstrap/app.php";
+$kernel = $app->make(Illuminate\Contracts\Console\Kernel::class);
+$kernel->bootstrap();
+try {
+  $store = $app->make("cache")->store();
+  $redis = $store->connection();
+  [$cursor, $keys] = $redis->scan($cursor = 0, ["MATCH" => "modpackinstaller:catalog:*", "COUNT" => 100]);
+  if (!empty($keys)) { $redis->del($keys); echo count($keys) . " cache keys removed\n"; }
+  else { echo "no catalog cache keys\n"; }
+} catch (Throwable $e) { echo "cache flush skipped: " . $e->getMessage() . "\n"; }
+' || warn "catalog cache flush failed (store unreachable?)"
+  fi
+
+  if [ "$wipe_settings" = 1 ]; then
+    sudo -n php -r '
+require "'"$panel"'/vendor/autoload.php";
+$app = require "'"$panel"'/bootstrap/app.php";
+$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+$n = $app->make("db")->table("settings")
+  ->where("name", "like", "modpackinstaller::%")->delete();
+echo $n . " settings removed\n";
+' || die "could not clear settings (sudo?)."
+    ok "settings cleared"
+  else
+    info "settings preserved — pass --all to also wipe admin-page settings"
+  fi
+
+  ok "reset complete"
+}
+
+# ───────────────────────────── mi watch ───────────────────────
+# Live-rebuild loop: watches the source tree, redeploys on change.
+# Uses Blueprint's own watch when working in the panel dev tree, otherwise
+# a portable inotifywait/fswatch fallback driving `mi build`.
+cmd_watch() {
+  if in_panel_dev_tree; then
+    info "handing off to Blueprint's native watch (dev tree)"
+    exec sudo -n blueprint -watch
+  fi
+
+  if ! in_panel_dev_tree && ! panel=$(panel_dir); then
+    die "No panel found — mi watch needs a local panel to deploy to."
+  fi
+
+  info "watching for changes — Ctrl+C to stop"
+  cmd_build || die "initial build failed."
+
+  local watch_paths=("$SRC/app" "$SRC/components" "$SRC/config" \
+    "$SRC/view.blade.php" "$SRC/admin.style.css" "$SRC/conf.yml" "$SRC/root.css")
+
+  if command -v inotifywait >/dev/null 2>&1; then
+    while true; do
+      inotifywait -r -q -e close_write,moved_to,create \
+        --exclude '(\.git|node_modules|\.build-cache)' \
+        "${watch_paths[@]}" 2>/dev/null || die "watcher died."
+      sleep 0.5
+      printf '%s[..]%s change detected — rebuilding\n' "$C_BLUE" "$C_RESET"
+      cmd_build || warn "build failed — waiting for next change"
+    done
+  elif command -v fswatch >/dev/null 2>&1; then
+    fswatch -r -o --exclude '\.git|node_modules|\.build-cache' \
+      "${watch_paths[@]}" | while read -r _; do
+        printf '%s[..]%s change detected — rebuilding\n' "$C_BLUE" "$C_RESET"
+        cmd_build || warn "build failed — waiting for next change"
+      done
+  else
+    # Dependency-free polling fallback (2s fingerprint of mtimes+sizes).
+    local snap="" prev="" i
+    while true; do
+      snap="$(find "${watch_paths[@]}" -type f \
+        \( -path '*/.git/*' -o -path '*/node_modules/*' \) -prune -o \
+        -printf '%p %T@ %s\n' 2>/dev/null | sort | md5sum)"
+      if [ -n "$prev" ] && [ "$snap" != "$prev" ]; then
+        printf '%s[..]%s change detected — rebuilding\n' "$C_BLUE" "$C_RESET"
+        cmd_build || warn "build failed — waiting for next change"
+      fi
+      prev="$snap"
+      sleep 2
+    done
+  fi
+}
+
+# ───────────────────────────── mi install ──────────────────────
+# One-command panel install — wraps tools/installer.sh (system deps, PHP
+# extensions, PHP-FPM limits, ACLs, Blueprint, extension, assets).
+# `mi install [--force] [--panel-dir <path>] [--web-user <user>]`
+#   --force      reinstall over an existing install
+#   --panel-dir  panel path when it is not /var/www/pterodactyl
+#   --web-user   override PHP-FPM's user when it cannot be auto-detected
+cmd_install() {
+  [ -f "$SRC/tools/installer.sh" ] || die "tools/installer.sh not found."
+
+  local env_args=() pd wu
+  if arg_has --force "$@" || arg_has -f "$@"; then env_args+=(MI_FORCE=1); fi
+  pd="$(arg_val --panel-dir "$@" || true)"
+  [ -n "$pd" ] && env_args+=("PANEL_DIR=$pd")
+  wu="$(arg_val --web-user "$@" || true)"
+  [ -n "$wu" ] && env_args+=("MI_WEB_USER=$wu" "MI_WEB_GROUP=$wu")
+
+  if [ "${#env_args[@]}" -gt 0 ]; then
+    exec env ${env_args[@]+"${env_args[@]}"} bash "$SRC/tools/installer.sh"
+  fi
+  exec bash "$SRC/tools/installer.sh"
+}
+
+# ───────────────────────────── mi version ─────────────────────────
+# The version the panel's extension card shows, straight from conf.yml.
+cmd_version() {
+  local v id
+  v="$(sed -n 's/^[[:space:]]*version:[[:space:]]*"\([^"]*\)".*/\1/p' "$SRC/conf.yml" | head -1)"
+  id="$(sed -n 's/^[[:space:]]*identifier:[[:space:]]*"\([^"]*\)".*/\1/p' "$SRC/conf.yml" | head -1)"
+
+  if [ "$JSON" = 1 ]; then
+    printf '{"name":"Addon Manager","version":"%s","identifier":"%s","path":"%s"}\n' \
+      "$v" "$id" "$SRC"
+    return 0
+  fi
+  printf '%sAddon Manager%s %s%s%s %s(%s)%s — %s\n' \
+    "$C_BOLD" "$C_RESET" "$C_GREEN" "$v" "$C_RESET" \
+    "$C_DIM" "$id" "$C_RESET" "$SRC"
+}
+
+# ───────────────────────────── mi help ─────────────────────────────
+cmd_help() {
+  cat <<EOF
+${C_BOLD}mi${C_RESET} — developer CLI for Addon Manager
+
+${C_BOLD}Quality${C_RESET}
+  ${C_CYAN}mi test${C_RESET} [<name>]      Run manual test suites (default: all)
+  ${C_CYAN}mi lint${C_RESET}              PHP syntax + blade + style + TS lint
+  ${C_CYAN}mi audit${C_RESET} [path...]   Static check: catch clauses that never match
+  ${C_CYAN}mi check${C_RESET}             lint + audit + test — run before pushing
+  ${C_CYAN}mi coverage${C_RESET}          App classes with no test coverage
+
+${C_BOLD}Deploy${C_RESET}
+  ${C_CYAN}mi build${C_RESET}             Deploy to the panel (auto-detects repo vs dev tree)
+  ${C_CYAN}mi css${C_RESET}               Regenerate root.css from components/styles
+  ${C_CYAN}mi install${C_RESET}           Install the extension into the panel (sudo)
+  ${C_CYAN}mi smoke${C_RESET}             Post-deploy health check against the panel
+  ${C_CYAN}mi watch${C_RESET}             Rebuild automatically on file changes
+  ${C_CYAN}mi db:reset${C_RESET}          Wipe records/history/catalog cache
+  ${C_CYAN}mi install-hooks${C_RESET}     Add/remove the git pre-push gate (--remove)
+
+${C_BOLD}Release${C_RESET}
+  ${C_CYAN}mi release${C_RESET} [mmp]      Bump version from commits + write CHANGELOG.md
+  ${C_CYAN}mi version${C_RESET}           Version + identifier from conf.yml
+  ${C_CYAN}mi help${C_RESET}              This help
+
+${C_BOLD}Flags${C_RESET} (accepted by every subcommand)
+  ${C_GREEN}--help${C_RESET}              Usage for that command
+  ${C_GREEN}--quiet${C_RESET}, ${C_GREEN}-q${C_RESET}          Failures and summary only
+  ${C_GREEN}--json${C_RESET}              Machine-readable summary on stdout
+  ${C_GREEN}--no-color${C_RESET}          Plain output (same as NO_COLOR=1)
+  ${C_GREEN}--dry-run${C_RESET}, ${C_GREEN}-n${C_RESET}       Preview without writing (build, release, db:reset)
+
+${C_DIM}Examples:
+  mi test catalog              # suites matching "catalog"
+  mi test -x -v                # stop at the first failure, full output
+  mi test --json               # CI-friendly summary
+  mi lint --only syntax        # fast single-stage lint
+  mi check --fast              # lint + audit, no suites
+  mi css --check               # fail when root.css is stale
+  mi coverage --min 60         # coverage gate
+  mi build -n                  # print the deploy target, change nothing
+
+  mi <command> --help          # flags for one command
+${C_RESET}
+${C_DIM}Install globally: sudo ln -sf "$PWD/mi" /usr/local/bin/mi${C_RESET}
+EOF
+}
+
+# `mi <command> --help` — usage for a single command.
+cmd_usage() {
+  case "${1:-}" in
+    test) cat <<EOF
+${C_BOLD}mi test${C_RESET} [<name>] [flags]
+  <name>            suites whose file name contains this substring
+  -f, --filter <s>  same as the positional filter
+  -l, --list        list the suites that would run, then exit
+  -x, --bail        stop at the first failing suite
+  -v, --verbose     full output for failing suites
+  -q, --quiet       hide progress and the ✓ list
+      --json        JSON summary on stdout (failures go to stderr)
+EOF
+      ;;
+    lint) cat <<EOF
+${C_BOLD}mi lint${C_RESET} [flags]
+      --fix         apply php-cs-fixer
+      --only <s>    run one stage: syntax | blade | style | ts
+      --no-ts       skip the TypeScript typecheck
+EOF
+      ;;
+    check) cat <<EOF
+${C_BOLD}mi check${C_RESET} [flags]
+      --fast        lint + audit only (skip the test suites)
+      --only <s>    run one stage: lint | audit | test
+      --json        forward --json to the audit and the suites
+EOF
+      ;;
+    audit) cat <<EOF
+${C_BOLD}mi audit${C_RESET} [path...] [--json]
+  Scans app/ by default; pass paths to narrow it. Exit 1 on findings.
+EOF
+      ;;
+    build) cat <<EOF
+${C_BOLD}mi build${C_RESET} [flags]
+  -n, --dry-run     print the detected layout, source, panel and steps
+      --css-only    regenerate root.css and stop
+EOF
+      ;;
+    css) cat <<EOF
+${C_BOLD}mi css${C_RESET} [--check]
+      --check       exit 1 when root.css was stale (CI gate)
+EOF
+      ;;
+    release) cat <<EOF
+${C_BOLD}mi release${C_RESET} [major|minor|patch] [flags]
+      --tag         commit + tag after bumping
+  -n, --dry-run     show the next version and changelog, write nothing
+EOF
+      ;;
+    coverage) cat <<EOF
+${C_BOLD}mi coverage${C_RESET} [flags]
+      --min <pct>   exit non-zero below this percentage
+      --json        JSON summary on stdout
+EOF
+      ;;
+    smoke) cat <<EOF
+${C_BOLD}mi smoke${C_RESET} [flags]
+      --url <base>  check a panel other than the local APP_URL
+      --json        JSON summary on stdout
+EOF
+      ;;
+    db:reset|dbreset|reset) cat <<EOF
+${C_BOLD}mi db:reset${C_RESET} [flags]
+      --all         also delete the admin-page settings rows
+  -n, --dry-run     print what would be removed instead
+EOF
+      ;;
+    install) cat <<EOF
+${C_BOLD}mi install${C_RESET} [flags]   (needs sudo)
+      --force         reinstall over an existing install
+      --panel-dir <p> panel path (default /var/www/pterodactyl)
+      --web-user <u>  PHP-FPM user when auto-detection fails
+EOF
+      ;;
+    watch) cat <<EOF
+${C_BOLD}mi watch${C_RESET}
+  Build once, then redeploy on every change. In the panel dev tree it hands
+  off to Blueprint's own watcher. Ctrl+C to stop.
+EOF
+      ;;
+    install-hooks|hooks) cat <<EOF
+${C_BOLD}mi install-hooks${C_RESET} [--remove]
+  Symlinks tools/hooks/pre-push into .git/hooks. Bypass once with
+  MI_SKIP_CHECKS=1 git push.
+EOF
+      ;;
+    version) printf '%smi version%s [--json]\n' "$C_BOLD" "$C_RESET" ;;
+    *) cmd_help ;;
+  esac
+}
+
+# ───────────────────────────── dispatch ────────────────────────────
+SECONDS=0
+cmd="${1:-help}"
+shift 2>/dev/null || true
+
+# Global flags, valid for every subcommand.
+QUIET=0
+JSON=0
+if arg_has --quiet "$@" || arg_has -q "$@"; then QUIET=1; fi
+if arg_has --json "$@"; then JSON=1; fi
+
+# `mi <cmd> --help` / `-h` → just that command's usage.
+if [ "$cmd" != help ] && { arg_has --help "$@" || arg_has -h "$@"; }; then
+  cmd_usage "$cmd"
+  exit 0
+fi
+
+case "$cmd" in
+  test)  cmd_test "$@" ;;
+  lint)  cmd_lint "$@" ;;
+  check) cmd_check "$@" ;;
+  audit) cmd_audit "$@" ;;
+  install-hooks|hooks) cmd_hooks "$@" ;;
+  build) cmd_build "$@" ;;
+  install) cmd_install "$@" ;;
+  css)   cmd_css "$@" ;;
+  release) cmd_release "$@" ;;
+  coverage) cmd_coverage "$@" ;;
+  smoke) cmd_smoke "$@" ;;
+  db:reset|dbreset|reset) cmd_dbreset "$@" ;;
+  watch) cmd_watch "$@" ;;
+  version|--version|-V) cmd_version ;;
+  help|--help|-h) cmd_help ;;
+  *) die "Unknown command: $cmd — try 'mi help'" ;;
+esac

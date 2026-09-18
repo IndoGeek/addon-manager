@@ -2,6 +2,7 @@
 
 // Functional tests for the restore + integrity feature: - install -> out-of-band file deletion -> verifier flags missing...
 
+require __DIR__ . '/../../app/Services/Installation/ContentInstallTarget.php';
 require __DIR__ . '/../../app/Services/Archive/ArchiveValidator.php';
 require __DIR__ . '/../../app/Services/Archive/ArchiveExtractor.php';
 require __DIR__ . '/../../app/Services/Installation/InstallationWorkspace.php';

@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  php:
+    name: PHP lint + audit + tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: zip, curl, mbstring, dom
+
+      # Same gate the pre-push hook runs, so CI and local agree by
+      # construction: PHP syntax, blade compile, dead-catch audit and every
+      # suite in tests/manual.
+      - name: mi check
+        run: ./mi check --no-color
+
+      # root.css is generated from components/styles — a stale committed copy
+      # means someone edited it by hand or forgot `mi css`.
+      - name: Generated CSS is current
+        run: ./mi css --check --no-color
+
+  frontend:
+    name: Frontend typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dev deps
+        run: npm install --no-save typescript@latest @types/react @types/react-dom axios
+
+      - name: Typecheck components
+        # The extension builds inside the panel's yarn build; this catches
+        # type regressions before a deploy. axios is provided by the panel.
+        run: |
+          npx tsc --noEmit --jsx react-jsx --esModuleInterop \
+            --module esnext --moduleResolution bundler --target es2020 \
+            --skipLibCheck --strict false components/ModpackInstaller.tsx

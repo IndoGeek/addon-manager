@@ -32,6 +32,15 @@ if ($path === '/big') {
     return;
 }
 
+if ($path === '/echo-headers') {
+    header('Content-Type: application/json');
+    echo json_encode([
+        'x_api_key' => $_SERVER['HTTP_X_API_KEY'] ?? null,
+        'content_type' => $_SERVER['CONTENT_TYPE'] ?? null,
+    ]);
+    return;
+}
+
 http_response_code(404);
 echo '{}';
 PHP);
@@ -101,6 +110,57 @@ try {
     }
 
     echo "PASS: oversized response rejected\n";
+
+    // Header shapes. curl takes raw "Name: value" lines and uses the array's
+    // VALUES, so a name => value map would be transmitted as a bare value and
+    // the header would silently never arrive. That is exactly how a
+    // CurseForge API key can go missing from a request, so both shapes must
+    // end up as a real header on the wire.
+    $associative = $client->get(
+        $base . '/echo-headers',
+        [],
+        ['X-Api-Key' => 'secret-key'],
+    );
+
+    if (($associative->body['x_api_key'] ?? null) !== 'secret-key') {
+        throw new RuntimeException(
+            'A name => value header map was not sent as a header line: '
+                . json_encode($associative->body),
+        );
+    }
+
+    echo "PASS: mapped headers arrive as real header lines\n";
+
+    $lines = $client->get(
+        $base . '/echo-headers',
+        [],
+        ['X-Api-Key: secret-key'],
+    );
+
+    if (($lines->body['x_api_key'] ?? null) !== 'secret-key') {
+        throw new RuntimeException(
+            'A raw header line was not sent: ' . json_encode($lines->body),
+        );
+    }
+
+    echo "PASS: raw header lines are sent unchanged\n";
+
+    $posted = $client->post(
+        $base . '/echo-headers',
+        ['a' => 1],
+        ['X-Api-Key' => 'secret-key'],
+    );
+
+    if (
+        ($posted->body['x_api_key'] ?? null) !== 'secret-key'
+        || ($posted->body['content_type'] ?? null) !== 'application/json'
+    ) {
+        throw new RuntimeException(
+            'POST headers were not sent: ' . json_encode($posted->body),
+        );
+    }
+
+    echo "PASS: POST sends mapped headers plus the JSON content type\n";
 
     try {
         $client->get('ftp://127.0.0.1' . ':' . $port . '/ok');

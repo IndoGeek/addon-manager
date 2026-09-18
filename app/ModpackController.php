@@ -26,11 +26,15 @@ use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogService;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogSort;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogUnavailableException;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogVersionFileResolver;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CatalogVersionQuery;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\CurseForgeModVersionCatalog;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Catalog\ModVersionCatalog;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\BackupManager;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentExecutor;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Deployment\DeploymentPlanner;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Download\DownloadManager;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\ContentInstallTarget;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\InstallationCancelledException;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\InstallationLock;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\InstallationLockedException;
@@ -38,6 +42,7 @@ use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installa
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\InstallationResult;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\InstallationWorkspace;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\InstallProgressStore;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\SimpleContentInstaller;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Management\InstallRecord;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Management\InstallIntegrityVerifier;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Management\InstallHistoryStore;
@@ -141,9 +146,30 @@ final class ModpackController extends Controller
         }
     }
 
-    public function catalogProviders(): JsonResponse
+    public function catalogProviders(Request $request): JsonResponse
     {
+        // The active tab decides which category/loader lists apply, so the
+        // facet payload is built for the requested content type.
+        $contentType = $this->paramString(
+            $request,
+            'content_type',
+            CatalogSearchQuery::DEFAULT_CONTENT_TYPE,
+            32,
+            '/^[a-z]{1,32}$/',
+        );
+
         $service = $this->catalogService();
+
+        if (
+            $contentType !== null
+            && in_array(
+                $contentType,
+                CatalogSearchQuery::CONTENT_TYPE_VALUES,
+                true,
+            )
+        ) {
+            $service = $service->withFacetsContentType($contentType);
+        }
 
         // Admins can hide CurseForge entirely from the extension settings
         // page; the UI then only ever sees Modrinth.
@@ -276,6 +302,65 @@ final class ModpackController extends Controller
         }
     }
 
+    // Version catalog for single-file content: per-version loader and
+    // Minecraft-version options plus recommended dependencies, so the mod
+    // version window can offer two dropdowns and a non-blocking hint.
+    public function catalogModVersions(Request $request): JsonResponse
+    {
+        try {
+            $projectValue = $request->query('project');
+
+            if (!is_string($projectValue) || trim($projectValue) === '') {
+                throw new InvalidArgumentException(
+                    'The project parameter is required.',
+                );
+            }
+
+            $project = trim($projectValue);
+
+            $provider = $this->paramString(
+                $request,
+                'provider',
+                'modrinth',
+                32,
+                '/^[a-z0-9-]{1,32}$/',
+            ) ?? 'modrinth';
+
+            // Both providers normalize into the same payload, so the version
+            // window, the install path and the uninstall path are shared.
+            $catalog = match ($provider) {
+                'modrinth' => new ModVersionCatalog(
+                    $this->providerHttp(),
+                ),
+                'curseforge' => new CurseForgeModVersionCatalog(
+                    $this->providerHttp(),
+                    $this->curseForgeApiKey(),
+                ),
+                default => throw new InvalidArgumentException(
+                    'This provider has no content versions to install.',
+                ),
+            };
+
+            return response()->json([
+                'data' => $catalog->versions($project),
+            ]);
+        } catch (InvalidArgumentException $exception) {
+            return response()->json([
+                'error' => $exception->getMessage(),
+            ], 422);
+        } catch (CatalogProviderException $exception) {
+            return response()->json([
+                'error' => $exception->getMessage(),
+            ], 502);
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return response()->json([
+                'error' => 'Unable to load the mod versions.',
+            ], 500);
+        }
+    }
+
     public function catalogDescription(Request $request): JsonResponse
     {
         try {
@@ -393,48 +478,158 @@ final class ModpackController extends Controller
 
             $lastLockTouch = 0.0;
 
+            // Ordered steps of a modpack install. Providers announce the ones
+            // they walk (archive, extract, manifest, mods); prepare and deploy
+            // are the controller's own. The downloading card renders this list,
+            // so an install reads as labelled stages with a bar each instead of
+            // one anonymous percentage that resets whenever the progress window
+            // re-anchors between phases.
+            $stages = [];
+
+            $stageIndex = -1;
+
+            $stageLabels = [
+                'archive' => 'Downloading pack archive',
+                'manifest' => 'Reading manifest.json',
+                'extract' => 'Extracting pack files',
+                'index' => 'Reading modpack index',
+                'mods' => 'Downloading mod files',
+                'prepare' => 'Preparing server files',
+                'deploy' => 'Deploying files',
+            ];
+
+            // Enters a step, closing whichever one was in flight. A step that
+            // already has a row is left alone: providers announce one again
+            // when they re-enter it later in the same install (the archive is
+            // opened, then streamed out), and a counted update arrives on every
+            // tick, so neither may append a second row or reopen a closed step.
+            $enterStage = static function (string $key) use (
+                &$stages,
+                &$stageIndex,
+                $stageLabels,
+            ): void {
+                foreach ($stages as $index => $stage) {
+                    if ($stage['key'] === $key) {
+                        return;
+                    }
+
+                    $stages[$index]['state'] = 'done';
+                }
+
+                $stages[] = [
+                    'key' => $key,
+                    'label' => $stageLabels[$key] ?? ucfirst($key),
+                    'state' => 'active',
+                    'percent' => null,
+                    'downloaded_bytes' => null,
+                    'total_bytes' => null,
+                    'current' => null,
+                    'total' => null,
+                ];
+
+                $stageIndex = count($stages) - 1;
+            };
+
+            // Single writer for every progress snapshot of this install, so the
+            // stage list travels with each one no matter which callback fired.
+            $publish = static function (array $state) use (
+                $progress,
+                $progressToken,
+                $lock,
+                &$lastLockTouch,
+                &$stages,
+            ): void {
+                $now = microtime(true);
+
+                if (($now - $lastLockTouch) >= 2.0) {
+                    $lastLockTouch = $now;
+
+                    // Keep the install lock alive so a long download is never
+                    // reclaimed as stale while it is still running.
+                    @touch($lock);
+                }
+
+                $progress->set($progressToken, [
+                    ...$state,
+                    'stages' => $stages,
+                ]);
+            };
+
+            $downloader->setStageCallback(
+                static function (
+                    string $key,
+                    ?int $current = null,
+                    ?int $total = null,
+                ) use ($enterStage, &$stages, &$stageIndex, $publish): void {
+                    $alreadyActive = $stageIndex >= 0
+                        && ($stages[$stageIndex]['key'] ?? null) === $key;
+
+                    $enterStage($key);
+
+                    if (($stages[$stageIndex]['key'] ?? null) !== $key) {
+                        // A late announcement of a step this install has already
+                        // left: ignore it rather than rewinding the bar of the
+                        // step actually in flight.
+                        return;
+                    }
+
+                    if ($current !== null || $total !== null) {
+                        $stages[$stageIndex]['current'] = $current;
+                        $stages[$stageIndex]['total'] = $total;
+                    }
+
+                    if ($alreadyActive) {
+                        // A counted update inside the step already in flight:
+                        // keep its bar where it is and only refresh the counts.
+                        $publish([
+                            'phase' => 'download',
+                            'percent' => (int) ($stages[$stageIndex]['percent'] ?? 0),
+                            'indeterminate' => ($stages[$stageIndex]['percent'] ?? null) === null,
+                            'downloaded_bytes' => $stages[$stageIndex]['downloaded_bytes'],
+                            'total_bytes' => $stages[$stageIndex]['total_bytes'],
+                        ]);
+
+                        return;
+                    }
+
+                    // A stage transition carries no bytes of its own, so the
+                    // bar restarts at zero (indeterminate) until the step it
+                    // announced streams something.
+                    $publish([
+                        'phase' => 'download',
+                        'percent' => 0,
+                        'indeterminate' => true,
+                    ]);
+                },
+            );
+
             $downloader->setProgressCallback(
                 static function (
                     ?int $downloadedBytes,
                     ?int $totalBytes,
-                ) use (
-                    $progress,
-                    $progressToken,
-                    $lock,
-                    &$lastLockTouch,
-                ): void {
-                    $now = microtime(true);
+                ) use (&$stages, &$stageIndex, $publish): void {
+                    $determinate = $totalBytes !== null && $totalBytes > 0;
 
-                    if (($now - $lastLockTouch) >= 2.0) {
-                        $lastLockTouch = $now;
+                    $percent = $determinate && $downloadedBytes !== null
+                        ? (int) floor(
+                            min(1.0, $downloadedBytes / $totalBytes) * 100,
+                        )
+                        : 0;
 
-                        // Keep the install lock alive so a long download is
-                        // never reclaimed as stale while it is still running.
-                        @touch($lock);
+                    // The byte window is per stage, so this percentage is the
+                    // active step's own progress: the archive bar fills to 100%
+                    // and then the extract bar starts, instead of the whole run
+                    // sharing one window that freezes and rewinds.
+                    if ($stageIndex >= 0) {
+                        $stages[$stageIndex]['percent'] = $percent;
+                        $stages[$stageIndex]['downloaded_bytes'] = $downloadedBytes;
+                        $stages[$stageIndex]['total_bytes'] = $totalBytes;
                     }
 
-                    $percent = 40;
-
-                    if (
-                        $totalBytes !== null
-                        && $totalBytes > 0
-                        && $downloadedBytes !== null
-                    ) {
-                        $percent = (int) floor(
-                            min(1.0, $downloadedBytes / $totalBytes) * 85,
-                        );
-                    }
-
-                    // No monotonic clamp here on purpose: the CurseForge flow
-                    // reports two consecutive windows (the small client-pack
-                    // zip, then the much larger manifest-mods footprint). The
-                    // second window re-anchors to 0 so the bar visibly starts
-                    // filling again instead of freezing at the zip's 100%.
-
-                    $progress->set($progressToken, [
+                    $publish([
                         'phase' => 'download',
                         'percent' => $percent,
-                        'indeterminate' => $totalBytes === null || $totalBytes <= 0,
+                        'indeterminate' => !$determinate,
                         'downloaded_bytes' => $downloadedBytes,
                         'total_bytes' => $totalBytes,
                     ]);
@@ -445,10 +640,14 @@ final class ModpackController extends Controller
 
             $package = $provider->getPackage($source);
 
-            $progress->set($progressToken, [
-                'phase' => 'preparing',
-                'percent' => 88,
-                'indeterminate' => false,
+            // Acquisition is done: the replace/unpack bookkeeping happens here,
+            // after the download has fully succeeded and before deployment.
+            $enterStage('prepare');
+
+            $publish([
+                'phase' => 'deploy',
+                'percent' => 0,
+                'indeterminate' => true,
             ]);
 
             $target = $this->serverTarget($server);
@@ -493,31 +692,26 @@ final class ModpackController extends Controller
                 }
             }
 
+            $enterStage('deploy');
+
             $orchestrator = $this->orchestrator(
                 $target,
                 static function (
                     int $deployedFiles,
                     int $totalFiles,
-                ) use (
-                    $progress,
-                    $progressToken,
-                    $lock,
-                    &$lastLockTouch,
-                ): void {
-                    $now = microtime(true);
-
-                    if (($now - $lastLockTouch) >= 2.0) {
-                        $lastLockTouch = $now;
-
-                        @touch($lock);
-                    }
-
-                    $percent = 88 + (int) floor(
+                ) use (&$stages, &$stageIndex, $publish): void {
+                    $percent = (int) floor(
                         ($totalFiles > 0 ? $deployedFiles / $totalFiles : 0)
-                            * 12,
+                            * 100,
                     );
 
-                    $progress->set($progressToken, [
+                    if ($stageIndex >= 0) {
+                        $stages[$stageIndex]['percent'] = $percent;
+                        $stages[$stageIndex]['current'] = $deployedFiles;
+                        $stages[$stageIndex]['total'] = $totalFiles;
+                    }
+
+                    $publish([
                         'phase' => 'deploy',
                         'percent' => $percent,
                         'indeterminate' => false,
@@ -534,7 +728,12 @@ final class ModpackController extends Controller
                 archivePath: $package->archivePath,
             );
 
-            $progress->set($progressToken, [
+            // Every announced step is finished once deployment returns.
+            foreach ($stages as $index => $stage) {
+                $stages[$index]['state'] = 'done';
+            }
+
+            $publish([
                 'phase' => 'complete',
                 'percent' => 100,
                 'indeterminate' => false,
@@ -669,6 +868,630 @@ final class ModpackController extends Controller
 
             $this->clearCancelFlag($this->lockKey($server));
         }
+    }
+
+    // Simple content install (mods, plugins, datapacks, resource packs,
+    // shaders): download one file from the provider and upload it into the
+    // server's target directory for that content type. No archive
+    // extraction, dependency resolution, or replace semantics — each file is
+    // tracked in its own install record so uninstall removes exactly what
+    // was added.
+    public function installContent(
+        Request $request,
+        Server $server,
+    ): JsonResponse {
+        $lock = null;
+        $token = bin2hex(random_bytes(16));
+        $progressToken = '';
+        $target = null;
+
+        @set_time_limit(0);
+
+        try {
+            $lock = $this->installationLock()->acquire(
+                $this->lockKey($server),
+                $token,
+            );
+
+            $this->clearCancelFlag($this->lockKey($server));
+
+            $target = ContentInstallTarget::for(
+                $this->contentTypeInput($request),
+            );
+
+            [$source, $displayName, $iconUrl, $mcVersion, $loader]
+                = $this->contentInstallInput($request, $target['label']);
+
+            // Optional additional dependency sources: the user picks
+            // recommended mods in the version window and they are downloaded
+            // in the same run, each as its own tracked record.
+            $dependencySources = $this->contentDependencySources($request);
+
+            [$provider, $projectId, $versionId] = $this->sourceParts($source);
+
+            $progressToken = $this->progressToken($request);
+
+            $progress = $this->installProgressStore();
+
+            $progress->set($progressToken, [
+                'phase' => 'starting',
+                'percent' => 1,
+                'indeterminate' => false,
+            ]);
+
+            $downloader = $this->downloader();
+
+            $installer = new SimpleContentInstaller($downloader);
+
+            // Every install in this run: the main content first, then any
+            // selected dependencies. Each entry gets its own file and its
+            // own install record so uninstall removes exactly what was added.
+            $installItems = [[
+                'source' => $source,
+                'provider' => $provider,
+                'project_id' => $projectId,
+                'version_id' => $versionId,
+                'display_name' => $displayName,
+                'icon_url' => $iconUrl,
+                'version_id_fallback' => $versionId,
+                'is_dependency' => false,
+            ]];
+
+            foreach ($dependencySources as $index => $dependency) {
+                [$depProvider, $depProject, $depVersion]
+                    = $this->sourceParts($dependency['source']);
+
+                $installItems[] = [
+                    'source' => $dependency['source'],
+                    'provider' => $depProvider,
+                    'project_id' => $depProject,
+                    'version_id' => $depVersion,
+                    'display_name' => $dependency['name'],
+                    'icon_url' => $dependency['icon_url'],
+                    'version_id_fallback' => $depVersion,
+                    'is_dependency' => true,
+                ];
+            }
+
+            $totalItems = count($installItems);
+
+            // Resolve every file up front. The concrete download URL and the
+            // upstream filename live in the version payload, and knowing all
+            // of them is what lets the files of this run download at the
+            // same time instead of one after another.
+            $resolver = new CatalogVersionFileResolver(
+                $this->providerHttp(),
+                $this->curseForgeApiKey(),
+            );
+
+            $prepared = [];
+
+            foreach ($installItems as $item) {
+                $file = $resolver->resolve(
+                    $item['provider'],
+                    $item['project_id'],
+                    $item['version_id'] ?? '',
+                );
+
+                // A dependency can be a different kind of content than the
+                // entry the user picked (a shader's Iris dependency is a
+                // mod), so each file resolves its own destination.
+                $itemTarget = $item['is_dependency']
+                    ? ContentInstallTarget::forDependency(
+                        $target,
+                        basename($file['filename']),
+                    )
+                    : $target;
+
+                // The uploaded file is renamed to encode the selection so
+                // server owners can see at a glance what each file targets,
+                // e.g. example-mod-fabric-1-20-1.jar.
+                $prepared[] = [
+                    'item' => $item,
+                    // Which catalog kind this file is: a dependency can be a
+                    // mod even when the picked entry was a shader.
+                    'kind' => $itemTarget['kind'],
+                    'url' => $file['url'],
+                    // Declared size drives the per-file progress bars; the
+                    // transfer itself is size-agnostic.
+                    'bytes' => max(0, (int) ($file['size'] ?? 0)),
+                    'filename' => ContentInstallTarget::filename(
+                        basename($file['filename']),
+                        $item['display_name'],
+                        $mcVersion,
+                        $loader,
+                        $itemTarget['extensions'],
+                    ),
+                    'directory' => $itemTarget['directory'],
+                ];
+            }
+
+            // Per-file state reported by the concurrent download engine, so
+            // the downloading window can show one live card per file.
+            $fileProgress = [];
+
+            $lastLockTouch = 0.0;
+
+            $report = function (array $state) use (
+                $progress,
+                $progressToken,
+                $lock,
+                &$lastLockTouch,
+                &$fileProgress,
+            ): void {
+                $now = microtime(true);
+
+                if (($now - $lastLockTouch) >= 2.0) {
+                    $lastLockTouch = $now;
+
+                    @touch($lock);
+                }
+
+                $progress->set($progressToken, [
+                    ...$state,
+                    'files' => $fileProgress,
+                ]);
+            };
+
+            $results = $installer->installBatch(
+                items: array_map(
+                    static fn (array $entry): array => [
+                        'url' => $entry['url'],
+                        'bytes' => $entry['bytes'],
+                        'filename' => $entry['filename'],
+                        'directory' => $entry['directory'],
+                    ],
+                    $prepared,
+                ),
+                target: $this->serverTarget($server),
+                workspace: self::TEMPORARY_ROOT
+                    . '/content-'
+                    . bin2hex(random_bytes(8)),
+                cancelChecker: fn (): bool => $this->wasCancelled(
+                    $this->lockKey($server),
+                ),
+                // Downloads own the 0–90% window; the uploads that follow
+                // report the rest.
+                onProgress: static function (
+                    ?int $downloadedBytes,
+                    ?int $totalBytes,
+                ) use ($report, $totalItems): void {
+                    $within = 1.0;
+
+                    if (
+                        $totalBytes !== null
+                        && $totalBytes > 0
+                        && $downloadedBytes !== null
+                    ) {
+                        $within = min(1.0, $downloadedBytes / $totalBytes);
+                    }
+
+                    $report([
+                        'phase' => 'download',
+                        'percent' => (int) floor($within * 90),
+                        'indeterminate' => $totalBytes === null
+                            || $totalBytes <= 0,
+                        'downloaded_bytes' => $downloadedBytes,
+                        'total_bytes' => $totalBytes,
+                        'file_count' => $totalItems,
+                    ]);
+                },
+                onFileProgress: static function (array $files) use (
+                    &$fileProgress,
+                    $prepared,
+                ): void {
+                    $states = [];
+
+                    foreach ($files as $index => $state) {
+                        if (!is_array($state)) {
+                            continue;
+                        }
+
+                        $failed = ($state['failed'] ?? false) === true;
+                        $done = ($state['done'] ?? false) === true;
+
+                        $states[] = [
+                            'kind' => $prepared[$index]['kind'] ?? null,
+                            'downloaded_bytes' => (int) (
+                                $state['downloaded_bytes'] ?? 0
+                            ),
+                            'total_bytes' => (int) (
+                                $state['total_bytes'] ?? 0
+                            ),
+                            'state' => $failed
+                                ? 'failed'
+                                : ($done ? 'done' : 'downloading'),
+                        ];
+                    }
+
+                    $fileProgress = $states;
+                },
+                onUpload: static function (int $index, int $count) use (
+                    $report,
+                ): void {
+                    $report([
+                        'phase' => 'deploy',
+                        'percent' => 90 + (int) floor(
+                            ($index / max(1, $count)) * 9,
+                        ),
+                        'indeterminate' => false,
+                    ]);
+                },
+            );
+
+            $firstRecord = null;
+            $result = null;
+
+            foreach ($prepared as $itemIndex => $entry) {
+                $item = $entry['item'];
+
+                $result = $results[$itemIndex] ?? null;
+
+                if ($result === null) {
+                    throw new RuntimeException(
+                        'A content file in this install was not downloaded.'
+                    );
+                }
+
+                $versionNumber = $this->contentVersionNumber(
+                    $item['provider'],
+                    $item['project_id'],
+                    $item['version_id'] ?? '',
+                );
+
+                // Record exactly the file we placed so uninstall removes it.
+                $record = new InstallRecord(
+                    id: $this->newRecordId(),
+                    serverUuid: (string) $server->uuid,
+                    provider: $item['provider'],
+                    projectId: $item['project_id'],
+                    versionId: $item['version_id'] ?? '',
+                    source: $item['source'],
+                    displayName: $item['display_name'],
+                    version: $versionNumber,
+                    minecraftVersion: $mcVersion,
+                    loader: $loader,
+                    iconUrl: $item['icon_url'],
+                    installedAt: gmdate('c'),
+                    updatedAt: gmdate('c'),
+                    status: InstallRecord::STATUS_INSTALLED,
+                    createdFiles: [$result['path']],
+                    overwrittenFiles: [],
+                    contentType: InstallRecord::TYPE_CONTENT,
+                    contentKind: $entry['kind'],
+                );
+
+                $this->store()->save($record);
+
+                if ($firstRecord === null) {
+                    $firstRecord = $record;
+                }
+
+                $this->logHistory(
+                    action: 'install-content',
+                    server: $server,
+                    modpack: $item['display_name'],
+                    version: $versionNumber,
+                    detail: $result['path'] . ' (' . $result['size'] . ' bytes)',
+                );
+            }
+
+            $progress->set($progressToken, [
+                'phase' => 'complete',
+                'percent' => 100,
+                'indeterminate' => false,
+            ]);
+
+            return response()->json([
+                'data' => [
+                    'record_id' => $firstRecord?->id,
+                    'path' => $result['path'],
+                    'size' => $result['size'],
+                    'installed_count' => $totalItems,
+                ],
+            ]);
+        } catch (InstallationCancelledException $exception) {
+            if ($progressToken !== '') {
+                $this->installProgressStore()->set($progressToken, [
+                    ...($this->installProgressStore()
+                        ->get($progressToken) ?? []),
+                    'phase' => 'cancelled',
+                    'indeterminate' => false,
+                    'message' => $exception->getMessage(),
+                ]);
+            }
+
+            return response()->json([
+                'error' => 'Installation cancelled.',
+            ], 409);
+        } catch (InstallationLockedException $exception) {
+            return response()->json([
+                'error' => 'Another installation is already running for this server. Please wait and try again.',
+            ], 503);
+        } catch (InvalidArgumentException $exception) {
+            return response()->json([
+                'error' => $exception->getMessage(),
+            ], 422);
+        } catch (CatalogProviderException $exception) {
+            return response()->json([
+                'error' => $exception->getMessage(),
+            ], 422);
+        } catch (WingsConnectionException $exception) {
+            if ($progressToken !== '') {
+                $this->installProgressStore()->set($progressToken, [
+                    ...($this->installProgressStore()
+                        ->get($progressToken) ?? []),
+                    'phase' => 'failed',
+                    'indeterminate' => false,
+                    'message' => 'Unable to reach the server node. The installation failed.',
+                ]);
+            }
+
+            return response()->json([
+                'error' => 'Unable to reach the server node. Please try again later.',
+            ], 503);
+        } catch (WingsHttpException $exception) {
+            if ($progressToken !== '') {
+                $this->installProgressStore()->set($progressToken, [
+                    ...($this->installProgressStore()
+                        ->get($progressToken) ?? []),
+                    'phase' => 'failed',
+                    'indeterminate' => false,
+                    'message' => 'The server node could not complete the operation. The installation failed.',
+                ]);
+            }
+
+            return response()->json([
+                'error' => 'The server node could not complete the operation. Please try again later.',
+            ], 503);
+        } catch (Throwable $exception) {
+            report($exception);
+
+            if ($progressToken !== '') {
+                $lastState = $this->installProgressStore()
+                    ->get($progressToken);
+
+                $this->installProgressStore()->set($progressToken, [
+                    ...($lastState ?? []),
+                    'phase' => 'failed',
+                    'indeterminate' => false,
+                    'message' => 'The installation failed.',
+                ]);
+            }
+
+            return response()->json([
+                'error' => 'Unable to install the '
+                    . ($target['label'] ?? 'content') . '.',
+            ], 500);
+        } finally {
+            if ($lock !== null) {
+                try {
+                    $this->installationLock()->release($lock, $token);
+                } catch (Throwable) {
+                    // Stale-lock handling covers leftover locks.
+                }
+            }
+
+            $this->clearCancelFlag($this->lockKey($server));
+        }
+    }
+
+    // Which single-file content type an install targets. Defaults to a mod
+    // so older clients (and the previous frontend) keep working.
+    private function contentTypeInput(Request $request): string
+    {
+        $value = $request->input('content_type');
+
+        if ($value === null || $value === '') {
+            return ContentInstallTarget::DEFAULT_TYPE;
+        }
+
+        if (
+            !is_string($value)
+            || !ContentInstallTarget::supports($value)
+        ) {
+            throw new InvalidArgumentException(
+                'Unsupported content type.',
+            );
+        }
+
+        return $value;
+    }
+
+    // Validates the JSON body of a simple-content install request.
+    // @return array{0: string, 1: string, 2: ?string, 3: ?string, 4: ?string}
+    private function contentInstallInput(
+        Request $request,
+        string $label,
+    ): array
+    {
+        $source = $this->installationSource($request);
+
+        // Single-file content comes from either provider. Both are addressed
+        // as "provider://project@version" and both install through the same
+        // path; the resolver knows how to fetch each one's file.
+        if (
+            preg_match(
+                '#^(modrinth://[A-Za-z0-9_-]{1,64}|curseforge://\d{1,12})@[A-Za-z0-9]{1,64}$#',
+                $source,
+            ) !== 1
+        ) {
+            throw new InvalidArgumentException(
+                'Content can only be installed from a Modrinth or CurseForge source with a version.',
+            );
+        }
+
+        $name = $request->input('name');
+
+        $displayName = is_string($name) && trim($name) !== ''
+            ? trim($name)
+            : '';
+
+        if (
+            $displayName === ''
+            || mb_strlen($displayName) > 128
+        ) {
+            throw new InvalidArgumentException(
+                "The {$label} name is required.",
+            );
+        }
+
+        $icon = $request->input('icon_url');
+
+        $iconUrl = is_string($icon) && $icon !== '' ? $icon : null;
+
+        // Loader and Minecraft version come from the version window's two
+        // dropdowns; both are required before an install can start.
+        $mcVersion = $this->contentSlug(
+            $request->input('mc_version'),
+            'Minecraft version',
+        );
+
+        // The loader is optional. Mods and modpacks need it to pick a
+        // compatible file, but CurseForge does not record a loader for
+        // plugins, resource packs, data packs or shaders — their version
+        // window offers a Minecraft version only, and requiring a loader
+        // here would make those installs impossible.
+        $loader = $this->optionalContentSlug(
+            $request->input('loader'),
+            'Loader',
+        );
+
+        return [$source, $displayName, $iconUrl, $mcVersion, $loader];
+    }
+
+    // Optional "dependencies" body entries: recommended mods the user chose
+    // in the version window. Each needs a Modrinth source with an explicit
+    // version and a display name; icons are best-effort.
+    // @return array<int, array{source: string, name: string, icon_url: ?string}>
+    private function contentDependencySources(Request $request): array
+    {
+        $dependencies = $request->input('dependencies');
+
+        if (!is_array($dependencies)) {
+            return [];
+        }
+
+        if (count($dependencies) > 10) {
+            throw new InvalidArgumentException(
+                'Too many dependency mods were requested (maximum 10).',
+            );
+        }
+
+        $items = [];
+
+        foreach ($dependencies as $dependency) {
+            if (!is_array($dependency)) {
+                throw new InvalidArgumentException(
+                    'The dependency list is malformed.',
+                );
+            }
+
+            $source = $dependency['source'] ?? null;
+
+            if (
+                !is_string($source)
+                || preg_match(
+                    '#^(modrinth://[A-Za-z0-9_-]{1,64}|curseforge://\d{1,12})@[A-Za-z0-9]{1,64}$#',
+                    $source,
+                ) !== 1
+            ) {
+                throw new InvalidArgumentException(
+                    'Each dependency needs a valid Modrinth or CurseForge source with a version.',
+                );
+            }
+
+            $name = $dependency['name'] ?? null;
+
+            if (
+                !is_string($name)
+                || trim($name) === ''
+                || mb_strlen($name) > 128
+            ) {
+                throw new InvalidArgumentException(
+                    'Each dependency needs a display name.',
+                );
+            }
+
+            $icon = $dependency['icon_url'] ?? null;
+
+            $items[] = [
+                'source' => $source,
+                'name' => trim($name),
+                'icon_url' => is_string($icon) && $icon !== ''
+                    ? $icon
+                    : null,
+            ];
+        }
+
+        return $items;
+    }
+
+    // Validates an optional loader value: absent or empty is allowed (a
+    // loader-less content type), anything present must be well formed.
+    private function optionalContentSlug(
+        mixed $value,
+        string $label,
+    ): ?string {
+        if ($value === null || (is_string($value) && trim($value) === '')) {
+            return null;
+        }
+
+        return $this->contentSlug($value, $label);
+    }
+
+    // Validates a loader/Minecraft-version value from the install body.
+    private function contentSlug(mixed $value, string $label): ?string
+    {
+        if (!is_string($value) || trim($value) === '') {
+            throw new InvalidArgumentException(
+                "The {$label} selection is required.",
+            );
+        }
+
+        $value = trim($value);
+
+        if (
+            strlen($value) > 32
+            || preg_match('/^[A-Za-z0-9._-]{1,32}$/', $value) !== 1
+        ) {
+            throw new InvalidArgumentException(
+                "The {$label} selection is invalid.",
+            );
+        }
+
+        return $value;
+    }
+
+    // Best-effort human version label for a content install: the Modrinth
+    // version number when it can be fetched, otherwise the version id.
+    private function contentVersionNumber(
+        string $provider,
+        string $projectId,
+        ?string $versionId,
+    ): string {
+        if ($versionId === null || $versionId === '') {
+            return '';
+        }
+
+        try {
+            $response = $this->providerHttp()->get(
+                'https://api.modrinth.com/v2/version/'
+                    . rawurlencode($versionId),
+            );
+
+            if (
+                is_array($response->body)
+                && is_string($response->body['version_number'] ?? null)
+                && $response->body['version_number'] !== ''
+            ) {
+                return $response->body['version_number'];
+            }
+        } catch (Throwable) {
+            // Fall through to the raw version id.
+        }
+
+        return $versionId;
     }
 
     public function installProgress(
@@ -853,8 +1676,12 @@ final class ModpackController extends Controller
 
             $target = $this->serverTarget($server);
 
+            // Single-file content (mods) shares the directory with mods the
+            // user installed themselves — only the recorded files may be
+            // removed, never the (now possibly non-empty) directory.
             $outcome = (new OwnershipRemover($target))->remove(
                 $record->ownedFiles(),
+                pruneEmptyDirs: $record->contentType !== InstallRecord::TYPE_CONTENT,
             );
 
             if ($outcome['errors'] !== []) {
@@ -1310,6 +2137,14 @@ final class ModpackController extends Controller
             CatalogSearchQuery::SLUG_PATTERN,
         );
 
+        $contentType = $this->paramString(
+            $request,
+            'content_type',
+            CatalogSearchQuery::DEFAULT_CONTENT_TYPE,
+            16,
+            '/^[a-z-]{1,16}$/',
+        );
+
         $sortValue = $this->paramString(
             $request,
             'sort',
@@ -1348,6 +2183,7 @@ final class ModpackController extends Controller
             loader: $loaders,
             category: $categories,
             environments: $environments,
+            contentType: $contentType,
             sort: $sort,
             page: $page,
             limit: $limit,
@@ -1569,6 +2405,8 @@ final class ModpackController extends Controller
             $this->catalogCache(),
         );
     }
+
+
 
     // Settings saved from the admin page live in the panel database and take
     // precedence over the .env-backed config values. Empty stored values mean
@@ -1953,6 +2791,10 @@ final class ModpackController extends Controller
             status: InstallRecord::STATUS_INSTALLED,
             createdFiles: $result->created,
             overwrittenFiles: $result->overwritten,
+            // A modpack record keeps the kind it already had, so rewriting a
+            // record never relabels the content it tracks.
+            contentKind: $existingRecord?->contentKind
+                ?? ContentInstallTarget::KIND_MODPACK,
         );
     }
 

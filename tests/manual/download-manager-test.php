@@ -1,6 +1,7 @@
 <?php
 
 require __DIR__ . '/../../app/Services/Download/Downloader.php';
+require __DIR__ . '/../../app/Services/Download/StageReporter.php';
 require __DIR__ . '/../../app/Services/Download/ConcurrentDownloader.php';
 require __DIR__ . '/../../app/Services/Download/DownloadManager.php';
 

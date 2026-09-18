@@ -64,12 +64,18 @@ class modpackinstallerExtensionController extends Controller
     // Persist the settings form (PATCH via the settings page form).
     public function update(): RedirectResponse
     {
-        $apiKey = trim((string) request()->input('curseforge_api_key', ''));
-
-        if ($apiKey === '') {
+        // The API key field is intentionally write-only from the browser's
+        // perspective: empty means "keep the saved key" (so reloading and
+        // saving other settings never wipes the key), a value replaces it,
+        // and the explicit checkbox clears it.
+        if (request()->boolean('clear_curseforge_api_key')) {
             $this->blueprint->dbSet('modpackinstaller', 'setting_curseforge_api_key', '');
         } else {
-            $this->blueprint->dbSet('modpackinstaller', 'setting_curseforge_api_key', $apiKey);
+            $apiKey = trim((string) request()->input('curseforge_api_key', ''));
+
+            if ($apiKey !== '') {
+                $this->blueprint->dbSet('modpackinstaller', 'setting_curseforge_api_key', $apiKey);
+            }
         }
 
         $this->blueprint->dbSet(

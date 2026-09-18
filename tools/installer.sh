@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 #
-# Modpack Installer — one-command installer for the Pterodactyl Blueprint
+# Addon Manager — one-command installer for the Pterodactyl Blueprint
 # extension.
 #
 # Run from a checkout of this repository (recommended location):
 #
 #   cd /var/www/pterodactyl
-#   sudo git clone https://github.com/indogeek/modpack-installer.git
-#   cd /var/www/pterodactyl/modpack-installer
-#   sudo bash installer.sh
+#   sudo git clone https://github.com/indogeek/addon-manager.git
+#   cd /var/www/pterodactyl/addon-manager
+#   sudo mi install
 #
 # What it does, in order:
 #   1. Checks for root/sudo and installable package manager support.
@@ -25,12 +25,12 @@
 #      installing the acl package only if setfacl is missing. Required for
 #      "local" target mode installs.
 #   7. Installs the Blueprint extension framework if it is not present.
-#   8. Installs this Modpack Installer extension with `blueprint -install`
+#   8. Installs this Addon Manager extension with `blueprint -install`
 #      and publishes the panel assets.
 #   9. Fixes file ownership so the panel's web user can read everything.
 #
 # The script is idempotent: running it again is safe. Install a fresh copy
-# over an existing install by running:  MI_FORCE=1 sudo bash installer.sh
+# over an existing install by running:  MI_FORCE=1 sudo mi install
 #
 # Author: IndoGeek
 # License: MIT
@@ -38,10 +38,13 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-GITHUB_URL="https://github.com/indogeek/modpack-installer"
+GITHUB_URL="https://github.com/indogeek/addon-manager"
 DEFAULT_PANEL="/var/www/pterodactyl"
-WEB_USER="www-data"
-WEB_GROUP="www-data"
+WEB_USER=""
+WEB_GROUP=""
+# Detected in detect_web_user() (after detect_panel) — never assume www-data:
+# RHEL-family nginx runs as "nginx", RHEL Apache as "apache", and custom FPM
+# pools can use anything. Override with MI_WEB_USER / MI_WEB_GROUP.
 
 # Root that contains per-version PHP config directories (e.g. "/etc/php/8.3").
 # Overridable so non-Debian layouts and tests can point elsewhere.
@@ -58,6 +61,55 @@ info()  { printf '\033[0;34m[..]\033[0m %s\n' "$*"; }
 ok()    { printf '\033[0;32m[ok]\033[0m %s\n' "$*"; }
 warn()  { printf '\033[0;33m[!!]\033[0m %s\n' "$*"; }
 die()   { printf '\033[0;31m[!!]\033[0m %s\n' "$*" >&2; exit 1; }
+
+# ---------------------------------------------------------------------------
+# Web user detection
+# ---------------------------------------------------------------------------
+# The panel web user is whoever PHP-FPM actually runs as. We must NOT assume
+# www-data: guessing wrong makes the installer chown panel files away from
+# the real web user (breaking the panel) or grant ACLs to a user that will
+# never touch them (installs fail with "Server file target root does not
+# exist").
+detect_web_user() {
+  # 1. Explicit override wins.
+  if [ -n "${MI_WEB_USER:-}" ]; then
+    WEB_USER="$MI_WEB_USER"
+    WEB_GROUP="${MI_WEB_GROUP:-$MI_WEB_USER}"
+    ok "Web user overridden: ${WEB_USER}:${WEB_GROUP}"
+    return 0
+  fi
+
+  # 2. Ask the panel: whoever owns the panel's storage dir demonstrably
+  #    serves it — the most reliable source on every distro and pool layout.
+  local ug
+  ug="$(stat -c '%U:%G' "$PANEL/storage" 2>/dev/null || true)"
+  if [ -n "$ug" ] && [ "${ug%%:*}" != "root" ]; then
+    WEB_USER="${ug%%:*}"
+    WEB_GROUP="${ug#*:}"
+    ok "Detected panel web user: ${WEB_USER}:${WEB_GROUP} (from panel ownership)"
+    return 0
+  fi
+
+  # 3. Fall back to the FPM pool config (Debian-style pools, then RHEL-style).
+  local fconf pool_user pool_group
+  for fconf in "$PHP_ETC_DIR"/*/fpm/pool.d/*.conf /etc/php-fpm.d/*.conf; do
+    [ -f "$fconf" ] || continue
+    pool_user="$(sed -n 's/^[[:space:]]*user[[:space:]]*=[[:space:]]*//p' "$fconf" | head -1 | tr -d '[:space:]')"
+    pool_group="$(sed -n 's/^[[:space:]]*group[[:space:]]*=[[:space:]]*//p' "$fconf" | head -1 | tr -d '[:space:]')"
+    if [ -n "$pool_user" ] && [ "$pool_user" != "root" ] && id "$pool_user" >/dev/null 2>&1; then
+      WEB_USER="$pool_user"
+      WEB_GROUP="${pool_group:-$pool_user}"
+      ok "Detected FPM pool user: ${WEB_USER}:${WEB_GROUP} (from $fconf)"
+      return 0
+    fi
+  done
+
+  # 4. Last resort.
+  WEB_USER="www-data"
+  WEB_GROUP="www-data"
+  warn "Could not detect the panel web user; defaulting to ${WEB_USER}."
+  warn "If PHP-FPM runs as another user, re-run with:  sudo MI_WEB_USER=<user> mi install"
+}
 
 # ---------------------------------------------------------------------------
 # Package manager detection
@@ -122,7 +174,7 @@ detect_panel() {
     return 0
   fi
 
-  die "Could not find your Pterodactyl panel. Set it explicitly with:  PANEL_DIR=/path/to/panel sudo bash installer.sh"
+  die "Could not find your Pterodactyl panel. Set it explicitly with:  PANEL_DIR=/path/to/panel sudo mi install"
 }
 
 # ---------------------------------------------------------------------------
@@ -356,9 +408,9 @@ ensure_blueprint() {
   unzip -o release.zip >/dev/null
   rm -f release.zip
 
-  cat > "$PANEL/.blueprintrc" <<'EOF'
-WEBUSER="www-data";
-OWNERSHIP="www-data:www-data";
+  cat > "$PANEL/.blueprintrc" <<EOF
+WEBUSER="${WEB_USER}";
+OWNERSHIP="${WEB_USER}:${WEB_GROUP}";
 USERSHELL="/bin/bash";
 EOF
 
@@ -373,7 +425,7 @@ EOF
 # ---------------------------------------------------------------------------
 install_extension() {
   if [ -d "$PANEL/.blueprint/extensions/modpackinstaller" ] && [ "${MI_FORCE:-0}" != "1" ]; then
-    ok "Modpack Installer extension is already installed (MI_FORCE=1 to reinstall)"
+    ok "Addon Manager extension is already installed (MI_FORCE=1 to reinstall)"
     return 0
   fi
 
@@ -415,15 +467,17 @@ publish_extension() {
 # Main
 # ---------------------------------------------------------------------------
 main() {
-  info "=== Modpack Installer: Pterodactyl extension installer ==="
+  info "=== Addon Manager: Pterodactyl extension installer ==="
 
   if [ "$(id -u)" -ne 0 ]; then
-    die "This installer must be run with sudo or as root:  sudo bash installer.sh"
+    die "This installer must be run with sudo or as root:  sudo mi install"
   fi
 
   detect_package_manager
   detect_panel
   ok "Pterodactyl panel located at: $PANEL"
+
+  detect_web_user
 
   info "Ensuring system tools (curl, wget, unzip, zip, git)..."
   ensure_system_tools
@@ -453,10 +507,10 @@ Summary of what was set up:
   - Server data directories under /var/lib/pterodactyl were made accessible to
     the panel web user (${WEB_USER}) when they were locked down.
   - Blueprint framework was $(command -v blueprint >/dev/null 2>&1 && echo "already present" || echo "installed").
-  - The Modpack Installer extension was installed and published.
+  - The Addon Manager extension was installed and published.
 
 Next steps:
-  1. Open your panel and go to  Admin -> Extensions -> Modpack Installer
+  1. Open your panel and go to  Admin -> Extensions -> Addon Manager
      (or just refresh — the extension appears on the server dashboard).
   2. Optional: add a CurseForge API key to $PANEL/.env:
        CURSEFORGE_API_KEY=your_key_here

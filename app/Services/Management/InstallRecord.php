@@ -3,12 +3,19 @@
 namespace Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Management;
 
 use InvalidArgumentException;
+use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Installation\ContentInstallTarget;
 use Pterodactyl\BlueprintFramework\Extensions\modpackinstaller\Services\Server\ServerRelativePath;
 
 // Immutable record of one successfully installed modpack for one server.
 final class InstallRecord
 {
     public const STATUS_INSTALLED = 'installed';
+
+    public const TYPE_MODPACK = 'modpack';
+
+    /** Single-file content (mods, future plugins etc.) — uninstall must
+     * never touch the containing directory, only the recorded files. */
+    public const TYPE_CONTENT = 'content';
 
     public function __construct(
         public readonly string $id,
@@ -29,6 +36,10 @@ final class InstallRecord
         public readonly array $createdFiles,
         /** @var list<string> */
         public readonly array $overwrittenFiles,
+        public readonly string $contentType = self::TYPE_MODPACK,
+        /** Which catalog kind this is: modpack, mod, plugin, datapack,
+         * resourcepack, or shader. */
+        public readonly string $contentKind = ContentInstallTarget::KIND_MODPACK,
     ) {
         if ($id === '') {
             throw new InvalidArgumentException(
@@ -83,6 +94,8 @@ final class InstallRecord
             'installed_at' => $this->installedAt,
             'updated_at' => $this->updatedAt,
             'status' => $this->status,
+            'content_type' => $this->contentType,
+            'content_kind' => $this->contentKind,
             'ownership' => [
                 'created' => $this->createdFiles,
                 'overwritten' => $this->overwrittenFiles,
@@ -117,7 +130,57 @@ final class InstallRecord
             status: (string) ($data['status'] ?? self::STATUS_INSTALLED),
             createdFiles: $created,
             overwrittenFiles: $overwritten,
+            contentType: $contentType = self::contentTypeOrDefault(
+                $data['content_type'] ?? null,
+            ),
+            contentKind: self::contentKindFrom(
+                $data['content_kind'] ?? null,
+                $created,
+                $contentType,
+            ),
         );
+    }
+
+    // The stored kind when it is one we know; otherwise inferred from where
+    // the record's files were placed, so records written before the kind was
+    // stored still label themselves correctly.
+    // @param list<string> $createdFiles
+    private static function contentKindFrom(
+        mixed $value,
+        array $createdFiles,
+        string $contentType,
+    ): string {
+        if (is_string($value) && ContentInstallTarget::supportsKind($value)) {
+            return $value;
+        }
+
+        if ($contentType === self::TYPE_MODPACK) {
+            return ContentInstallTarget::KIND_MODPACK;
+        }
+
+        foreach ($createdFiles as $path) {
+            $kind = ContentInstallTarget::kindForPath((string) $path);
+
+            if ($kind !== null) {
+                return $kind;
+            }
+        }
+
+        // A content record whose file we cannot place: a mod is the only
+        // single-file kind that existed before the others.
+        return ContentInstallTarget::DEFAULT_TYPE;
+    }
+
+    // Records created before content installs existed have no content_type;
+    // anything unrecognized stays a modpack so uninstall keeps its old,
+    // more aggressive semantics unless the record explicitly says otherwise.
+    private static function contentTypeOrDefault(mixed $value): string
+    {
+        if ($value === self::TYPE_CONTENT) {
+            return self::TYPE_CONTENT;
+        }
+
+        return self::TYPE_MODPACK;
     }
 
     // Validates and normalizes a stored ownership list so that a corrupted or tampered store can never reintroduce unsafe...

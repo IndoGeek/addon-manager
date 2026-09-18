@@ -5,6 +5,9 @@ import axios from 'axios';
 
 import {
     API_BASE,
+    CONTENT_TYPE_OPTIONS,
+    CONTENT_TYPE_STORAGE_KEY,
+    DEFAULT_CONTENT_TYPE,
     DEFAULT_PROVIDER,
     DEFAULT_STACK,
     EXTENSION_VERSION,
@@ -13,11 +16,17 @@ import {
     STACK_OPTIONS,
     VIEW_STORAGE_KEY,
     activeInstallStorageKey,
+    backendContentType,
     getServerIdentifier,
+    isCatalogContentType,
+    isSingleFileContentType,
+    providerSupportedContentTypes,
 } from './utils/constants';
 
 import {
+    ActiveInstallFile,
     ActiveInstallRecord,
+    CatalogContentType,
     CatalogDescriptionData,
     CatalogDescriptionResponse,
     CatalogFilters,
@@ -35,6 +44,8 @@ import {
     InstalledModpacksResponse,
     MetadataResponse,
     ModpackMetadata,
+    ModVersion,
+    ModVersionsResponse,
     MultiFilterKey,
     ProvidersResponse,
     RestoreResponse,
@@ -58,6 +69,9 @@ import { ActiveFilterChips } from './toolbar/ActiveFilterChips';
 import { CatalogResults } from './cards/CatalogResults';
 import {
     CurseForgeIcon,
+    DiscordIcon,
+    GitBranchIcon,
+    GitHubIcon,
     ModrinthIcon,
     RefreshIcon,
     SpinnerIcon,
@@ -86,15 +100,25 @@ const CANCEL_STUCK_TIMEOUT_MS = 90000;
 // frozen snapshot across this window counts as dead.
 const PROGRESS_STALE_TIMEOUT_MS = 90000;
 
-const snapshotKey = (state: InstallProgressData): string =>
-    [
+const snapshotKey = (state: InstallProgressData): string => {
+    // The active step's own counters count as liveness: a counted stage (the
+    // mods a manifest lists) can sit on the same overall percentage for a
+    // while, and those updates must not read as a dead request.
+    const activeStage = (state.stages ?? []).find(
+        (stage) => stage.state === 'active',
+    );
+
+    return [
         state.phase,
         state.percent,
         state.downloaded_bytes ?? '',
         state.total_bytes ?? '',
         state.deployed_files ?? '',
         state.total_files ?? '',
+        activeStage?.key ?? '',
+        activeStage?.current ?? '',
     ].join('|');
+};
 
 export default () => {
     const server = getServerIdentifier();
@@ -149,6 +173,23 @@ export default () => {
         page: 1,
     });
 
+    // Selected toolbar content type (Modpacks / Mods / Plugins / ...).
+    // Persisted so the user's last tab survives reloads; switching tabs
+    // resets the search state so each type starts from a clean query.
+    const [contentType, setContentType] = useState<CatalogContentType>(() => {
+        try {
+            const stored = window.localStorage.getItem(
+                CONTENT_TYPE_STORAGE_KEY,
+            );
+
+            return isCatalogContentType(stored)
+                ? stored
+                : DEFAULT_CONTENT_TYPE;
+        } catch {
+            return DEFAULT_CONTENT_TYPE;
+        }
+    });
+
     // Backend-driven defaults (admin settings page): applied when the
     // providers endpoint responds, before the first search runs.
     const applyBackendDefaults = (
@@ -175,6 +216,12 @@ export default () => {
     const filtersRef = useRef(filters);
 
     filtersRef.current = filters;
+
+    // Mirrors the contentType state for callbacks that must read the active
+    // tab without re-creating on every keystroke (runSearch's closure).
+    const contentTypeRef = useRef(contentType);
+
+    contentTypeRef.current = contentType;
 
     const [items, setItems] = useState<CatalogItem[] | null>(null);
 
@@ -236,6 +283,39 @@ export default () => {
 
     const [modalVersionsError, setModalVersionsError] =
         useState<string | null>(null);
+
+    // Mod-specific version data (loader / game-version options per version
+    // plus dependency recommendations), loaded instead of the modpack list
+    // when the details modal opens for a mod.
+    const [modVersions, setModVersions] =
+        useState<ModVersion[] | null>(null);
+
+    const [modVersionsLoading, setModVersionsLoading] =
+        useState(false);
+
+    const [modVersionsError, setModVersionsError] =
+        useState<string | null>(null);
+
+    // The two dropdown selections of the mod version window; the install
+    // button only appears once both are chosen.
+    const [modLoaderSelection, setModLoaderSelection] = useState('');
+
+    const [modMcSelection, setModMcSelection] = useState('');
+
+    // Project ids of recommended dependencies the user opted into with the
+    // select toggle. Non-blocking: the install works with or without them.
+    const [selectedDependencyIds, setSelectedDependencyIds] = useState<
+        string[]
+    >([]);
+
+    // Per-dependency-project version lists, fetched once the loader + MC
+    // pair is chosen so each recommendation card can show (and install) the
+    // exact build that matches the selection. Keyed by Modrinth project id.
+    const [dependencyVersions, setDependencyVersions] = useState<
+        Record<string, ModVersion[] | null>
+    >({});
+
+    const dependencyVersionsRequestId = useRef(0);
 
     const [modalVersionSource, setModalVersionSource] =
         useState<string | null>(null);
@@ -348,6 +428,130 @@ export default () => {
 
     const capabilities = activeProvider?.capabilities ?? null;
 
+    // Which toolbar tabs the active provider can actually serve. CurseForge
+    // only wires modpacks, so the mods tab is disabled while it is selected.
+    const enabledContentTypes = providerSupportedContentTypes(
+        activeProvider?.capabilities,
+    );
+
+    // ── Mod version window derived state ─────────────────────────────
+    // Loaders and game versions offered in the two dropdowns, computed from
+    // the versions the mod actually publishes, sorted newest-game-version
+    // first. The install button only appears once both dropdowns resolve to
+    // exactly one version.
+    const modLoaders = modVersions === null
+        ? []
+        : Array.from(
+            new Set(modVersions.flatMap((version) => version.loaders)),
+        ).sort();
+
+    const modGameVersions = modVersions === null
+        ? []
+        : Array.from(
+            new Set(modVersions.flatMap((version) => version.game_versions)),
+        )
+            .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
+
+    // CurseForge records a loader only for mods and modpacks. Plugins,
+    // resource packs, data packs and shaders are tagged with Minecraft
+    // versions alone, so those resolve from the Minecraft dropdown only
+    // instead of demanding a loader that does not exist upstream.
+    const modHasLoaders = modLoaders.length > 0;
+
+    const modVersionSource = (() => {
+        if (
+            modVersions === null
+            || modMcSelection === ''
+            || (modHasLoaders && modLoaderSelection === '')
+        ) {
+            return null;
+        }
+
+        const matches = modVersions.filter(
+            (version) =>
+                version.game_versions.includes(modMcSelection)
+                && (
+                    !modHasLoaders
+                    || version.loaders.includes(modLoaderSelection)
+                ),
+        );
+
+        if (matches.length === 0) {
+            return null;
+        }
+
+        // Modrinth returns newest-first; keep that ordering.
+        return matches[0].source;
+    })();
+
+    const modSelectedVersion =
+        modVersions !== null && modVersionSource !== null
+            ? modVersions.find(
+                (version) => version.source === modVersionSource,
+            ) ?? null
+            : null;
+
+    // Loaders/versions that share at least one version with the current
+    // other selection, so the dropdowns guide toward installable combos.
+    const modLoadersForMc = modVersions === null || modMcSelection === ''
+        ? modLoaders
+        : modLoaders.filter((loader) =>
+            modVersions.some(
+                (version) =>
+                    version.loaders.includes(loader)
+                    && version.game_versions.includes(modMcSelection),
+            ),
+        );
+
+    const modMcForLoader = modVersions === null || modLoaderSelection === ''
+        ? modGameVersions
+        : modGameVersions.filter((mc) =>
+            modVersions.some(
+                (version) =>
+                    version.game_versions.includes(mc)
+                    && version.loaders.includes(modLoaderSelection),
+            ),
+        );
+
+    // Recommended dependencies of the currently resolved version, annotated
+    // with the exact version of each dependency that matches the selected
+    // loader + Minecraft version pair (or null when none does).
+    const modDependencyCards =
+        modSelectedVersion === null
+            ? []
+            : modSelectedVersion.dependencies.map((dependency) => {
+                const versions =
+                    dependencyVersions[dependency.project_id] ?? null;
+
+                let resolved: ModVersion | null = null;
+
+                if (
+                    versions !== null
+                    && modMcSelection !== ''
+                    && (!modHasLoaders || modLoaderSelection !== '')
+                ) {
+                    resolved =
+                        versions.find(
+                            (version) =>
+                                version.game_versions.includes(
+                                    modMcSelection,
+                                )
+                                && (
+                                    !modHasLoaders
+                                    || version.loaders.includes(
+                                        modLoaderSelection,
+                                    )
+                                ),
+                        ) ?? null;
+                }
+
+                return {
+                    ...dependency,
+                    versions,
+                    resolvedVersion: resolved,
+                };
+            });
+
     const providerOptions = visibleProviders.map((provider) => ({
         value: provider.name,
         label: provider.available
@@ -391,6 +595,12 @@ export default () => {
             page: next.page,
             limit: Number.parseInt(next.stack, 10) || PAGE_LIMIT,
         };
+
+        // Tab → backend content type. Tabs without backend support (null)
+        // send 'modpack' so validation passes; a defined empty result is
+        // shown instead of a 422.
+        params.content_type =
+            backendContentType(contentTypeRef.current) ?? 'modpack';
 
         if (next.query.trim() !== '') {
             params.query = next.query.trim();
@@ -447,11 +657,24 @@ export default () => {
         let cancelled = false;
         let chosenProvider = DEFAULT_PROVIDER;
 
+        // The facet lists the backend advertises (categories, loaders) are
+        // content-type specific, so the providers endpoint is re-read
+        // whenever the tab changes. Only the first run applies the backend
+        // defaults and kicks off the initial search.
+        const initial = !initialSearchRan.current;
+
         const fetchProviders = async () => {
             try {
                 const response =
                     await axios.get<ProvidersResponse>(
                         `${API_BASE}/catalog/providers`,
+                        {
+                            params: {
+                                content_type: backendContentType(
+                                    contentType,
+                                ),
+                            },
+                        },
                     );
 
                 if (cancelled || !alive.current) {
@@ -459,6 +682,11 @@ export default () => {
                 }
 
                 setProviders(response.data.data.providers);
+
+                if (!initial) {
+                    // Tab switch: only the facet lists changed.
+                    return;
+                }
 
                 const available = response.data.data.providers.filter(
                     (provider) =>
@@ -479,6 +707,38 @@ export default () => {
                     chosenProvider = available[0].name;
                 }
 
+                // A persisted tab the chosen provider cannot serve (e.g.
+                // Mods with a modpack-only provider) would search a catalog
+                // that never has rows; fall back to its first served tab.
+                const supported = providerSupportedContentTypes(
+                    response.data.data.providers.find(
+                        (provider) => provider.name === chosenProvider,
+                    )?.capabilities,
+                );
+
+                if (!supported.includes(backendContentType(contentType))) {
+                    const fallback = CONTENT_TYPE_OPTIONS.find(
+                        (option) =>
+                            supported.includes(
+                                backendContentType(option.value),
+                            ),
+                    );
+
+                    if (fallback) {
+                        contentTypeRef.current = fallback.value;
+                        setContentType(fallback.value);
+
+                        try {
+                            window.localStorage.setItem(
+                                CONTENT_TYPE_STORAGE_KEY,
+                                fallback.value,
+                            );
+                        } catch {
+                            // storage unavailable; selection won't persist
+                        }
+                    }
+                }
+
                 const defaults = applyBackendDefaults(response.data.data);
 
                 setFilters((current) => ({
@@ -497,7 +757,7 @@ export default () => {
                 );
             }
 
-            if (!initialSearchRan.current) {
+            if (initial) {
                 initialSearchRan.current = true;
 
                 if (alive.current) {
@@ -516,7 +776,7 @@ export default () => {
             cancelled = true;
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [contentType]);
 
     const loadInstalled = async () => {
         if (!server) {
@@ -547,7 +807,7 @@ export default () => {
             setInstalled([]);
             setInstalledError(
                 requestError.response?.data?.error ||
-                'Unable to load the installed modpacks.',
+                'Unable to load the installed addons.',
             );
         } finally {
             if (alive.current) {
@@ -786,6 +1046,30 @@ export default () => {
             return;
         }
 
+        // The new provider may not serve the current tab (CurseForge has no
+        // mods wiring); fall back to its first supported tab so the next
+        // search never hits a provider that returns empty rows for it.
+        const nextProvider = providers?.find(
+            (entry) => entry.name === provider,
+        );
+
+        const supported = providerSupportedContentTypes(
+            nextProvider?.capabilities,
+        );
+
+        if (!supported.includes(backendContentType(contentType) ?? '')) {
+            const fallback = CONTENT_TYPE_OPTIONS.find(
+                (option) =>
+                    supported.includes(
+                        backendContentType(option.value) ?? '',
+                    ),
+            );
+
+            if (fallback) {
+                changeContentType(fallback.value);
+            }
+        }
+
         applyFilters({
             provider,
             gameVersions: [],
@@ -797,6 +1081,37 @@ export default () => {
 
     const changeSort = (sort: string) => {
         applyFilters({ sort });
+    };
+
+    const changeContentType = (next: CatalogContentType) => {
+        if (next === contentType) {
+            return;
+        }
+
+        // Update the ref synchronously: the search fired below must carry
+        // the NEW tab's content type, but a plain setState only lands in the
+        // ref after a re-render — the stale value made tab switches search
+        // the previous tab's catalog (Mods → modpacks, Modpacks → mods).
+        contentTypeRef.current = next;
+
+        setContentType(next);
+
+        try {
+            window.localStorage.setItem(CONTENT_TYPE_STORAGE_KEY, next);
+        } catch {
+            // Storage unavailable (private mode) — selection just won't persist.
+        }
+
+        // Each content type is its own search: drop the query, filters and
+        // pagination so the new tab starts clean.
+        applyFilters({
+            query: '',
+            gameVersions: [],
+            loaders: [],
+            categories: [],
+            environment: '',
+            page: 1,
+        });
     };
 
     const changeStack = (stack: string) => {
@@ -858,10 +1173,20 @@ export default () => {
         metadataRequestId.current++;
         descriptionRequestId.current++;
 
+        // Single-file content (mods, plugins, datapacks, ...) opens the
+        // loader/Minecraft-version window; modpacks keep the version list.
+        const isContent = isSingleFileContentType(contentTypeRef.current);
+
         setDetailsItem(item);
-        setModalVersions(null);
-        setModalVersionsError(null);
+        setModalVersions(isContent ? null : modalVersions);
+        setModalVersionsError(isContent ? null : modalVersionsError);
         setModalVersionsLoading(false);
+        setModVersions(isContent ? null : modVersions);
+        setModVersionsError(null);
+        setModVersionsLoading(false);
+        setModLoaderSelection('');
+        setModMcSelection('');
+        setSelectedDependencyIds([]);
         setModalVersionSource(null);
         setModalMetadata(null);
         setModalMetadataLoading(false);
@@ -886,6 +1211,11 @@ export default () => {
         setModalVersions(null);
         setModalVersionsError(null);
         setModalVersionsLoading(false);
+        setModVersions(null);
+        setModVersionsError(null);
+        setModVersionsLoading(false);
+        setModLoaderSelection('');
+        setModMcSelection('');
         setModalMetadata(null);
         setModalMetadataLoading(false);
         setModalMetadataError(null);
@@ -1020,6 +1350,87 @@ export default () => {
         }
     };
 
+    // Mod flavor of loadVersions: hits the mod-versions endpoint which
+    // returns per-version loader/game-version options and dependencies.
+    const loadModVersions = async () => {
+        const item = detailsItem;
+
+        if (!item) {
+            return;
+        }
+
+        const id = ++versionsRequestId.current;
+
+        setModVersionsLoading(true);
+        setModVersions(null);
+        setModVersionsError(null);
+
+        try {
+            const response =
+                await axios.get<ModVersionsResponse>(
+                    `${API_BASE}/catalog/mod-versions`,
+                    {
+                        params: {
+                            provider: item.provider,
+                            project: item.provider_project_id,
+                        },
+                    },
+                );
+
+            if (
+                !alive.current
+                || id !== versionsRequestId.current
+                || detailsItem === null
+            ) {
+                return;
+            }
+
+            const payload = response.data.data;
+
+            setModVersions(payload.versions);
+
+            // Files exist but every download URL is withheld: the author
+            // disabled automated downloads. Saying "no versions" there would
+            // be wrong, so name the actual reason.
+            if (
+                payload.versions.length === 0
+                && payload.unavailable_reason === 'distribution_disabled'
+            ) {
+                setModVersionsError(
+                    'The author disabled automated downloads for this project '
+                    + 'on CurseForge, so it has to be installed manually. '
+                    + 'Open it on CurseForge from the button above.',
+                );
+            }
+        } catch (requestError: any) {
+            if (
+                !alive.current
+                || id !== versionsRequestId.current
+                || detailsItem === null
+            ) {
+                return;
+            }
+
+            // `error` is this extension's shape and `message` is the panel's
+            // generic handler: showing whichever arrived beats a generic
+            // sentence that hides the real cause (a missing API key, a rate
+            // limit, an upstream 403).
+            setModVersionsError(
+                requestError.response?.data?.error ||
+                requestError.response?.data?.message ||
+                'Unable to load the mod versions.',
+            );
+        } finally {
+            if (
+                alive.current
+                && id === versionsRequestId.current
+                && detailsItem !== null
+            ) {
+                setModVersionsLoading(false);
+            }
+        }
+    };
+
     const clearModalSelection = () => {
         setModalVersionSource(null);
         setModalMetadata(null);
@@ -1030,6 +1441,10 @@ export default () => {
 
     const retryModalVersions = () => {
         loadVersions();
+    };
+
+    const retryModVersions = () => {
+        loadModVersions();
     };
 
     const selectModalVersion = (sourceValue: string) => {
@@ -1192,12 +1607,23 @@ export default () => {
         name,
         version,
         iconUrl,
+        mc_version = null,
+        loader = null,
+        kind = null,
+        files = [],
     }: {
         source: string;
         provider: string;
         name: string;
         version: string;
         iconUrl: string | null;
+        /** Optional selection pills for single-file installs (mods). */
+        mc_version?: string | null;
+        loader?: string | null;
+        /** Catalog kind of the entry (modpack, mod, plugin, ...). */
+        kind?: string | null;
+        /** Every file this run installs (main content + dependencies). */
+        files?: ActiveInstallFile[];
     }): string | null => {
         if (!server) {
             return null;
@@ -1219,6 +1645,10 @@ export default () => {
             icon_url: iconUrl,
             source,
             started_at: new Date().toISOString(),
+            mc_version,
+            loader,
+            kind,
+            files,
         };
 
         setActiveInstall(record);
@@ -1244,6 +1674,16 @@ export default () => {
         }
 
         return token;
+    };
+
+    // Human label for an install run: a multi-file run names how many extra
+    // files came along with the main content.
+    const installLabel = (record: ActiveInstallRecord): string => {
+        const extra = (record.files?.length ?? 1) - 1;
+
+        return extra > 0
+            ? `${record.name} + ${extra} more`
+            : record.name;
     };
 
     const handleProgressState = (
@@ -1276,7 +1716,7 @@ export default () => {
             setActiveProgress(null);
             setOutcomeBanner({
                 kind: 'success',
-                message: `${record.name} installed successfully.`,
+                message: `${installLabel(record)} installed successfully.`,
             });
             loadInstalled();
             return;
@@ -1291,8 +1731,8 @@ export default () => {
             const message =
                 state.message
                 || (state.phase === 'cancelled'
-                    ? `${record.name} download was cancelled.`
-                    : `${record.name} installation failed.`);
+                    ? `${installLabel(record)} download was cancelled.`
+                    : `${installLabel(record)} installation failed.`);
 
             setOutcomeBanner({
                 kind: state.phase === 'cancelled' ? 'info' : 'error',
@@ -1322,7 +1762,7 @@ export default () => {
 
                 setOutcomeBanner({
                     kind: 'info',
-                    message: `${record.name} download was cancelled.`,
+                    message: `${installLabel(record)} download was cancelled.`,
                 });
 
                 scheduleOutcomeClear();
@@ -1363,14 +1803,14 @@ export default () => {
                     phase: 'failed',
                     indeterminate: false,
                     message:
-                        `${record.name} installation stopped responding.`,
+                        `${installLabel(record)} installation stopped responding.`,
                 });
 
                 setOutcomeBanner({
                     kind: 'error',
                     message:
-                        `${record.name} installation stopped responding. ` +
-                        'Please try again.',
+                        `${installLabel(record)} installation stopped ` +
+                        'responding. Please try again.',
                 });
 
                 scheduleOutcomeClear();
@@ -1600,15 +2040,29 @@ export default () => {
             return;
         }
 
-        if (!modalVersionSource) {
+        const isContentInstall =
+            detailsItem !== null &&
+            isSingleFileContentType(contentTypeRef.current) &&
+            detailsItem.provider === 'modrinth';
+
+        if (isContentInstall) {
+            // Both dropdowns must be chosen; the resolved version follows
+            // from them.
+            if (!modVersionSource) {
+                setModalStatus({
+                    kind: 'error',
+                    message:
+                        'Select a Minecraft version and loader before installing.',
+                });
+                return;
+            }
+        } else if (!modalVersionSource) {
             setModalStatus({
                 kind: 'error',
                 message: 'Select a modpack version before installing.',
             });
             return;
-        }
-
-        if (!modalMetadata) {
+        } else if (!modalMetadata) {
             setModalStatus({
                 kind: 'error',
                 message: 'Resolve the modpack version before installing.',
@@ -1620,19 +2074,82 @@ export default () => {
             return;
         }
 
-        if (!skipReplaceCheck.current && hasInstalledModpack) {
+        // Single-file content is not a full modpack: installing a mod,
+        // plugin, datapack, resource pack, or shader never replaces an
+        // existing modpack, so the replace warning that guards the modpack
+        // pipeline does not apply here.
+        if (
+            !isContentInstall
+            && !skipReplaceCheck.current
+            && hasInstalledModpack
+        ) {
             requestReplaceConfirmation(installModalModpack);
             return;
         }
 
         skipReplaceCheck.current = false;
 
+        // Narrowed above: content installs have a resolved source; modpack
+        // installs have both a source and metadata.
+        const installSource = isContentInstall
+            ? (modVersionSource as string)
+            : (modalVersionSource as string);
+
+        // Selected recommended dependencies install in the same run, each
+        // becoming its own tracked record on the server.
+        const chosenDependencies = isContentInstall
+            ? modDependencyCards.filter(
+                (card) =>
+                    selectedDependencyIds.includes(card.project_id)
+                    && card.resolvedVersion !== null,
+            )
+            : [];
+
+        // The downloading window lists every file this run fetches, so a
+        // multi-file install shows one card per file instead of a single
+        // card for the whole run. Each carries the kind of content it is;
+        // the backend corrects a dependency whose kind differs from the
+        // entry the user picked (a shader's Iris dependency is a mod).
+        const tabKind = isContentInstall
+            ? backendContentType(contentTypeRef.current)
+            : null;
+
+        const installFiles: ActiveInstallFile[] = isContentInstall
+            ? [
+                {
+                    name: detailsItem?.name ?? '',
+                    icon_url: detailsItem?.icon_url ?? null,
+                    dependency: false,
+                    kind: tabKind,
+                },
+                ...chosenDependencies.map((card) => ({
+                    name: card.title,
+                    icon_url: card.icon_url ?? null,
+                    dependency: true,
+                    kind: tabKind,
+                })),
+            ]
+            : [];
+
         const token = beginActiveInstall({
-            source: modalVersionSource,
+            source: installSource,
             provider: detailsItem?.provider ?? '',
-            name: modalMetadata.name,
-            version: modalMetadata.version,
-            iconUrl: modalMetadata.icon_url,
+            name: isContentInstall
+                ? (detailsItem?.name ?? '')
+                : (modalMetadata?.name ?? ''),
+            version: isContentInstall
+                ? (modSelectedVersion?.version_number ?? '')
+                : (modalMetadata?.version ?? ''),
+            iconUrl: isContentInstall
+                ? (detailsItem?.icon_url ?? null)
+                : (modalMetadata?.icon_url ?? null),
+            mc_version: isContentInstall ? modMcSelection : null,
+            loader:
+                isContentInstall && modHasLoaders
+                    ? modLoaderSelection
+                    : null,
+            kind: isContentInstall ? tabKind : 'modpack',
+            files: installFiles,
         });
 
         if (token === null) {
@@ -1647,16 +2164,51 @@ export default () => {
         setModalStatus(null);
         setModalResult(null);
 
+        // Single-file content uses the simple install endpoint; modpacks
+        // keep the full archive pipeline. Both speak the same
+        // progress/cancel protocol, so the polling loop below is shared.
+        const endpoint = isContentInstall
+            ? `${API_BASE}/servers/${server}/install/mod`
+            : `${API_BASE}/servers/${server}/install`;
+
+        const body: Record<string, unknown> = {
+            source: installSource,
+        };
+
+        if (isContentInstall) {
+            body.name = detailsItem?.name ?? '';
+            // Tells the backend which directory the file belongs in
+            // (mods, plugins, world/datapacks, ...).
+            body.content_type = backendContentType(contentTypeRef.current);
+            body.mc_version = modMcSelection;
+
+            // Loader-less content (CurseForge plugins, packs, shaders, data
+            // packs) sends no loader: there is none to send.
+            if (modHasLoaders) {
+                body.loader = modLoaderSelection;
+            }
+
+            if (detailsItem?.icon_url) {
+                body.icon_url = detailsItem.icon_url;
+            }
+
+            if (chosenDependencies.length > 0) {
+                body.dependencies = chosenDependencies.map((card) => ({
+                    source: card.resolvedVersion?.source ?? '',
+                    name: card.title,
+                    icon_url: card.icon_url ?? '',
+                }));
+            }
+        }
+
         closeDetailsModal();
         setInstalledOpen(true);
         loadInstalled();
 
         try {
             await axios.post<InstallResponse>(
-                `${API_BASE}/servers/${server}/install`,
-                {
-                    source: modalVersionSource,
-                },
+                endpoint,
+                body,
                 {
                     params: {
                         progress_token: token,
@@ -1696,7 +2248,9 @@ export default () => {
             // Definitive pre-start rejection (4xx, e.g. 422 validation).
             const message =
                 requestError.response?.data?.error ||
-                'Unable to install the modpack.';
+                (isContentInstall
+                    ? 'Unable to install the content.'
+                    : 'Unable to install the modpack.');
 
             stopActivePolling();
             clearActiveInstallStorage();
@@ -1723,9 +2277,97 @@ export default () => {
             return;
         }
 
-        loadVersions();
+        // Single-file content uses the dedicated version catalog
+        // (loader/game-version options + dependencies); modpacks keep the
+        // classic version list picker.
+        if (isSingleFileContentType(contentTypeRef.current)) {
+            loadModVersions();
+        } else {
+            loadVersions();
+        }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [detailsItem]);
+
+    // Once the loader + MC pair resolves a version, fetch each recommended
+    // dependency project's own versions so the cards can offer the exact
+    // compatible build for the same pair. Cleared when the pair changes.
+    useEffect(() => {
+        if (modSelectedVersion === null) {
+            dependencyVersionsRequestId.current++;
+            setDependencyVersions({});
+
+            return;
+        }
+
+        const deps = modSelectedVersion.dependencies;
+
+        if (deps.length === 0) {
+            setDependencyVersions({});
+
+            return;
+        }
+
+        const id = ++dependencyVersionsRequestId.current;
+
+        // Mark all as loading; resolved lists replace the nulls as they land.
+        setDependencyVersions((current) => {
+            const next: Record<string, ModVersion[] | null> = {};
+
+            for (const dependency of deps) {
+                next[dependency.project_id] = current[
+                    dependency.project_id
+                ] ?? null;
+            }
+
+            return next;
+        });
+
+        // Dependencies belong to the same provider as the entry that
+        // references them: a CurseForge mod recommends CurseForge mods,
+        // addressed by their numeric id instead of a slug.
+        const dependencyProvider = detailsItem?.provider ?? 'modrinth';
+
+        const fetchOne = async (
+            projectId: string,
+            slug: string | null,
+        ) => {
+            try {
+                const response = await axios.get<ModVersionsResponse>(
+                    `${API_BASE}/catalog/mod-versions`,
+                    {
+                        params: {
+                            provider: dependencyProvider,
+                            project: slug ?? projectId,
+                        },
+                    },
+                );
+
+                if (!alive.current || id !== dependencyVersionsRequestId.current) {
+                    return;
+                }
+
+                setDependencyVersions((current) => ({
+                    ...current,
+                    [projectId]: response.data.data.versions,
+                }));
+            } catch {
+                if (!alive.current || id !== dependencyVersionsRequestId.current) {
+                    return;
+                }
+
+                // A failed lookup just disables that card's install toggle.
+                setDependencyVersions((current) => ({
+                    ...current,
+                    [projectId]: [],
+                }));
+            }
+        };
+
+        for (const dependency of deps) {
+            fetchOne(dependency.project_id, dependency.slug);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [modSelectedVersion?.version_id]);
 
     const updateSource = (value: string) => {
         setSource(value);
@@ -1924,6 +2566,9 @@ export default () => {
         >
             <div className="modpackinstaller-card">
                 <CatalogToolbar
+                    contentType={contentType}
+                    onContentTypeChange={changeContentType}
+                    enabledContentTypes={enabledContentTypes}
                     query={filters.query}
                     onQueryChange={onQueryChange}
                     onQuerySubmit={submitQuery}
@@ -1988,6 +2633,7 @@ export default () => {
                     view={view}
                     processing={processing}
                     providerLabels={providerLabels}
+                    contentType={contentType}
                     onRetry={() =>
                         runSearch({
                             ...filtersRef.current,
@@ -2192,15 +2838,15 @@ export default () => {
                 open={installedOpen}
                 onClose={() => setInstalledOpen(false)}
                 labelledBy="modpackinstaller-installed-title"
-                title="Installed modpacks"
+                title="Installed addons"
                 busy={installedLoading}
                 headerActions={
                     <button
                         type="button"
-                        className="modpackinstaller-icon-button modpackinstaller-icon-button--blue"
+                        className="modpackinstaller-icon-button modpackinstaller-icon-button--neutral"
                         onClick={refreshInstalled}
                         disabled={installedLoading}
-                        aria-label="Refresh installed modpacks"
+                        aria-label="Refresh installed addons"
                     >
                         {installedLoading
                             ? <SpinnerIcon />
@@ -2240,9 +2886,35 @@ export default () => {
                     <DetailsModalBody
                         detailsItem={detailsItem}
                         providerLabel={activeProvider?.label ?? null}
+                        isContentEntry={isSingleFileContentType(
+                            contentTypeRef.current,
+                        )}
+                        contentKind={
+                            isSingleFileContentType(contentTypeRef.current)
+                                ? backendContentType(contentTypeRef.current)
+                                : null
+                        }
                         modalVersions={modalVersions}
                         modalVersionsLoading={modalVersionsLoading}
                         modalVersionsError={modalVersionsError}
+                        modVersions={modVersions}
+                        modVersionsLoading={modVersionsLoading}
+                        modVersionsError={modVersionsError}
+                        modLoaderSelection={modLoaderSelection}
+                        modMcSelection={modMcSelection}
+                        onModLoaderChange={setModLoaderSelection}
+                        onModMcChange={setModMcSelection}
+                        modDependencyCards={modDependencyCards}
+                        selectedDependencyIds={selectedDependencyIds}
+                        onToggleDependency={(projectId) =>
+                            setSelectedDependencyIds((current) =>
+                                current.includes(projectId)
+                                    ? current.filter(
+                                        (id) => id !== projectId,
+                                    )
+                                    : [...current, projectId],
+                            )
+                        }
                         modalVersionSource={modalVersionSource}
                         modalMetadata={modalMetadata}
                         modalMetadataLoading={modalMetadataLoading}
@@ -2257,7 +2929,11 @@ export default () => {
                         installBlocked={activeRunning}
                         willReplace={hasInstalledModpack}
                         onSelectVersion={selectModalVersion}
-                        onRetryVersions={retryModalVersions}
+                        onRetryVersions={
+                            isSingleFileContentType(contentTypeRef.current)
+                                ? retryModVersions
+                                : retryModalVersions
+                        }
                         onRetryDescription={() =>
                             detailsItem !== null
                                 ? loadDescription(detailsItem)
@@ -2297,7 +2973,7 @@ export default () => {
                 open={replaceConfirmOpen}
                 onClose={cancelReplaceInstall}
                 labelledBy="modpackinstaller-replace-title"
-                title="Replace installed modpack"
+                title="Replace installed addon"
             >
                 <ReplaceConfirmBody
                     onCancel={cancelReplaceInstall}
@@ -2307,13 +2983,24 @@ export default () => {
 
             <footer className="modpackinstaller-footer">
                 <a
-                    href="https://github.com/IndoGeek/modpack-installer"
+                    href="https://github.com/IndoGeek/addon-manager"
                     target="_blank"
                     rel="noopener noreferrer"
                 >
-                    Modpack Installer
+                    Addon Manager
                 </a>
-                {' '}by IndoGeek · v{EXTENSION_VERSION}
+                <span className="modpackinstaller-footer-sep">•</span>
+                <span className="modpackinstaller-footer-item">by <GitHubIcon /> IndoGeek</span>
+                <span className="modpackinstaller-footer-sep">•</span>
+                <span className="modpackinstaller-footer-item"><GitBranchIcon /> v{EXTENSION_VERSION}</span>
+                <span className="modpackinstaller-footer-sep">•</span>
+                <a
+                    href="https://discord.gg/TuRR5tgvVT"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                >
+                    <DiscordIcon /> Contact
+                </a>
             </footer>
         </div>
     );

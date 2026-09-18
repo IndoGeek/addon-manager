@@ -11,8 +11,14 @@ import {
     StackIcon,
     UpdatedStatIcon,
 } from '../icons';
-import { SORT_OPTIONS, STACK_OPTIONS } from '../utils/constants';
-import type { DropdownOption } from '../types';
+import {
+    CONTENT_TYPE_OPTIONS,
+    SORT_OPTIONS,
+    STACK_OPTIONS,
+    backendContentType,
+    visibleContentTypes,
+} from '../utils/constants';
+import type { CatalogContentType, DropdownOption } from '../types';
 
 const SORT_ICONS: Record<string, React.ReactNode> = {
     relevance: <SearchIcon />,
@@ -30,6 +36,11 @@ const SORTED_OPTIONS_WITH_ICONS: DropdownOption[] = SORT_OPTIONS.map(
 );
 
 interface ToolbarProps {
+    contentType: CatalogContentType;
+    onContentTypeChange: (value: CatalogContentType) => void;
+    /** Backend content types the active provider serves; unsupported tabs render disabled. */
+    enabledContentTypes: string[];
+
     query: string;
     onQueryChange: (value: string) => void;
     onQuerySubmit: () => void;
@@ -64,6 +75,9 @@ interface ToolbarProps {
 }
 
 export const CatalogToolbar = ({
+    contentType,
+    onContentTypeChange,
+    enabledContentTypes,
     query,
     onQueryChange,
     onQuerySubmit,
@@ -95,6 +109,26 @@ export const CatalogToolbar = ({
         windowY: 0,
         rootTop: 0,
     });
+
+    // Lower-case plural label for the active tab, used in the search
+    // placeholder ("Search modpacks", "Search mods", ...).
+    const searchLabel =
+        CONTENT_TYPE_OPTIONS.find(
+            (option) => option.value === contentType,
+        )?.label.toLowerCase() ?? 'modpacks';
+
+    // Backend content-type names are singular ('modpack', 'mod') while tab
+    // values are plural ('modpacks', 'mods'); translate before comparing.
+    // CurseForge advertises modpacks only, so its bar shows exactly two
+    // entries: Modpacks (clickable) and Mods (visible but disabled).
+    const tabSupported = (value: CatalogContentType): boolean =>
+        enabledContentTypes.includes(backendContentType(value));
+
+    const visibleTabs = visibleContentTypes(providerValue);
+
+    const visibleOptions = CONTENT_TYPE_OPTIONS.filter((option) =>
+        visibleTabs.includes(option.value),
+    );
 
     useEffect(() => {
         const onScroll = (event: Event) => {
@@ -184,8 +218,8 @@ export const CatalogToolbar = ({
                             // focused input dismisses the mobile keyboard
                             // mid-typing. The debounced search simply keeps
                             // running underneath whatever is typed next.
-                            placeholder="Search modpacks"
-                            aria-label="Search modpacks"
+                            placeholder={`Search ${searchLabel}`}
+                            aria-label={`Search ${searchLabel}`}
                             aria-busy={catalogBusy}
                         />
 
@@ -221,13 +255,13 @@ export const CatalogToolbar = ({
                         onClick={onOpenInstalled}
                         aria-label={
                             installedCount !== null && installedCount > 0
-                                ? `Installed modpacks (${installedCount})`
-                                : 'Installed modpacks'
+                                ? `Installed addons (${installedCount})`
+                                : 'Installed addons'
                         }
                         title={
                             installedCount !== null && installedCount > 0
-                                ? `Installed modpacks (${installedCount})`
-                                : 'Installed modpacks'
+                                ? `Installed addons (${installedCount})`
+                                : 'Installed addons'
                         }
                     >
                         <PackageIcon />
@@ -242,6 +276,49 @@ export const CatalogToolbar = ({
                         )}
                     </button>
                 </div>
+            </div>
+
+            <div
+                className="modpackinstaller-content-type-bar"
+                role="tablist"
+                aria-label="Content type"
+            >
+                {visibleOptions.map((option) => {
+                    // A tab is clickable only when the active provider can
+                    // actually serve it: unsupported tabs are disabled, and
+                    // providers that only serve some types trim the bar.
+                    const unsupported = !tabSupported(option.value);
+
+                    const disabled = catalogBusy || unsupported;
+
+                    return (
+                        <button
+                            key={option.value}
+                            type="button"
+                            role="tab"
+                            aria-selected={contentType === option.value}
+                            aria-disabled={unsupported}
+                            title={
+                                unsupported
+                                    ? 'Not available for this provider yet'
+                                    : undefined
+                            }
+                            className={`modpackinstaller-content-type${
+                                contentType === option.value
+                                    ? ' modpackinstaller-content-type--active'
+                                    : ''
+                            }${
+                                unsupported
+                                    ? ' modpackinstaller-content-type--disabled'
+                                    : ''
+                            }`}
+                            onClick={() => onContentTypeChange(option.value)}
+                            disabled={disabled}
+                        >
+                            {option.label}
+                        </button>
+                    );
+                })}
             </div>
 
             <div className="modpackinstaller-toolbar-row">

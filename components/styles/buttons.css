@@ -1,12 +1,15 @@
 /* buttons.css — standalone action buttons and icon buttons. */
 
+/* Every button in the UI carries the same resting border as the view
+   toggle: 1px of white at 0.15. Green/dark fills read as the same family of
+   control rather than as a separate, outline-less style. */
 .modpackinstaller-install-toggle {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 9px 16px;
-  border: 0;
+  padding: 8px 15px; /* + 1px border = the same 9px 16px box as before */
+  border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 8px;
   font-size: 0.9rem;
   font-weight: 600;
@@ -17,6 +20,7 @@
 }
 
 .modpackinstaller-install-toggle:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.25);
   background: #15803d;
 }
 
@@ -86,10 +90,11 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  box-sizing: border-box;
   width: 36px;
   height: 36px;
   padding: 0;
-  border: 0;
+  border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 8px;
   cursor: pointer;
   color: #ffffff;
@@ -98,12 +103,18 @@
     opacity 0.12s ease;
 }
 
-.modpackinstaller-icon-button--blue {
-  background: #2563eb;
+/* Neutral: the resting dark surface the View/details buttons use — no hue,
+   so a utility action (refresh) never competes with the coloured ones. */
+.modpackinstaller-icon-button--neutral {
+  background: rgba(0, 0, 0, 0.3);
 }
 
-.modpackinstaller-icon-button--blue:hover:not(:disabled) {
-  background: #1d4ed8;
+.modpackinstaller-icon-button--neutral:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.42);
+}
+
+.modpackinstaller-icon-button:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.25);
 }
 
 .modpackinstaller-icon-button--green {
@@ -150,8 +161,8 @@
 }
 
 .modpackinstaller-active-dismiss {
-  padding: 6px 10px;
-  border: 0;
+  padding: 5px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 6px;
   font-size: 0.78rem;
   font-weight: 600;
@@ -161,5 +172,6 @@
 }
 
 .modpackinstaller-active-dismiss:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.25);
   background: rgba(127, 127, 127, 0.3);
 }

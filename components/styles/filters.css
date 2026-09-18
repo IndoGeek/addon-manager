@@ -49,7 +49,10 @@
   gap: 8px;
 }
 
-/* Options render as pill-shaped toggle buttons, not checkboxes: selected options take the filter toggle's green... */
+/* Options render as pill-shaped toggle buttons, not checkboxes: selected options take the filter toggle's green...
+   The resting border is the same hairline every other control uses (see the
+   view toggle), so an unselected pill reads as clickable rather than shouting
+   a bright white outline. */
 .modpackinstaller-filter-option {
   display: inline-flex;
   align-items: center;
@@ -57,7 +60,7 @@
   box-sizing: border-box;
   min-width: 0;
   padding: 7px 14px;
-  border: 1px solid rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.1);
   color: inherit;
@@ -69,6 +72,7 @@
 }
 
 .modpackinstaller-filter-option:hover {
+  border-color: rgba(255, 255, 255, 0.25);
   background: rgba(255, 255, 255, 0.17);
 }
 
@@ -96,10 +100,11 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  box-sizing: border-box;
   width: 40px;
   height: 40px;
   padding: 0;
-  border: 0;
+  border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 8px;
   color: #ffffff;
   cursor: pointer;
@@ -111,6 +116,7 @@
 }
 
 .modpackinstaller-filter-apply:hover {
+  border-color: rgba(255, 255, 255, 0.25);
   background: #15803d;
 }
 
@@ -119,6 +125,7 @@
 }
 
 .modpackinstaller-filter-reset:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.25);
   background: #b91c1c;
 }
 
