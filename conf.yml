@@ -3,7 +3,7 @@ info:
   identifier: "modpackinstaller"
   description: "Browse and install modpacks, mods, plugins, datapacks, resource packs and shaders from Modrinth and CurseForge."
   flags: ""
-  version: "0.47.0"
+  version: "0.47.1"
   target: "beta-2026-08"
   author: "IndoGeek"
   icon: "assets/logo.png"

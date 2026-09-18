@@ -50,7 +50,7 @@ to preview it.
 | `mi remove` | Uninstall it again, leaving dependencies (and your clone) in place |
 | `mi smoke` | Post-deploy health check (page/API/CSS/data dir) |
 | `mi release` | Bump version from commits + write CHANGELOG.md |
-| `mi install-hooks` | Install the git pre-push gate (runs `mi check` before a push) |
+| `mi hooks` | Pre-push gate: status, `install` / `remove`, `checks on\|off`, `bump on\|off` |
 | `mi coverage` | Show app classes with no test coverage (`--min <pct>` gates it) |
 | `mi css` | Regenerate `root.css` (`--check` fails when it is stale) |
 | `mi db:reset` | Wipe install records/history/cache locally (`--dry-run` first) |
@@ -74,19 +74,66 @@ Useful flags (run `mi <command> --help` for the rest):
 ## Commit convention
 
 Commits follow [conventional commits](https://www.conventionalcommits.org)
-and **directly drive the version number**:
+and **directly drive the version number**, whether you bump by hand (`mi update`)
+or let the pre-push hook do it:
 
 ```
-feat: <what>      # adds a feature
-fix: <what>       # fixes a bug
-chore: <what>     # tooling, docs, refactors — does not affect version
+feat: <what>      # adds a feature             → minor +1   0.47.0 → 0.48.0
+fix: <what>       # fixes a bug                → patch +1   0.48.0 → 0.48.1
+chore: <what>     # tooling, docs, refactors   → major +1   0.48.1 → 1.0.0
 ```
 
-The version is `0.<feat-count>.<fix-count>` over the whole history
-(e.g. 46 feat + 22 fix commits → `0.46.22`). `mi release` computes this for
-you and updates `conf.yml`, `components/utils/constants.ts`, and
-`CHANGELOG.md` together — never bump versions by hand, they live in two
-places and will drift.
+The type is matched case-insensitively, and a scope is allowed
+(`feat(ui): …`, `FIX(api): …`). Anything else — `docs:`, `refactor:`, a merge
+commit — moves no version.
+
+A bump always updates `conf.yml`, `components/utils/constants.ts` and
+`CHANGELOG.md` together; never bump versions by hand in one place, they live
+in two and will drift. `mi release` is the other way to cut a release: it sets
+the version from the feat/fix **counts over the whole history**
+(e.g. 46 feat + 22 fix commits → `0.46.22`) and writes a grouped changelog
+section.
+
+## The pre-push hook
+
+`mi hooks install` symlinks `tools/hooks/pre-push` into `.git/hooks`, and every
+push then runs two independent stages:
+
+1. **checks** — `mi check` (lint + audit + all suites), the same gate CI runs
+2. **version bump** — one bump per new commit, taken from its message
+
+Both are configurable per clone, and both are stored in `.git/config` so they
+never show up in a diff:
+
+| Command | Effect |
+|---|---|
+| `mi hooks` | Show the hook state and the current toggles |
+| `mi hooks checks off` | Stop running the checks before a push |
+| `mi hooks bump off` | Stop versioning pushes from commit messages |
+| `mi hooks remove` | Unlink the hook entirely |
+
+One-off escapes, without changing any config:
+
+```
+git -c mi.hooks.checks=false push     # this push skips the checks
+MI_SKIP_CHECKS=1 git push             # same, via the environment
+git -c mi.hooks.bump=false push       # this push skips versioning
+MI_SKIP_BUMP=1 git push               # same, via the environment
+```
+
+When the hook bumps, it writes and **stages** the bump and stops the push, so
+the version travels with the commit that caused it:
+
+```
+git commit --amend --no-edit && git push   # fold it into that commit
+git commit -m 'chore: bump version'        # or keep it as its own commit
+```
+
+It will not version the same commit twice: an amended tip that already carries
+the version, a re-pushed commit, and a commit that only writes the three
+version files are all left alone. A ref with no remote counterpart (a first
+push, or a brand new branch) is versioned from its tip commit only, so pushing
+a long history does not bump it commit by commit.
 
 ## Before opening a PR
 

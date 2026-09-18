@@ -146,8 +146,11 @@ mi build -n                # show the deploy target, change nothing
 mi smoke --url https://panel.example.com
 ```
 
-`mi check` is exactly what the pre-push hook runs (`mi install-hooks`), and it
-is what CI runs — so a passing local check means a passing pipeline.
+`mi check` is exactly what the pre-push hook runs (`mi hooks install`) and what
+CI runs — so a passing local check means a passing pipeline. The same hook can
+version a push from its commit messages (`feat:` minor, `fix:` patch, `chore:`
+major); `mi hooks` shows both toggles, `mi hooks checks off` / `mi hooks bump off`
+turn them off.
 
 Which deploy command you use depends on **why** you cloned the repo:
 

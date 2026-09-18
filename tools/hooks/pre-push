@@ -1,43 +1,236 @@
 #!/usr/bin/env bash
-# Pre-push gate for the Addon Manager extension: runs the same checks CI does (PHP syntax lint, the static...
+# Pre-push gate for the Addon Manager extension: runs the local checks, then versions the push from the commit messages.
+
 set -uo pipefail
 
-if [ "${MI_SKIP_CHECKS:-0}" = "1" ]; then
-  echo "pre-push: checks skipped (MI_SKIP_CHECKS=1)"
-  exit 0
-fi
+ZERO_SHA=0000000000000000000000000000000000000000
 
-# .git/hooks/pre-push -> <repo>/tools/hooks/pre-push, so the repo root is two levels up from the symlink's...
-root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# The pushed refs arrive on stdin — read them first, before a child process can swallow the stream.
+refs=()
+while read -r lref lsha rref rsha; do
+  [ -n "${lsha:-}" ] && refs+=("$lref $lsha $rref $rsha")
+done
+
+# A hook always runs from the repository root, but fall back to the symlink layout for manual runs.
+root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+[ -n "$root" ] || root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 if [ ! -d "$root/tests/manual" ]; then
-  echo "pre-push: not the extension repository — skipping" >&2
+  echo "pre-push: not the extension repository — skipping"
   exit 0
 fi
 
-echo "pre-push: checking $(basename "$root") before it leaves this machine"
+cd "$root" || exit 0
 
-if [ -x "$root/mi" ]; then
-  "$root/mi" check
-  status=$?
-elif [ -f "$root/tools/audit-php.php" ]; then
-  php "$root/tools/audit-php.php" "$root/app"
-  status=$?
-else
-  echo "pre-push: no checks available (mi and the audit tool are missing)" >&2
-  exit 0
-fi
+cfg() { # cfg checks|bump → true|false; unset means on
+  local v
+  v="$(git config --get "mi.hooks.$1" 2>/dev/null || true)"
+  case "${v,,}" in
+    false|off|no|0) printf 'false' ;;
+    *) printf 'true' ;;
+  esac
+}
 
-if [ "$status" -ne 0 ]; then
-  cat >&2 <<'EOF'
+version_now() { # version_now → the conf.yml version
+  sed -n 's/^[[:space:]]*version:[[:space:]]*"\([^"]*\)".*/\1/p' "$root/conf.yml" 2>/dev/null | head -1
+}
+
+# ── checks (mi lint + mi audit + mi test) ──────────────────────────────────────
+if [ "$(cfg checks)" = "true" ] && [ "${MI_SKIP_CHECKS:-0}" != "1" ]; then
+  echo "pre-push: checking $(basename "$root") before it leaves this machine"
+
+  if [ -x "$root/mi" ]; then
+    "$root/mi" check
+    status=$?
+  elif [ -f "$root/tools/audit-php.php" ]; then
+    php "$root/tools/audit-php.php" "$root/app"
+    status=$?
+  else
+    echo "pre-push: no checks available (mi and the audit tool are missing)"
+    status=0
+  fi
+
+  if [ "$status" -ne 0 ]; then
+    cat >&2 <<'EOF'
 
 pre-push: checks failed — the push was stopped.
   Re-run for detail:   mi check
   Audit only:          mi audit
   Push anyway:         MI_SKIP_CHECKS=1 git push
+  Turn it off:         mi hooks checks off
 
 EOF
-  exit "$status"
+    exit "$status"
+  fi
+
+  echo "pre-push: all checks passed"
+elif [ "$(cfg checks)" = "false" ]; then
+  echo "pre-push: checks disabled (mi.hooks.checks=false) — mi hooks checks on to re-enable"
+else
+  echo "pre-push: checks skipped (MI_SKIP_CHECKS=1)"
 fi
 
-echo "pre-push: all checks passed"
+# ── version bump from the pushed commit messages ───────────────────────────────
+bump="$(cfg bump)"
+if [ "${MI_SKIP_BUMP:-0}" = "1" ]; then bump="false"; skip_reason="MI_SKIP_BUMP=1"; else skip_reason="mi.hooks.bump=false"; fi
+
+if [ "$bump" != "true" ]; then
+  echo "pre-push: version bump off ($skip_reason) — mi hooks to change it"
+  exit 0
+fi
+
+if [ "${#refs[@]}" -eq 0 ]; then
+  exit 0
+fi
+
+if [ ! -x "$root/mi" ]; then
+  echo "pre-push: mi not found — cannot version this push"
+  exit 0
+fi
+
+# git runs this hook for --dry-run too, so a previewed push must not write a version.
+if ps -o args= -p "$PPID" 2>/dev/null | grep -q -- '--dry-run'; then
+  echo "pre-push: dry run — no version applied"
+  exit 0
+fi
+
+declare -A seen=()
+commits=()
+first_push=0
+
+for line in "${refs[@]}"; do
+  IFS=' ' read -r lref lsha rref rsha <<<"$line"
+
+  [ "$lsha" = "$ZERO_SHA" ] && continue # branch deletion
+  case "$lref" in refs/tags/*) continue ;; esac # a tag points at a commit the branch push already covers
+
+  if [ "$rsha" = "$ZERO_SHA" ]; then
+    # A ref with no remote counterpart: only its tip counts, so a long first push is never bumped commit by commit.
+    first_push=1
+    pending="$(git rev-list --max-count=1 "$lsha" 2>/dev/null || true)"
+  else
+    pending="$(git rev-list --reverse "$rsha..$lsha" 2>/dev/null || true)"
+  fi
+
+  while IFS= read -r sha; do
+    [ -n "$sha" ] || continue
+    [ -n "${seen[$sha]:-}" ] && continue
+    seen[$sha]=1
+    commits+=("$sha")
+  done <<<"$pending"
+done
+
+[ "${#commits[@]}" -gt 0 ] || exit 0
+
+# Commits the hook already versioned stay in .git/mi-bumped, so re-pushing one never bumps it twice.
+state="$root/.git/mi-bumped"
+is_bumped() { [ -f "$state" ] && grep -qxF "$1" "$state"; }
+
+tip="$(git rev-parse HEAD 2>/dev/null || true)"
+reflog_tip="$(git log -g -1 --pretty=%gs HEAD 2>/dev/null || true)"
+
+# A folded bump: the tip is being pushed, was amended, and already carries a version change.
+amended=0
+if printf '%s' "$reflog_tip" | grep -qi 'amend'; then amended=1; fi
+
+if [ "$amended" = "1" ] && [ -n "$tip" ] && [ -n "${seen[$tip]:-}" ]; then
+  if git diff-tree --no-commit-id --name-only -r "$tip" 2>/dev/null | grep -qxE 'conf\.yml|CHANGELOG\.md|components/utils/constants\.ts'; then
+    printf 'pre-push: %s was amended and already carries the version — not bumping again\n' "$(git rev-parse --short "$tip")"
+    exit 0
+  fi
+fi
+
+# Version-only commits (mi release/the hook writing the bump) must never feed the bump back into itself.
+is_version_commit() {
+  local files
+  files="$(git diff-tree --no-commit-id --name-only -r "$1" 2>/dev/null)"
+  [ -n "$files" ] || return 1
+
+  local f
+  while IFS= read -r f; do
+    case "$f" in
+      conf.yml|CHANGELOG.md|components/utils/constants.ts) ;;
+      *) return 1 ;;
+    esac
+  done <<<"$files"
+
+  return 0
+}
+
+bumped=()
+skipped=0
+
+for sha in "${commits[@]}"; do
+  subject="$(git log -1 --pretty=%s "$sha" 2>/dev/null || true)"
+  short="$(git rev-parse --short "$sha" 2>/dev/null || printf '%s' "${sha:0:7}")"
+
+  if is_bumped "$sha"; then
+    skipped=$(( skipped + 1 ))
+    continue
+  fi
+
+  # Only feat/fix/chore move the version; anything else is left alone.
+  ctype="$(printf '%s' "$subject" | sed -nE 's/^[[:space:]]*([A-Za-z]+)(\([^)]*\))?!?:.*/\1/p' | tr 'A-Z' 'a-z')"
+  case "$ctype" in
+    feat|fix|chore) ;;
+    *)
+      skipped=$(( skipped + 1 ))
+      continue
+      ;;
+  esac
+
+  if is_version_commit "$sha"; then
+    skipped=$(( skipped + 1 ))
+    continue
+  fi
+
+  from="$(version_now)"
+
+  if out="$("$root/mi" update --commit "$sha" 2>&1)"; then
+    to="$(version_now)"
+    printf '%s\n' "$sha" >> "$state"
+    # Staged so `git commit --amend --no-edit` folds the bump in without -a picking up unrelated edits.
+    git add conf.yml components/utils/constants.ts CHANGELOG.md 2>/dev/null || true
+    bumped+=("$short	$ctype	$subject	$from	$to")
+  else
+    printf 'pre-push: could not version %s\n%s\n' "$short" "$out" >&2
+  fi
+done
+
+# Keep the ledger from growing forever on a long-lived clone.
+if [ -f "$state" ]; then
+  tail -n 200 "$state" > "$state.tmp" && mv "$state.tmp" "$state"
+fi
+
+if [ "${#bumped[@]}" -eq 0 ]; then
+  if [ "$first_push" = "1" ]; then
+    echo "pre-push: no version applied (first push — ${skipped} commit(s) without a feat/fix/chore message)"
+  else
+    echo "pre-push: no version applied (${skipped} commit(s) skipped: not feat/fix/chore, already versioned, or version-only)"
+  fi
+
+  exit 0
+fi
+
+printf '\nversion bumped from %d commit(s)\n' "${#bumped[@]}"
+for row in "${bumped[@]}"; do
+  IFS=$'\t' read -r short ctype subject from to <<<"$row"
+  printf '  %s  %-5s  %s → %s\n' "$short" "$ctype" "$from" "$to"
+  printf '           %s\n' "${subject:0:72}"
+done
+
+cat <<'EOF'
+
+The bump is written and staged, but it is not part of the commit you are pushing yet.
+Fold it into that commit and push again:
+    git commit --amend --no-edit && git push
+  Or keep it as a commit of its own:
+    git commit -m 'chore: bump version'
+  Skip versioning for this push:
+    git -c mi.hooks.bump=false push
+  Version by hand instead of from a message:
+    mi update -m 1   (or -p 1 / -M 1)
+
+EOF
+
+exit 1

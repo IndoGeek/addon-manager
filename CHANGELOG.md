@@ -2,6 +2,11 @@
 
 ![Addon Manager](assets/banner.webp)
 
+## 0.47.1 — 2026-09-19
+
+### Fixes
+- mi update subcommand error fixed
+
 ## 0.47.0 — 2026-09-19
 
 ### Changed
